@@ -26,5 +26,8 @@ jobs:
       - run: cargo clippy -p agenttij --target wasm32-wasip1 -- -D warnings
       - run: cargo build -p agenttij --target wasm32-wasip1 --release
 
-      - name: shell syntax
-        run: sh -n hooks/agenttij-state.sh && sh -n scripts/install.sh
+      - name: script syntax
+        run: |
+          sh -n hooks/agenttij-state.sh
+          sh -n scripts/install.sh
+          python3 -m py_compile scripts/register-hooks.py scripts/grant-permissions.py

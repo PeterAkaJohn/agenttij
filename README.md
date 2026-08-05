@@ -37,14 +37,40 @@ rustup target add wasm32-wasip1
 zellij --new-session-with-layout agenttij-left
 ```
 
-The installer builds the plugin, drops it in `~/.config/zellij/plugins`,
-installs the sidebar layouts, and registers the Claude Code hook in
-`~/.claude/settings.json` (backing the file up first, leaving other tools'
-hooks alone, and replacing rather than duplicating its own entries on re-run).
-`./scripts/install.sh --uninstall` reverses all of it.
+The installer builds the plugin and drops it in `~/.config/zellij/plugins`,
+installs the sidebar layouts, registers the Claude Code hook in
+`~/.claude/settings.json`, binds `Alt a` in your Zellij config, and pre-grants
+the plugin's permissions. Everything is backed up first, other tools' entries
+are left alone, and re-running replaces rather than duplicates. The config edit
+is checked with `zellij setup --check` and rolled back if Zellij dislikes it.
+`--no-keybind` and `--no-grant` opt out; `--uninstall` reverses all of it.
+
+Permissions are pre-granted because Zellij asks by drawing a prompt *over* the
+plugin's pane, and that prompt does not fit in 26 columns — the first launch
+would otherwise be a blank pane waiting on a keypress you cannot see. Revoke by
+deleting the entry from `~/.cache/zellij/permissions.kdl`. Note the cache is
+keyed by plugin URL, so a rebuild installed elsewhere gets asked again.
 
 Which side the sidebar sits on is a layout property, not a plugin setting —
 use `agenttij-right`, or edit the layout and change `size=26` to taste.
+
+### Landing in a session with no sidebar
+
+Jumping to a session that has no sidebar leaves you nothing to jump back with.
+That is what `Alt a` is for: it summons the sidebar as a floating pane in
+whatever session you are in, and focuses the existing one rather than stacking
+up duplicates.
+
+Keybindings are read when a session starts, so sessions that were already
+running when you installed won't have it. From one of those, summon it by hand
+— the `--` is required, Zellij will not take the URL without it:
+
+```sh
+zellij plugin --floating -- "file:$HOME/.config/zellij/plugins/agenttij.wasm"
+```
+
+To give every new session its own docked sidebar instead, set
+`default_layout "agenttij-left"` in your Zellij config.
 
 ## Configuration
 
@@ -126,7 +152,8 @@ cargo clippy -p agenttij --target wasm32-wasip1
 ## Known limits
 
 - **Switching sessions detaches and reattaches.** That is what switching a
-  session *is* in Zellij; `p` exists so you rarely need it.
+  session *is* in Zellij; `p` exists so you rarely need it, and `Alt a` gets
+  you a sidebar in whatever session you end up in.
 - **Peeking polls once a second** rather than streaming. `zellij subscribe`
   streams, but it is fed by the render pipeline, which skips tabs nobody is
   watching — so it goes silent for exactly the background agents you wanted to
