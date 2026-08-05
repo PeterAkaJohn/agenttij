@@ -1,0 +1,10 @@
+[package]
+name = "agenttij-core"
+description = "Agent tracking logic for the agenttij Zellij plugin, free of any host dependency"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# Deliberately empty: everything here must be testable with a plain `cargo test`.
+# Zellij types are adapted at the plugin crate's boundary, not imported here.
+[dependencies]

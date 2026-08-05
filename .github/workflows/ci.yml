@@ -1,0 +1,30 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-wasip1
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - run: cargo fmt --all --check
+
+      # The logic lives in core, so that is where the tests can run natively.
+      - run: cargo test -p agenttij-core
+      - run: cargo clippy -p agenttij-core --all-targets -- -D warnings
+
+      - run: cargo clippy -p agenttij --target wasm32-wasip1 -- -D warnings
+      - run: cargo build -p agenttij --target wasm32-wasip1 --release
+
+      - name: shell syntax
+        run: sh -n hooks/agenttij-state.sh && sh -n scripts/install.sh

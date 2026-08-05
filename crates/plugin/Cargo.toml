@@ -1,0 +1,10 @@
+[package]
+name = "agenttij"
+description = "A Zellij sidebar that tracks coding-agent panes across sessions"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+agenttij-core = { path = "../core" }
+zellij-tile = "0.44.3"

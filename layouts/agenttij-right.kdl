@@ -1,0 +1,15 @@
+// Sidebar on the right. See agenttij-left.kdl for the notes.
+layout {
+    pane size=1 borderless=true {
+        plugin location="zellij:tab-bar"
+    }
+    pane split_direction="vertical" {
+        pane
+        pane size=26 {
+            plugin location="file:~/.config/zellij/plugins/agenttij.wasm"
+        }
+    }
+    pane size=2 borderless=true {
+        plugin location="zellij:status-bar"
+    }
+}

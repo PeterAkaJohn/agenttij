@@ -1,0 +1,20 @@
+// Sidebar on the left. Mirrors Zellij's default layout, with the sidebar
+// wrapped around the working area.
+//
+// Which side the sidebar sits on is a layout property, not a plugin setting:
+// swap the two panes inside `split_direction="vertical"` (or use
+// agenttij-right.kdl) and change `size` to taste.
+layout {
+    pane size=1 borderless=true {
+        plugin location="zellij:tab-bar"
+    }
+    pane split_direction="vertical" {
+        pane size=26 {
+            plugin location="file:~/.config/zellij/plugins/agenttij.wasm"
+        }
+        pane
+    }
+    pane size=2 borderless=true {
+        plugin location="zellij:status-bar"
+    }
+}
