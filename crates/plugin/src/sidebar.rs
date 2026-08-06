@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 
-use agenttij_core::{agent, config::Scope, panes, scan, Agent, Config, PaneSnapshot};
+use agenttij_core::{agent, config::Scope, panes, scan, Agent, Config, Groups, PaneSnapshot};
 use zellij_tile::prelude::*;
 
 use crate::{actions, render, snapshot};
@@ -41,6 +41,9 @@ pub struct Sidebar {
     own_url: Option<String>,
     /// Whether the pane has been named yet.
     named: bool,
+    /// Which panes belong to which row. Only meaningful in solo mode, where a
+    /// row is a place to work rather than a single pane.
+    groups: Groups,
     current_session: String,
     /// Host clock from the last scan.
     now: u64,
@@ -85,6 +88,17 @@ impl ZellijPlugin for Sidebar {
                 if let Some(name) = snapshot::current_session(&sessions) {
                     self.current_session = name;
                 }
+
+                // Only here: reconciling against a stale pane list would drop a
+                // companion added since the last update, which is exactly how
+                // the grouping used to fall apart the moment it was made.
+                let here: Vec<u32> = self
+                    .panes
+                    .iter()
+                    .filter(|pane| pane.session == self.current_session)
+                    .map(|pane| pane.pane)
+                    .collect();
+                self.groups.reconcile(&here);
                 if self.own_url.is_none() {
                     self.own_url = snapshot::own_url(&sessions, get_plugin_ids().plugin_id);
                 }
@@ -106,6 +120,17 @@ impl ZellijPlugin for Sidebar {
             }
             _ => false,
         }
+    }
+
+    /// Messages from a keybind, via `MessagePlugin`. This is how cycling works
+    /// while the *agent* has focus, which is the point of it — you are typing to
+    /// an agent and want the editor beside it, without going through the sidebar
+    /// first.
+    fn pipe(&mut self, message: PipeMessage) -> bool {
+        if message.name == "cycle" {
+            self.cycle();
+        }
+        false
     }
 
     fn render(&mut self, rows: usize, cols: usize) {
@@ -190,15 +215,10 @@ impl Sidebar {
         let discovered = panes::discover(&self.panes, &agents, &self.config.agents);
         agents.extend(discovered);
 
-        // In solo mode the sidebar is the workspace's pane switcher, so it has
-        // to list panes that are not agents too — a parked shell you cannot
-        // select is a pane you cannot get back to.
+        // In solo mode a row is a group of panes, so the rows are the groups:
+        // one per agent, with its companions folded inside rather than listed.
         if self.config.solo {
-            let mut rest = panes::list_panes(&self.panes, &agents, &self.current_session);
-            if let Some(PaneId::Terminal(peek)) = self.peek {
-                rest.retain(|pane| pane.pane != peek);
-            }
-            agents.extend(rest);
+            agents = self.group_rows(agents);
         }
 
         if self.config.scope == Scope::Session {
@@ -255,11 +275,26 @@ impl Sidebar {
                 if let Some(agent) = self.selected_agent().cloned() {
                     let here = agent.session == self.current_session;
                     if self.config.solo && here {
-                        actions::solo(&agent, &self.panes, &self.current_session);
+                        let target = self.groups.current_of(agent.pane).unwrap_or(agent.pane);
+                        let slot = self.slot();
+                        self.groups.show(target);
+                        actions::show_in_slot(target, slot);
                     } else {
                         actions::go_to(&agent, &self.current_session, &self.panes);
                     }
                 }
+                false
+            }
+            // Cycle to the next pane in the row on screen. The same thing is a
+            // keybind away when the agent itself has focus, which is the point.
+            BareKey::Char('v') => {
+                self.cycle();
+                false
+            }
+            // Add a pane to the selected row: an editor beside the agent, a log,
+            // whatever. It joins the group instead of becoming a row of its own.
+            BareKey::Char('a') => {
+                self.add_to_row();
                 false
             }
             // A new agent pane that takes over the slot, parking the current
@@ -307,6 +342,67 @@ impl Sidebar {
         }
         self.named = true;
         rename_plugin_pane(get_plugin_ids().plugin_id, &self.config.title);
+    }
+
+    /// One row per group, named by the group's primary.
+    ///
+    /// Anything in another session is left alone — grouping is a workspace idea,
+    /// and a remote agent is a row on its own by definition.
+    fn group_rows(&mut self, agents: Vec<Agent>) -> Vec<Agent> {
+        // Panes with no agent reporting on them still need a name for their row.
+        let plain = panes::list_panes(&self.panes, &[], &self.current_session);
+        let (local, remote): (Vec<Agent>, Vec<Agent>) = agents
+            .into_iter()
+            .partition(|agent| agent.session == self.current_session);
+
+        let mut rows: Vec<Agent> = self
+            .groups
+            .rows()
+            .filter_map(|(primary, _members)| {
+                local
+                    .iter()
+                    .find(|agent| agent.pane == primary)
+                    .or_else(|| plain.iter().find(|entry| entry.pane == primary))
+                    .cloned()
+            })
+            .collect();
+
+        rows.extend(remote);
+        rows
+    }
+
+    /// The pane on screen in our tab, which is the one the slot holds.
+    fn slot(&self) -> Option<u32> {
+        let (tab, _) = get_focused_pane_info().ok()?;
+        panes::visible_terminal(&self.panes, &self.current_session, tab)
+    }
+
+    /// Shows the next pane in the row currently on screen.
+    fn cycle(&mut self) {
+        let Some(visible) = self.slot() else { return };
+        let Some(target) = self.groups.next_after(visible) else {
+            return;
+        };
+
+        self.groups.show(target);
+        actions::show_in_slot(target, Some(visible));
+    }
+
+    /// Opens a pane in the selected row's group, parking what was on screen.
+    fn add_to_row(&mut self) {
+        let Some(agent) = self.selected_agent().cloned() else {
+            return;
+        };
+        let slot = self.slot();
+        let opened = actions::new_in_slot(&self.panes, &self.current_session, self.config.solo);
+
+        if let Some(PaneId::Terminal(opened)) = opened {
+            // Joined to the row we were on, not to whatever happened to be on
+            // screen: you add an editor *to an agent*.
+            let anchor = self.groups.current_of(agent.pane).unwrap_or(agent.pane);
+            self.groups.add(anchor, opened);
+            let _ = slot;
+        }
     }
 
     fn close_peek(&mut self) {

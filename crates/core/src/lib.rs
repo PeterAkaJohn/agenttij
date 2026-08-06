@@ -9,10 +9,12 @@ pub mod agent;
 pub mod color;
 pub mod config;
 pub mod format;
+pub mod group;
 pub mod panes;
 pub mod scan;
 
 pub use agent::{Agent, Status};
 pub use color::Colors;
 pub use config::Config;
+pub use group::{Group, Groups};
 pub use panes::PaneSnapshot;

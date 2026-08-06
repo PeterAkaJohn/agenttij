@@ -24,7 +24,9 @@ The sidebar is an ordinary pane: focus it with your usual pane navigation, then
 | `j` / `k`, `↓` / `↑` | move |
 | `Enter` | go to that agent (switches session if needed) |
 | `p` | peek at it in a floating pane, without leaving your session |
-| `n` | start a new agent pane in the slot, parking the current one |
+| `n` | start a new agent pane in the slot — a new row |
+| `a` | add a pane to this row: an editor, a log, whatever |
+| `v` | cycle to the next pane in this row (`Alt v` anywhere) |
 | `b` | back to the session you came from |
 | `q`, `Esc` | dismiss a peek (any key dismisses it, and still does its job) |
 
@@ -96,11 +98,15 @@ suspends that one, instead of splitting the screen the way Zellij's own new-pane
 binding does. Close a pane and the suspended one comes back. Opening panes any
 other way works too — the first swap parks the extras.
 
-In solo mode the sidebar lists **every** pane in the session, not just agents:
-a plain shell shows as `·` with its title, below all the agents. Without that a
-pane you opened but have not started an agent in would be unreachable the moment
-it was parked, which makes the sidebar the switcher for the whole workspace
-rather than only for agents.
+In solo mode a **row is a group of panes**, not a single pane. `a` adds a pane to
+the row you are on — an editor next to the agent, a log next to that — and
+exactly one member is on screen at a time. Companions never get rows of their
+own: the row *is* the agent session. `Alt v` cycles through the row's panes from
+anywhere, including while you are typing at the agent, which is the point of it.
+
+Each row remembers which member you were last looking at. Every pane belongs to
+exactly one row, and a pane the sidebar does not recognise becomes a row of its
+own — so a reload costs you the grouping, never access to a pane.
 The layout ships `scope "session"`, so the sidebar lists only this session's
 agents and `Enter` can never throw you out of the workspace, and `solo "true"`,
 which is what parks the others instead of leaving them on screen.

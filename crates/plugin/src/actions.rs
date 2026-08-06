@@ -54,54 +54,44 @@ pub fn notify(command: &[String], agent: &Agent) {
     run_command(&words, BTreeMap::new());
 }
 
-/// Puts an agent's pane in the workspace slot and parks whoever was there.
+/// Opens a fresh terminal in the workspace slot, parking whatever is there.
 ///
-/// This is the alternative to a pane stack: a stack keeps every member on
-/// screen as a title line, whereas replacing the slot leaves exactly one agent
-/// visible. Parked ("suppressed") panes keep running — they are only off screen.
-///
-/// The slot is whichever terminal pane is currently visible in this tab, so the
-/// arrangement repairs itself: open agents however you like, and the first swap
-/// parks the extras.
-pub fn solo(agent: &Agent, all_panes: &[PaneSnapshot], session: &str) {
-    let target = PaneId::Terminal(agent.pane);
+/// Two steps rather than one: open the pane normally, then swap it into the slot
+/// with the old occupant suppressed. Opening *in place of* the slot looks
+/// simpler and destroys panes — Zellij stacks suppressed panes behind a
+/// replacement, and replacing a pane that is itself a replacement drops the one
+/// in the middle. Measured: three panes went in, two came out.
+pub fn new_in_slot(all_panes: &[PaneSnapshot], session: &str, solo: bool) -> Option<PaneId> {
     let tab = get_focused_pane_info().ok().map(|(tab, _)| tab);
     let slot = tab.and_then(|tab| panes::visible_terminal(all_panes, session, tab));
 
+    let cwd = slot
+        .and_then(|slot| get_pane_cwd(PaneId::Terminal(slot)).ok())
+        .unwrap_or_else(own_cwd);
+
+    let opened = open_terminal(cwd);
+    let (Some(opened), Some(slot)) = (opened, slot.filter(|_| solo)) else {
+        return opened;
+    };
+
+    // The new pane arrives as a split; this collapses it back to one on screen.
+    show_in_slot_from(opened, slot);
+    focus_pane_with_id(opened, false, false);
+    Some(opened)
+}
+
+/// Brings a pane into the slot, parking whoever was there. This is the move
+/// behind picking a row, cycling within one, and adding to one.
+pub fn show_in_slot(target: u32, slot: Option<u32>) {
     match slot {
-        // Already on screen: nothing to swap, just go there.
-        Some(slot) if slot == agent.pane => focus_pane_with_id(target, false, false),
-        Some(slot) => replace_pane_with_existing_pane(PaneId::Terminal(slot), target, true),
-        // Everything is parked, so there is no slot to take over.
-        None => show_pane_with_id(target, false, true),
+        Some(slot) if slot == target => focus_pane_with_id(PaneId::Terminal(target), false, false),
+        Some(slot) => show_in_slot_from(PaneId::Terminal(target), slot),
+        None => show_pane_with_id(PaneId::Terminal(target), false, true),
     }
 }
 
-/// Opens a fresh terminal in the workspace slot, parking whatever is there.
-///
-/// `close_replaced_pane: false` suspends the replaced pane instead of closing
-/// it, and Zellij brings it back when the new pane exits — so starting an agent
-/// never costs you the one you were looking at, and the slot is never empty.
-///
-/// Without solo mode there is no slot to manage, so this is an ordinary new
-/// pane.
-pub fn new_in_slot(all_panes: &[PaneSnapshot], session: &str, solo: bool) {
-    let tab = get_focused_pane_info().ok().map(|(tab, _)| tab);
-    let slot = tab.and_then(|tab| panes::visible_terminal(all_panes, session, tab));
-
-    let Some(slot) = slot.filter(|_| solo) else {
-        open_terminal(own_cwd());
-        return;
-    };
-
-    let replaced = PaneId::Terminal(slot);
-    let cwd = get_pane_cwd(replaced).unwrap_or_else(|_| own_cwd());
-
-    // Opening in place deliberately does not move focus, so we do it ourselves:
-    // a new pane you have to navigate to is not much of a shortcut.
-    if let Some(opened) = open_terminal_pane_in_place_of_pane_id(replaced, cwd, false) {
-        focus_pane_with_id(opened, false, false);
-    }
+fn show_in_slot_from(target: PaneId, slot: u32) {
+    replace_pane_with_existing_pane(PaneId::Terminal(slot), target, true);
 }
 
 fn own_cwd() -> PathBuf {

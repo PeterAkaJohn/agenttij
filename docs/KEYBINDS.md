@@ -16,7 +16,9 @@ focused.
 | `k`, `↑` | previous agent |
 | `Enter` | go to the selected agent |
 | `p` | peek at it without leaving this session |
-| `n` | new agent pane in the slot, parking the current one |
+| `n` | new agent pane in the slot — a new row |
+| `a` | add a pane to the selected row (an editor, a log, …) |
+| `v` | cycle to the next pane in the row on screen |
 | `b` | back to the session you came from |
 | `q`, `Esc` | dismiss a peek |
 
@@ -33,9 +35,18 @@ While a peek is open **any** key dismisses it, and then still does its own job �
 peeking costs you no keystrokes, and there is no mode to remember. `q` and `Esc`
 are the two that only dismiss.
 
-In solo mode every pane in the session is listed, not just agents — a plain
-shell appears as `·` with its pane title, sorted below the agents. That is what
-makes a pane you have not started an agent in reachable after it is parked.
+In solo mode a **row is a group of panes**, not one pane: an agent plus whatever
+you added beside it with `a`, exactly one of which is on screen. Companions do
+not get rows of their own — the row is the agent session. Each row remembers
+which member you were last on, so coming back to it puts you where you left off.
+
+`Alt v` is the one that matters: cycling has to work while you are typing *at the
+agent*, not only from the sidebar. It reaches the plugin through `MessagePlugin`,
+which is why the binding repeats the layout's configuration.
+
+Every pane belongs to exactly one row. A pane the sidebar does not recognise
+becomes a row of its own, so a plugin reload costs you the grouping and never
+access to a pane.
 
 **`n`** opens a fresh terminal *in place of* whatever is in the slot, suspending
 it rather than splitting the screen — this is the "managed pane" that keeps
@@ -68,6 +79,7 @@ iterated — which is why the bindings go in there.
 | Key | Does |
 |---|---|
 | `Alt a` | summon a sidebar in whatever session you are in, as a floating pane |
+| `Alt v` | cycle to the next pane in the row on screen |
 | `Alt ]` | fold the sidebar to a status rail, and back (Zellij's own key) |
 
 `Alt a` is the way out of a session that has no sidebar of its own — the one you

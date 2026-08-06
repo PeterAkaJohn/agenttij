@@ -24,6 +24,7 @@ plugin_url="file:$plugin_dir/agenttij.wasm"
 # Overridable so the settings patching can be tested against a copy.
 settings="${AGENTTIJ_SETTINGS:-$HOME/.claude/settings.json}"
 keybind="${AGENTTIJ_KEYBIND:-Alt a}"
+cycle_keybind="${AGENTTIJ_CYCLE_KEYBIND:-Alt v}"
 
 want_keybind=1
 want_grant=1
@@ -72,10 +73,10 @@ add_keybind() {
 
     cp "$zellij_config" "$zellij_config.agenttij.bak"
     python3 "$repo/scripts/zellij-keybinds.py" install "$zellij_config" \
-        "$plugin_url" "$keybind"
+        "$plugin_url" "$keybind" "$cycle_keybind"
 
     if zellij --config "$zellij_config" setup --check >/dev/null 2>&1; then
-        echo "  bound '$keybind' (backup: $zellij_config.agenttij.bak)"
+        echo "  bound '$keybind' and '$cycle_keybind' (backup: $zellij_config.agenttij.bak)"
     else
         mv "$zellij_config.agenttij.bak" "$zellij_config"
         echo "! config check failed, reverted — add them yourself, see docs/KEYBINDS.md"
@@ -87,7 +88,7 @@ remove_keybind() {
     grep -q "agenttij:begin" "$zellij_config" || return 0
     need_python "keybind removal" || return 0
     cp "$zellij_config" "$zellij_config.agenttij.bak"
-    python3 "$repo/scripts/zellij-keybinds.py" uninstall "$zellij_config" "" ""
+    python3 "$repo/scripts/zellij-keybinds.py" uninstall "$zellij_config" "" "" ""
     echo "  keybinds removed (backup: $zellij_config.agenttij.bak)"
 }
 
@@ -148,6 +149,7 @@ Enter to jump to an agent, p to peek at one without leaving this session.
 
 '$keybind' summons the sidebar in any session — including one you jumped
 into that has no sidebar of its own. Zellij's swap-layout key ('Alt ]' by
-default) folds the sidebar to a status rail and back. To give every new
-session a sidebar, set 'default_layout "agenttij-left"' in your Zellij config.
+default) folds the sidebar to a status rail and back, and '$cycle_keybind' cycles
+to the next pane in the row you are on. To give every new session a sidebar,
+set 'default_layout "agenttij-left"' in your Zellij config.
 EOF

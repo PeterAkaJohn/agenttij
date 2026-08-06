@@ -107,6 +107,14 @@ Each of these cost a debugging round already:
   sets it to the url.
 - **A pane opened from a plugin steals focus after the call returns**, so taking
   focus back has to wait for a later event, not the same handler.
+- **Replacing a pane that is itself a replacement destroys the pane in the
+  middle.** Zellij stacks suppressed panes behind a replacement, and
+  `open_*_in_place_of_pane_id` on top of that stack drops the middle one
+  (measured: three panes in, two out). Open a pane normally, *then* swap it into
+  place.
+- **Reconcile against fresh pane data only.** `PaneUpdate`/`SessionUpdate` is the
+  only moment the pane list is true; reconciling group membership on a state-file
+  tick deletes whatever was added since the last update.
 - **Suppressed panes forget their geometry.** Unsuppressing puts the pane
   wherever Zellij likes, so hide/show is not a reversible collapse — that is
   what swap layouts are for.
