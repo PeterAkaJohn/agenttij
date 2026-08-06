@@ -22,6 +22,29 @@ pub fn go_to(agent: &Agent, current_session: &str, all_panes: &[PaneSnapshot]) {
     switch_session_with_focus(&agent.session, tab, Some((agent.pane, false)));
 }
 
+/// Puts an agent's pane in the workspace slot and parks whoever was there.
+///
+/// This is the alternative to a pane stack: a stack keeps every member on
+/// screen as a title line, whereas replacing the slot leaves exactly one agent
+/// visible. Parked ("suppressed") panes keep running — they are only off screen.
+///
+/// The slot is whichever terminal pane is currently visible in this tab, so the
+/// arrangement repairs itself: open agents however you like, and the first swap
+/// parks the extras.
+pub fn solo(agent: &Agent, all_panes: &[PaneSnapshot], session: &str) {
+    let target = PaneId::Terminal(agent.pane);
+    let tab = get_focused_pane_info().ok().map(|(tab, _)| tab);
+    let slot = tab.and_then(|tab| panes::visible_terminal(all_panes, session, tab));
+
+    match slot {
+        // Already on screen: nothing to swap, just go there.
+        Some(slot) if slot == agent.pane => focus_pane_with_id(target, false, false),
+        Some(slot) => replace_pane_with_existing_pane(PaneId::Terminal(slot), target, true),
+        // Everything is parked, so there is no slot to take over.
+        None => show_pane_with_id(target, false, true),
+    }
+}
+
 /// Repeatedly dumps an agent's pane into a floating pane, so you can check on
 /// it without leaving this session.
 ///

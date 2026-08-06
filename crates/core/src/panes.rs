@@ -19,6 +19,18 @@ pub struct PaneSnapshot {
     /// own terminal title will overwrite it — so this is a discovery hint, not
     /// a source of truth.
     pub title: String,
+    /// Suppressed panes are running but not on screen. Solo mode parks agents
+    /// here instead of leaving them visible.
+    pub suppressed: bool,
+}
+
+/// The terminal pane currently on screen in a tab — the slot a solo swap
+/// replaces. `None` when every agent there is parked.
+pub fn visible_terminal(panes: &[PaneSnapshot], session: &str, tab: usize) -> Option<u32> {
+    panes
+        .iter()
+        .find(|pane| pane.session == session && pane.tab == tab && !pane.suppressed)
+        .map(|pane| pane.pane)
 }
 
 /// Drops agents that no longer have anything running behind them.
@@ -112,6 +124,14 @@ mod tests {
             tab,
             pane,
             title: title.into(),
+            suppressed: false,
+        }
+    }
+
+    fn parked(session: &str, tab: usize, pane: u32, title: &str) -> PaneSnapshot {
+        PaneSnapshot {
+            suppressed: true,
+            ..self::pane(session, tab, pane, title)
         }
     }
 
@@ -201,6 +221,28 @@ mod tests {
     fn discovery_never_shadows_a_reporting_agent() {
         let panes = vec![pane("main", 0, 3, "claude")];
         assert_eq!(discover(&panes, &[agent("main", 3)], &names()), vec![]);
+    }
+
+    #[test]
+    fn the_visible_slot_skips_parked_panes() {
+        let panes = vec![
+            parked("main", 0, 3, "claude"),
+            pane("main", 0, 4, "claude"),
+            pane("main", 1, 5, "claude"),
+        ];
+
+        assert_eq!(visible_terminal(&panes, "main", 0), Some(4));
+        assert_eq!(visible_terminal(&panes, "main", 1), Some(5));
+        assert_eq!(visible_terminal(&panes, "other", 0), None);
+    }
+
+    #[test]
+    fn every_pane_parked_leaves_no_slot() {
+        let panes = vec![
+            parked("main", 0, 3, "claude"),
+            parked("main", 0, 4, "claude"),
+        ];
+        assert_eq!(visible_terminal(&panes, "main", 0), None);
     }
 
     #[test]

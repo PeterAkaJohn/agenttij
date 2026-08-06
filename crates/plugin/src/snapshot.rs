@@ -23,6 +23,7 @@ pub fn panes(sessions: &[SessionInfo]) -> Vec<PaneSnapshot> {
                         tab: *tab,
                         pane: pane.id,
                         title: pane.title.clone(),
+                        suppressed: pane.is_suppressed,
                     })
             })
         })

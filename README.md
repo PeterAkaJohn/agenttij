@@ -22,6 +22,7 @@ The sidebar is an ordinary pane: focus it with your usual pane navigation, then
 | `j` / `k`, `↓` / `↑` | move |
 | `Enter` | go to that agent (switches session if needed) |
 | `p` | peek at it in a floating pane, without leaving your session |
+| `c` | park the sidebar off screen (`Alt z` brings it back) |
 
 Peeking is the point. Checking on an agent shouldn't cost you a detach and a
 reattach, so `p` gives you a live view of its pane wherever it is — another
@@ -61,25 +62,33 @@ zellij --new-session-with-layout agenttij-workspace
 ```
 
 This is the layout to use if you want the sidebar to *stay put* while the area
-beside it changes. The sidebar and a **pane stack** are siblings in one tab, so
-picking an agent expands that agent's pane in place and collapses the others to
-title lines. The sidebar never moves, never re-renders from scratch, and there
-is no detach — `Enter` is a plain pane focus.
+beside it changes. The sidebar owns a fixed column; the rest of the tab is a
+single slot holding exactly one agent. Picking another agent puts it in the slot
+and **parks** the previous one off screen — Zellij calls that suppressed, and it
+keeps running. The sidebar never moves, never re-renders from scratch, and there
+is no detach: `Enter` is a pane swap.
 
 ```
 ┌ agents ────┬──────────────────────────┐
-│ ● bravo    │ agent-alpha              │  ← collapsed to a title line
-│ ◐ delta    ├──────────────────────────┤
+│ ● bravo    │                          │
+│ ◐ delta    │  bravo                   │  ← the only agent on screen
 │ ✓ alpha    │                          │
-│ ○ charlie  │ bravo, expanded          │  ← the selected agent
-│            │                          │
+│ ○ charlie  │  (the rest are parked,   │
+│            │   still running)         │
 └────────────┴──────────────────────────┘
 ```
 
-Start agents in this session: a new pane opened while a stack pane is focused
-joins the stack on its own. The layout ships `scope "session"` so the sidebar
-lists only this session's agents and `Enter` can never throw you out of the
-workspace.
+Open agents however you like in this session — the first swap parks the extras.
+The layout ships `scope "session"`, so the sidebar lists only this session's
+agents and `Enter` can never throw you out of the workspace, and `solo "true"`,
+which is what parks the others instead of leaving them on screen.
+
+`c` parks the sidebar itself when you want the full width, and `Alt z` brings it
+back. That is a keybind rather than another `c` because a hidden pane cannot be
+focused to press a key in. Note that Zellij identifies a plugin by url *and*
+configuration, so the keybind repeats the workspace layout's configuration — if
+you change one, change both, or the keybind will launch a second sidebar
+instead of talking to the one you have.
 
 The catch is a hard one: **panes belong to the session that owns them.** Zellij
 has no way to render another session's pane inside yours, so this only works for
@@ -91,6 +100,13 @@ workspace session rather than one session each.
 Tabs cannot do this: switching tabs replaces the whole screen, sidebar
 included. You can put a sidebar in every tab via `new_tab_template`, but that is
 one plugin instance per tab with its own selection, not one that persists.
+
+A pane stack (`stacked=true`) is the other way to arrange this, and it keeps
+every agent on screen as a one-line title. Solo mode exists because that is not
+always what you want. Two things to know if you try a stack anyway: a stack
+declared with a single pane is not treated as a stack, and panes opened beside
+it split instead of joining; and agenttij never calls `stack_panes` itself,
+since new panes join a real stack on their own.
 
 Outside workspace mode the sidebar lists agents everywhere, sorting this
 session's agents first and marking the rest with `⇢` — so a row that will cost
@@ -116,7 +132,7 @@ To give every new session its own docked sidebar instead, set
 
 ## Configuration
 
-Two knobs:
+Three knobs:
 
 ```kdl
 pane size=26 {
@@ -125,6 +141,8 @@ pane size=26 {
         agents "claude,codex,aider,gemini,my-agent"
         // "all" (default) or "session" to list only this session's agents
         scope "session"
+        // "true" to show one agent at a time, parking the others off screen
+        solo "true"
     }
 }
 ```
@@ -208,3 +226,6 @@ cargo clippy -p agenttij --target wasm32-wasip1
   are tracked at session resolution. Jumping still lands on the right pane;
   discovery of non-reporting agents elsewhere does not work.
 - **Read-only.** The sidebar navigates; it never types into an agent.
+- **A fixed-width pane cannot be resized.** A pane declared `size=26` is
+  immovable, by Zellij's own `resize` action as much as by a plugin — which is
+  why `c` parks the sidebar rather than folding it to a narrow rail.

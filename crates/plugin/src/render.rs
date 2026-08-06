@@ -56,7 +56,7 @@ pub fn draw(view: &View) {
     }
 
     if hint_fits {
-        line("j/k ↵ go  p peek", view.rows - 1, view.cols);
+        line("j/k ↵ go  p peek  c fold", view.rows - 1, view.cols);
     }
 }
 

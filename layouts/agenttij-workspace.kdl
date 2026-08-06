@@ -6,18 +6,15 @@
 // while the right-hand side changes.
 //
 // The tradeoff: panes belong to the session that owns them, so this only works
-// for agents running in *this* session. Start them here — a new pane opened
-// while the stack is focused joins the stack automatically. Agents in other
+// for agents running in *this* session. Start them here. Agents in other
 // sessions still show up in the sidebar; reaching those means jumping (Enter),
 // which detaches and reattaches, or peeking (p), which does not.
 //
-// The stack starts with two panes on purpose. A `stacked=true` group holding a
-// single pane is not treated as a stack, and panes opened next to it split
-// normally instead of joining. With two, everything opened afterwards joins.
+// `solo true` means exactly one agent is on screen: picking another parks the
+// current one off screen (Zellij calls it suppressed — it keeps running) and
+// puts the new one in its place. No stack, so no leftover title lines.
 //
-// agenttij never calls `stack_panes` itself: it does not need to, since new
-// panes join on their own, and re-stacking already-stacked panes is a
-// needless risk when a pane holds a running agent.
+// Open agents however you like; the first swap parks the extras.
 layout {
     pane size=1 borderless=true {
         plugin location="zellij:tab-bar"
@@ -26,15 +23,13 @@ layout {
         pane size=26 {
             plugin location="file:~/.config/zellij/plugins/agenttij.wasm" {
                 // Only this session's agents, so Enter always stays in the
-                // stack and never detaches you out of the workspace. Drop this
-                // to see every agent on the machine, marked with ⇢.
+                // workspace and never detaches you out of it. Drop this to see
+                // every agent on the machine, marked with ⇢.
                 scope "session"
+                solo "true"
             }
         }
-        pane stacked=true {
-            pane
-            pane
-        }
+        pane
     }
     pane size=2 borderless=true {
         plugin location="zellij:status-bar"

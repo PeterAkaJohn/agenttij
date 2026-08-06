@@ -22,6 +22,9 @@ pub struct Config {
     /// Lowercased names matched against pane titles for discovery.
     pub agents: Vec<String>,
     pub scope: Scope,
+    /// Show only the selected agent's pane, parking the others out of sight
+    /// instead of leaving them on screen.
+    pub solo: bool,
 }
 
 impl Default for Config {
@@ -29,6 +32,7 @@ impl Default for Config {
         Self {
             agents: DEFAULT_AGENTS.iter().map(|name| name.to_string()).collect(),
             scope: Scope::default(),
+            solo: false,
         }
     }
 }
@@ -53,6 +57,8 @@ impl Config {
             _ => Scope::All,
         };
 
+        let solo = configuration.get("solo").map(|raw| raw.trim()) == Some("true");
+
         let defaults = Self::default();
         Self {
             agents: if agents.is_empty() {
@@ -61,6 +67,7 @@ impl Config {
                 agents
             },
             scope,
+            solo,
         }
     }
 }
@@ -107,6 +114,14 @@ mod tests {
             Config::from_map(&map(&[("scope", " session ")])).scope,
             Scope::Session
         );
+    }
+
+    #[test]
+    fn solo_is_off_unless_asked_for() {
+        assert!(!Config::from_map(&map(&[])).solo);
+        assert!(!Config::from_map(&map(&[("solo", "yes")])).solo);
+        assert!(Config::from_map(&map(&[("solo", "true")])).solo);
+        assert!(Config::from_map(&map(&[("solo", " true ")])).solo);
     }
 
     #[test]
