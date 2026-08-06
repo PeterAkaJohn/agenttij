@@ -30,4 +30,4 @@ jobs:
         run: |
           sh -n hooks/agenttij-state.sh
           sh -n scripts/install.sh
-          python3 -m py_compile scripts/register-hooks.py scripts/grant-permissions.py
+          python3 -m py_compile scripts/register-hooks.py scripts/grant-permissions.py scripts/zellij-keybinds.py

@@ -37,8 +37,15 @@ is `Alt z` below.
 
 ## From anywhere in Zellij
 
-Installed by `scripts/install.sh` into your Zellij config as a
-marker-delimited block, bound under `shared_except "locked"`.
+Installed by `scripts/install.sh` into your Zellij config, as a
+marker-delimited `shared_except "locked"` block placed **inside** your existing
+`keybinds` block.
+
+That placement is not cosmetic. Zellij reads keybindings with
+`kdl_config.get("keybinds")`, which returns only the *first* matching node, so a
+second top-level `keybinds` block parses cleanly, passes `zellij setup --check`,
+and is then silently ignored. Children of the first block, by contrast, are all
+iterated — which is why the bindings go in there.
 
 | Key | Does |
 |---|---|
@@ -60,12 +67,13 @@ AGENTTIJ_KEYBIND="Alt s" AGENTTIJ_FOLD_KEYBIND="Alt x" ./scripts/install.sh
 Or edit the `// agenttij:begin … // agenttij:end` block in your Zellij config
 directly. Re-running the installer regenerates that block, so edits inside it
 are replaced — keep your own bindings outside it. `--no-keybind` skips the block
-entirely, and `--uninstall` removes it.
+entirely, and `--uninstall` removes it, restoring the file byte for byte.
 
 Two things to know:
 
 - **Keybinds are read when a session starts.** Sessions already running when you
-  installed will not have them. Restart them, or use the manual commands below.
+  installed will not have them — this is the usual reason a binding "does not
+  work". Start a new session, or use the manual commands below.
 - **`Alt z` repeats the workspace layout's plugin configuration.** Zellij
   identifies a plugin by its url *and* its configuration, so a message that does
   not match launches a *second* sidebar instead of reaching the one you have. If

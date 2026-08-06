@@ -48,7 +48,12 @@ installs the sidebar layouts, registers the Claude Code hook in
 the plugin's permissions. Everything is backed up first, other tools' entries
 are left alone, and re-running replaces rather than duplicates. The config edit
 is checked with `zellij setup --check` and rolled back if Zellij dislikes it.
-`--no-keybind` and `--no-grant` opt out; `--uninstall` reverses all of it.
+`--no-keybind` and `--no-grant` opt out; `--uninstall` reverses all of it. The
+bindings go *inside* your existing `keybinds` block, because Zellij only reads
+the first one it finds — see [docs/KEYBINDS.md](docs/KEYBINDS.md).
+
+Keybindings are read when a session starts, so start a new session after
+installing.
 
 Permissions are pre-granted because Zellij asks by drawing a prompt *over* the
 plugin's pane, and that prompt does not fit in 26 columns — the first launch
