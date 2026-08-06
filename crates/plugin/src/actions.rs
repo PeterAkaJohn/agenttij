@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use agenttij_core::{panes, scan, Agent, Config, PaneSnapshot};
+use agenttij_core::{panes, Agent, Config, PaneSnapshot};
 use zellij_tile::prelude::*;
 
 /// Focuses an agent's pane.
@@ -19,37 +19,8 @@ pub fn go_to(agent: &Agent, current_session: &str, all_panes: &[PaneSnapshot]) {
         return;
     }
 
-    remember(current_session);
     let tab = panes::tab_of(all_panes, &agent.session, agent.pane);
     switch_session_with_focus(&agent.session, tab, Some((agent.pane, false)));
-}
-
-/// Goes back to the session we last left.
-pub fn go_back(previous: &str, current_session: &str) {
-    if previous == current_session {
-        return;
-    }
-    remember(current_session);
-    // `switch_session` by name alone does nothing here; the variant that takes a
-    // focus target is the one that actually moves the client (verified).
-    switch_session_with_focus(previous, None, None);
-}
-
-/// Records the session we are leaving, so the sidebar on the other side knows
-/// the way back. It has to go through a file: the plugin over there is a
-/// different instance in a different process with no memory of this one.
-/// Claims this session as the one being looked at, moving the previous holder
-/// into `previous`.
-pub fn claim_current(session: &str) {
-    let command = scan::claim_current(session);
-    let words: Vec<&str> = command.iter().map(String::as_str).collect();
-    run_command(&words, BTreeMap::new());
-}
-
-fn remember(session: &str) {
-    let command = scan::remember_previous(session);
-    let words: Vec<&str> = command.iter().map(String::as_str).collect();
-    run_command(&words, BTreeMap::new());
 }
 
 /// Tells you an agent is blocked, when you are not looking at the sidebar.

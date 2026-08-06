@@ -53,7 +53,7 @@ def block(url, summon, cycle, back, focus, indent):
         '            solo "true"',
         "        }",
         "    }",
-        "    // Back to the session you came from.",
+        "    // Back to the row you were on before this one.",
         f'    bind "{back}" {{',
         f'        MessagePlugin "{url}" {{',
         '            name "back"',

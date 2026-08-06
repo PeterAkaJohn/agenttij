@@ -27,11 +27,11 @@ The sidebar is an ordinary pane: focus it with your usual pane navigation, then
 | `n` | start a new agent pane in the slot — a new row |
 | `a` | add a pane to this row: an editor, a log, whatever |
 | `v` | cycle to the next pane in this row (`Alt v` anywhere) |
-| `b` | back to the session you came from (`Alt b` anywhere) |
+| `b` | flip back to the previous row (`Alt b` anywhere) |
 | `q`, `Esc` | dismiss a peek (any key dismisses it, and still does its job) |
 
 Zellij-level, installed for you: `Alt s` focuses the sidebar, `Alt v` cycles the
-row's panes, `Alt b` goes back a session. `Alt a` summons a sidebar in any
+row's panes, `Alt b` flips back to the previous row. `Alt a` summons a sidebar in any
 session, and
 `Alt ]` — Zellij's own swap-layout key — folds the sidebar to a status rail and
 back. Full reference: [docs/KEYBINDS.md](docs/KEYBINDS.md).

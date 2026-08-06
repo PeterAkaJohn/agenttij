@@ -150,11 +150,11 @@ done. start a session with the sidebar:
 the sidebar is a normal pane: focus it as usual, then j/k to move,
 Enter to jump to an agent, p to peek at one without leaving this session.
 
-'$keybind' summons the sidebar in any session — including one you jumped
-into that has no sidebar of its own. Zellij's swap-layout key ('Alt ]' by
-default) folds the sidebar to a status rail and back, and '$cycle_keybind' cycles
-to the next pane in the row you are on, '$back_keybind' returns to the session
-you came from, and '$focus_keybind' focuses the sidebar. To give every new
-session a sidebar,
-set 'default_layout "agenttij-left"' in your Zellij config.
+'$keybind' summons a sidebar in any session, '$focus_keybind' focuses the one
+you have, '$cycle_keybind' cycles the panes in the row you are on and
+'$back_keybind' flips back to the previous row. Zellij's own swap-layout key
+('Alt ]' by default) folds the sidebar to a status rail.
+
+To give every new session a sidebar, set 'default_layout "agenttij-left"' in
+your Zellij config.
 EOF

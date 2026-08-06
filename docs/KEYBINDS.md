@@ -19,7 +19,7 @@ focused.
 | `n` | new agent pane in the slot — a new row |
 | `a` | add a pane to the selected row (an editor, a log, …) |
 | `v` | cycle to the next pane in the row on screen |
-| `b` | back to the session you came from |
+| `b` | flip back to the row you were on before |
 | `q`, `Esc` | dismiss a peek |
 
 **`Enter`** behaves differently depending on where the agent is and how the
@@ -40,8 +40,11 @@ you added beside it with `a`, exactly one of which is on screen. Companions do
 not get rows of their own — the row is the agent session. Each row remembers
 which member you were last on, so coming back to it puts you where you left off.
 
-`Alt v` is the one that matters: cycling has to work while you are typing *at the
-agent*, not only from the sidebar. It reaches the plugin through `MessagePlugin`,
+`b` flips between the last two rows — the agent you were on and the one before
+it — which is a different move from `v`, and cycles *within* a row.
+
+`Alt v` and `Alt b` are the ones that matter: both have to work while you are
+typing *at the agent*, not only from the sidebar. It reaches the plugin through `MessagePlugin`,
 which is why the binding repeats the layout's configuration.
 
 Every pane belongs to exactly one row. A pane the sidebar does not recognise
@@ -81,7 +84,7 @@ iterated — which is why the bindings go in there.
 | `Alt a` | summon a sidebar in whatever session you are in, as a floating pane |
 | `Alt s` | focus the sidebar from wherever you are |
 | `Alt v` | cycle to the next pane in the row on screen |
-| `Alt b` | back to the session you came from |
+| `Alt b` | flip back to the row you were on before |
 | `Alt ]` | fold the sidebar to a status rail, and back (Zellij's own key) |
 
 `Alt a` is the way out of a session that has no sidebar of its own — the one you
