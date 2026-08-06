@@ -68,7 +68,7 @@ pub fn draw(view: &View) {
     }
 
     if hint_fits {
-        line("j/k ↵  p/q peek  n new  b back", view.rows - 1, view.cols);
+        line("j/k ↵ n a v b  p peek", view.rows - 1, view.cols);
     }
 }
 

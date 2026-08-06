@@ -14,6 +14,7 @@ cargo clippy -p agenttij --target wasm32-wasip1    # same for the plugin
 cargo fmt --all
 cargo build -p agenttij --target wasm32-wasip1 --release
 ./scripts/install.sh                               # build + install everything
+sh scripts/press-keys.sh test layouts/agenttij-workspace.kdl 8:'\033h' 4:p 6:q
 ```
 
 Fast loop when iterating on the plugin: build, copy the wasm over the installed
@@ -23,12 +24,20 @@ one, then `zellij -s <session> action start-or-reload-plugin "file:$HOME/.config
 
 ```
 crates/core    agenttij-core — zero dependencies, all the decisions, unit-tested
-crates/plugin  agenttij — wasm: lifecycle, rendering, navigation
+               agent (status, rows), group (a row is a group of panes),
+               panes (reconciliation, discovery), scan (state files),
+               color (SGR), config, format (row layout)
+crates/plugin  agenttij — wasm: lifecycle, rendering, navigation, peek mode
 hooks/         the shell hook agents run — tool-agnostic: `$1` is the state
 integrations/  per-tool glue that calls that hook (opencode plugin)
 layouts/       left, right, workspace (+ a `rail` swap layout in each)
-scripts/       installer and its three helpers
+scripts/       installer, three helpers, and press-keys.sh
+docs/          PLAN.md (design and constraints), KEYBINDS.md (every key)
 ```
+
+The plugin has two modes in one binary. Without `peek` in its configuration it is
+the sidebar; with it, the instance *is* a peek — it mirrors one pane and closes on
+any key. A peek has to be a plugin pane, so it is this plugin (see the traps).
 
 `core` must not gain dependencies — not even `zellij-tile`. The plugin crate
 adapts `SessionInfo` into `core`'s own `PaneSnapshot` at the boundary, which is

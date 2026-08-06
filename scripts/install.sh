@@ -27,6 +27,8 @@ keybind="${AGENTTIJ_KEYBIND:-Alt a}"
 cycle_keybind="${AGENTTIJ_CYCLE_KEYBIND:-Alt v}"
 back_keybind="${AGENTTIJ_BACK_KEYBIND:-Alt b}"
 focus_keybind="${AGENTTIJ_FOCUS_KEYBIND:-Alt s}"
+new_keybind="${AGENTTIJ_NEW_KEYBIND:-Alt g}"
+add_keybind="${AGENTTIJ_ADD_KEYBIND:-Alt m}"
 
 want_keybind=1
 want_grant=1
@@ -75,10 +77,12 @@ add_keybind() {
 
     cp "$zellij_config" "$zellij_config.agenttij.bak"
     python3 "$repo/scripts/zellij-keybinds.py" install "$zellij_config" \
-        "$plugin_url" "$keybind" "$cycle_keybind" "$back_keybind" "$focus_keybind"
+        "$plugin_url" "$keybind" "$cycle_keybind" "$back_keybind" "$focus_keybind" \
+        "$new_keybind" "$add_keybind"
 
     if zellij --config "$zellij_config" setup --check >/dev/null 2>&1; then
-        echo "  bound '$keybind', '$cycle_keybind', '$back_keybind', '$focus_keybind'"
+        echo "  bound $keybind, $focus_keybind, $cycle_keybind, $back_keybind,"
+        echo "  $new_keybind, $add_keybind"
         echo "  (backup: $zellij_config.agenttij.bak)"
     else
         mv "$zellij_config.agenttij.bak" "$zellij_config"
@@ -91,7 +95,7 @@ remove_keybind() {
     grep -q "agenttij:begin" "$zellij_config" || return 0
     need_python "keybind removal" || return 0
     cp "$zellij_config" "$zellij_config.agenttij.bak"
-    python3 "$repo/scripts/zellij-keybinds.py" uninstall "$zellij_config" "" "" "" "" ""
+    python3 "$repo/scripts/zellij-keybinds.py" uninstall "$zellij_config" "" "" "" "" "" "" ""
     echo "  keybinds removed (backup: $zellij_config.agenttij.bak)"
 }
 
@@ -152,7 +156,8 @@ Enter to jump to an agent, p to peek at one without leaving this session.
 
 '$keybind' summons a sidebar in any session, '$focus_keybind' focuses the one
 you have, '$cycle_keybind' cycles the panes in the row you are on and
-'$back_keybind' flips back to the previous row. Zellij's own swap-layout key
+'$back_keybind' flips back to the previous row. '$new_keybind' starts a new row
+and '$add_keybind' adds a pane to the row on screen. Zellij's own swap-layout key
 ('Alt ]' by default) folds the sidebar to a status rail.
 
 To give every new session a sidebar, set 'default_layout "agenttij-left"' in

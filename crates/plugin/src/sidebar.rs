@@ -130,6 +130,8 @@ impl ZellijPlugin for Sidebar {
         match message.name.as_str() {
             "cycle" => self.cycle(),
             "back" => self.go_back(),
+            "new" => self.new_row(),
+            "add" => self.add_to_row(),
             _ => {}
         }
         false
@@ -298,7 +300,7 @@ impl Sidebar {
             // A new agent pane that takes over the slot, parking the current
             // one rather than splitting the screen with it.
             BareKey::Char('n') => {
-                actions::new_in_slot(&self.panes, &self.current_session, self.config.solo);
+                self.new_row();
                 false
             }
             // Back to the session we came from.
@@ -411,21 +413,27 @@ impl Sidebar {
         actions::show_in_slot(target, Some(visible));
     }
 
-    /// Opens a pane in the selected row's group, parking what was on screen.
+    /// Opens a pane in the row that is on screen, parking what was there.
+    ///
+    /// Anchored on what is on screen rather than where the cursor is, because
+    /// the same action is a keybind away while an *agent* has focus and there is
+    /// no cursor involved then. It also keeps the two consistent: the pane you
+    /// get always belongs to the row you were looking at.
     fn add_to_row(&mut self) {
-        let Some(agent) = self.selected_agent().cloned() else {
+        let Some(visible) = self.slot() else {
+            self.new_row();
             return;
         };
-        let slot = self.slot();
-        let opened = actions::new_in_slot(&self.panes, &self.current_session, self.config.solo);
-
-        if let Some(PaneId::Terminal(opened)) = opened {
-            // Joined to the row we were on, not to whatever happened to be on
-            // screen: you add an editor *to an agent*.
-            let anchor = self.groups.current_of(agent.pane).unwrap_or(agent.pane);
-            self.groups.add(anchor, opened);
-            let _ = slot;
+        if let Some(PaneId::Terminal(opened)) =
+            actions::new_in_slot(&self.panes, &self.current_session, self.config.solo)
+        {
+            self.groups.add(visible, opened);
         }
+    }
+
+    /// A pane of its own: reconciliation turns anything ungrouped into a row.
+    fn new_row(&mut self) {
+        actions::new_in_slot(&self.panes, &self.current_session, self.config.solo);
     }
 
     fn close_peek(&mut self) {

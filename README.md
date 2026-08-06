@@ -7,34 +7,35 @@ jump to it.
 
 ```
 ┌ agents ────────────┐
-│ ● agenttij     2m  │  ● needs input
-│ ◐ api-refactor 12s │  ◐ running
-│ ✓ docs-fix     5m  │  ✓ done
-│ ○ scratch      1h  │  ○ idle
-│ · shell        -   │  · a pane, no agent (solo mode)
-│                    │
-│ j/k ↵ go  p peek   │
+│ ⚠ agenttij     2m  │  ⚠ needs input     ◐ running
+│ ◐ api-refactor 12s │  ✓ done            ○ idle
+│ ✓ docs-fix   3 5m  │  ? unknown         · a pane, no agent
+│ ○ scratch      1h  │
+│                    │  "3" = the row owns
+│ j/k ↵ n a v b      │  three panes
 └────────────────────┘
 ```
 
-The sidebar is an ordinary pane: focus it with your usual pane navigation, then
+The sidebar is an ordinary pane: focus it with your usual pane navigation (or
+`Alt s`), then
 
 | key | |
 |---|---|
 | `j` / `k`, `↓` / `↑` | move |
-| `Enter` | go to that agent (switches session if needed) |
-| `p` | peek at it in a floating pane, without leaving your session |
-| `n` | start a new agent pane in the slot — a new row |
-| `a` | add a pane to this row: an editor, a log, whatever |
-| `v` | cycle to the next pane in this row (`Alt v` anywhere) |
+| `Enter` | show that row — switches session if the agent is elsewhere |
 | `b` | flip back to the previous row (`Alt b` anywhere) |
-| `q`, `Esc` | dismiss a peek (any key dismisses it, and still does its job) |
+| `v` | cycle the panes *within* this row (`Alt v` anywhere) |
+| `a` | add a pane to this row: an editor, a log, whatever (`Alt m`) |
+| `n` | new agent pane — a new row (`Alt g`) |
+| `p` | peek at an agent without leaving your session |
+| `q`, `Esc` | dismiss a peek |
 
-Zellij-level, installed for you: `Alt s` focuses the sidebar, `Alt v` cycles the
-row's panes, `Alt b` flips back to the previous row. `Alt a` summons a sidebar in any
-session, and
-`Alt ]` — Zellij's own swap-layout key — folds the sidebar to a status rail and
-back. Full reference: [docs/KEYBINDS.md](docs/KEYBINDS.md).
+Every one of those that makes sense away from the sidebar has a global binding,
+installed for you: `Alt s` focuses the sidebar, `Alt v` cycles a row's panes,
+`Alt b` flips rows, `Alt g` starts a new row, `Alt m` adds a pane to the row on
+screen, `Alt a` summons a sidebar in any session, and `Alt ]` — Zellij's own
+swap-layout key — folds the sidebar to a status rail. Full reference:
+[docs/KEYBINDS.md](docs/KEYBINDS.md).
 
 Peeking is the point. Checking on an agent shouldn't cost you a detach and a
 reattach, so `p` gives you a live view of its pane wherever it is — another
@@ -70,7 +71,7 @@ deleting the entry from `~/.cache/zellij/permissions.kdl`. Note the cache is
 keyed by plugin URL, so a rebuild installed elsewhere gets asked again.
 
 Which side the sidebar sits on is a layout property, not a plugin setting —
-use `agenttij-right`, or edit the layout and change `size=26` to taste.
+use `agenttij-right`, or edit the layout and change `size="20%"` to taste.
 
 ### Workspace mode: a sidebar that never reloads
 
@@ -95,10 +96,10 @@ is no detach: `Enter` is a pane swap.
 └────────────┴──────────────────────────┘
 ```
 
-Start agents with `n`: it opens a terminal *in place of* the one in the slot and
-suspends that one, instead of splitting the screen the way Zellij's own new-pane
-binding does. Close a pane and the suspended one comes back. Opening panes any
-other way works too — the first swap parks the extras.
+Start agents with `n` (or `Alt g`) and add panes to a row with `a` (or `Alt m`).
+Both park what was on screen instead of splitting it, and closing a pane brings
+the parked one back. Opening panes any other way works too — the first swap parks
+the extras, and anything ungrouped becomes a row of its own.
 
 In solo mode a **row is a group of panes**, not a single pane. `a` adds a pane to
 the row you are on — an editor next to the agent, a log next to that — and
@@ -165,23 +166,27 @@ To give every new session its own docked sidebar instead, set
 The knobs:
 
 ```kdl
-pane size=26 {
+pane size="20%" {
     plugin location="file:~/.config/zellij/plugins/agenttij.wasm" {
         // process names used to spot agents that are not reporting
-        agents "claude,codex,aider,gemini,my-agent"
+        agents "claude,codex,opencode,aider,gemini,my-agent"
         // "all" (default) or "session" to list only this session's agents
         scope "session"
-        // "true" to show one agent at a time, parking the others off screen
+        // "true" makes a row a group of panes, one on screen at a time
         solo "true"
         // what the pane frame calls itself
         title "agents"
-        // per-status colours: a name, a 256-colour index, or #rrggbb
+        // per-status colours: a name, a 256-colour index, or #rrggbb.
+        // statuses are needs-input, running, done, idle, unknown, pane
         colors "needs-input=yellow,running=blue,done=green,idle=bright-black"
         // run something when an agent becomes blocked on you
         notify "notify-send -u critical"
     }
 }
 ```
+
+A percentage width rather than `size=26`, because a fixed-width pane cannot be
+resized — which is what `Alt ]` needs in order to fold it to a rail.
 
 ## How it works
 
@@ -254,9 +259,10 @@ runtime. Anything slow is handed over and comes back as an event:
 ```
 crates/core    agenttij-core — zero dependencies, all the decisions, unit-tested
 crates/plugin  agenttij — the wasm plugin: lifecycle, rendering, navigation
-hooks/         the shell hook agents run
-layouts/       sidebar layouts: left, right, and workspace (persistent sidebar)
-scripts/       installer
+hooks/         the shell hook agents run — tool-agnostic
+integrations/  per-tool glue that calls it (an opencode plugin)
+layouts/       left, right, workspace, each with a `rail` swap layout
+scripts/       installer, its helpers, and a real-keystroke test harness
 docs/KEYBINDS.md  every key, and how to change them
 docs/PLAN.md      design notes and the Zellij constraints they follow from
 ```
