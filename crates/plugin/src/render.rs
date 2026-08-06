@@ -32,8 +32,8 @@ pub fn draw(view: &View) {
     }
 
     // Leave the bottom line for the key hint, but only if the list does not
-    // need it.
-    let hint_fits = view.agents.len() < view.rows;
+    // need it and there is width to read it in.
+    let hint_fits = view.agents.len() < view.rows && view.cols >= format::RAIL_MAX_COLS;
     let capacity = if hint_fits {
         view.rows.saturating_sub(1)
     } else {
@@ -56,7 +56,7 @@ pub fn draw(view: &View) {
     }
 
     if hint_fits {
-        line("j/k ↵ go  p peek  c park", view.rows - 1, view.cols);
+        line("j/k ↵ go  p peek", view.rows - 1, view.cols);
     }
 }
 

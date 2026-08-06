@@ -5,11 +5,33 @@ layout {
     }
     pane split_direction="vertical" {
         pane
-        pane size=26 {
+        pane size="20%" {
             plugin location="file:~/.config/zellij/plugins/agenttij.wasm"
         }
     }
     pane size=2 borderless=true {
         plugin location="zellij:status-bar"
+    }
+
+    // Fold the sidebar to a rail with Zellij's swap-layout key (Alt ] by
+    // default): same position, exact widths both ways. This is a swap layout
+    // rather than a plugin key because a plugin can only resize itself in
+    // coarse async steps — the width drifts — and a suppressed pane comes back
+    // wherever Zellij puts it, not where it was.
+    swap_tiled_layout name="rail" {
+        tab {
+            pane size=1 borderless=true {
+                plugin location="zellij:tab-bar"
+            }
+            pane split_direction="vertical" {
+                pane
+                pane size=5 {
+                    plugin location="file:~/.config/zellij/plugins/agenttij.wasm"
+                }
+            }
+            pane size=2 borderless=true {
+                plugin location="zellij:status-bar"
+            }
+        }
     }
 }

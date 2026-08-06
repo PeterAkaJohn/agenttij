@@ -37,8 +37,6 @@ pub struct Sidebar {
     /// The highlighted agent, tracked by pane rather than by index so the
     /// cursor sticks to an agent while the list re-sorts underneath it.
     selected: Option<(String, u32)>,
-    /// Whether we have parked ourselves off screen.
-    collapsed: bool,
     permissions: Permissions,
 }
 
@@ -89,25 +87,6 @@ impl ZellijPlugin for Sidebar {
             }
             _ => false,
         }
-    }
-
-    /// Messages from a keybind (`MessagePlugin`) or the CLI (`zellij pipe`).
-    /// `hide`/`show` are explicit, anything else toggles.
-    fn pipe(&mut self, message: PipeMessage) -> bool {
-        match message.name.as_str() {
-            "hide" => self.collapsed = true,
-            "show" => self.collapsed = false,
-            _ => self.collapsed = !self.collapsed,
-        }
-
-        if self.collapsed {
-            hide_self();
-        } else {
-            // Documented to unsuppress, which is what makes a parked sidebar
-            // reachable again.
-            show_self(false);
-        }
-        false
     }
 
     fn render(&mut self, rows: usize, cols: usize) {
@@ -203,17 +182,6 @@ impl Sidebar {
                         actions::go_to(&agent, &self.current_session, &self.panes);
                     }
                 }
-                false
-            }
-            // Park the sidebar off screen. A hidden pane cannot be focused to
-            // press a key in, so coming back is the keybind's job — see
-            // `pipe`. Resizing to a narrow rail would be nicer, but Zellij
-            // only resizes in coarse steps and asynchronously, so the width
-            // drifts further every fold; and a pane declared with a fixed
-            // `size=` cannot be resized at all.
-            BareKey::Char('c') => {
-                self.collapsed = true;
-                hide_self();
                 false
             }
             BareKey::Char('p') => {

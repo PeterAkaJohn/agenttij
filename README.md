@@ -22,11 +22,10 @@ The sidebar is an ordinary pane: focus it with your usual pane navigation, then
 | `j` / `k`, `↓` / `↑` | move |
 | `Enter` | go to that agent (switches session if needed) |
 | `p` | peek at it in a floating pane, without leaving your session |
-| `c` | park the sidebar off screen (`Alt z` brings it back) |
 
-Zellij-level, installed for you: `Alt a` summons a sidebar in any session,
-`Alt z` parks and unparks it. Full reference, including how to rebind and how to
-drive it without keybinds: [docs/KEYBINDS.md](docs/KEYBINDS.md).
+Zellij-level: `Alt a` (installed for you) summons a sidebar in any session, and
+`Alt ]` — Zellij's own swap-layout key — folds the sidebar to a status rail and
+back. Full reference: [docs/KEYBINDS.md](docs/KEYBINDS.md).
 
 Peeking is the point. Checking on an agent shouldn't cost you a detach and a
 reattach, so `p` gives you a live view of its pane wherever it is — another
@@ -92,12 +91,12 @@ The layout ships `scope "session"`, so the sidebar lists only this session's
 agents and `Enter` can never throw you out of the workspace, and `solo "true"`,
 which is what parks the others instead of leaving them on screen.
 
-`c` parks the sidebar itself when you want the full width, and `Alt z` brings it
-back. That is a keybind rather than another `c` because a hidden pane cannot be
-focused to press a key in. Note that Zellij identifies a plugin by url *and*
-configuration, so the keybind repeats the workspace layout's configuration — if
-you change one, change both, or the keybind will launch a second sidebar
-instead of talking to the one you have.
+When you want the width back, `Alt ]` folds the sidebar to a status rail and
+folds it out again — same side, same percentage width, because it is a swap
+layout defined alongside the main one rather than something the plugin does to
+itself. Each layout's `rail` block repeats that layout's plugin configuration,
+since Zellij identifies a plugin by url *and* configuration; change one, change
+both.
 
 The catch is a hard one: **panes belong to the session that owns them.** Zellij
 has no way to render another session's pane inside yours, so this only works for
@@ -237,5 +236,5 @@ cargo clippy -p agenttij --target wasm32-wasip1
   discovery of non-reporting agents elsewhere does not work.
 - **Read-only.** The sidebar navigates; it never types into an agent.
 - **A fixed-width pane cannot be resized.** A pane declared `size=26` is
-  immovable, by Zellij's own `resize` action as much as by a plugin — which is
-  why `c` parks the sidebar rather than folding it to a narrow rail.
+  immovable, by Zellij's own `resize` action as much as by a plugin, which is why
+  the layouts use a percentage width and fold via a swap layout.

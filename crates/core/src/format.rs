@@ -2,6 +2,10 @@
 
 use crate::agent::Agent;
 
+/// Below this width a row shows only its status glyph — a label and an age do
+/// not fit, and half a word is worse than none.
+pub const RAIL_MAX_COLS: usize = 8;
+
 /// One sidebar row: `<glyph> <label>       <age>`, exactly `width` wide so the
 /// age column lines up down the list.
 ///
@@ -10,8 +14,14 @@ use crate::agent::Agent;
 /// with `⇢`, because reaching it costs a detach and that should never be a
 /// surprise.
 pub fn row(agent: &Agent, now: u64, width: usize, current_session: &str) -> String {
-    let age = age(now, agent.reported_at);
     let glyph = agent.status.glyph();
+
+    // On a rail there is room for the status and nothing else.
+    if width < RAIL_MAX_COLS {
+        return truncate(&glyph.to_string(), width);
+    }
+
+    let age = age(now, agent.reported_at);
     let elsewhere = if agent.session == current_session {
         ""
     } else {
@@ -107,7 +117,9 @@ mod tests {
             for width in 1..40 {
                 let row = row(agent, 1_020, width, "sess");
                 let rendered = row.chars().count();
-                if width > 3 + age(1_020, agent.reported_at).chars().count() {
+                if width < RAIL_MAX_COLS {
+                    assert!(rendered <= 1, "{row:?} should be a rail at width {width}");
+                } else if width > 3 + age(1_020, agent.reported_at).chars().count() {
                     assert_eq!(rendered, width, "{row:?} at width {width}");
                 } else {
                     assert!(rendered <= width, "{row:?} overflows width {width}");
@@ -117,9 +129,21 @@ mod tests {
     }
 
     #[test]
-    fn a_row_never_wraps_in_a_pane_too_narrow_for_the_age() {
+    fn a_rail_shows_only_the_status() {
         let agent = agent(Status::Done, 1_000, "/home/pp/agenttij");
-        assert_eq!(row(&agent, 1_020, 4, "sess"), "✓ a…");
+
+        assert_eq!(row(&agent, 1_020, 4, "sess"), "✓");
+        assert_eq!(row(&agent, 1_020, 1, "sess"), "✓");
+        assert_eq!(row(&agent, 1_020, 0, "sess"), "");
+    }
+
+    #[test]
+    fn a_rail_row_never_leaks_a_partial_label() {
+        let agent = agent(Status::Running, 900, "/home/pp/api");
+        for width in 0..RAIL_MAX_COLS {
+            let row = row(&agent, 1_020, width, "sess");
+            assert!(row.chars().count() <= 1, "{row:?} at width {width}");
+        }
     }
 
     #[test]

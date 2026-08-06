@@ -24,7 +24,6 @@ plugin_url="file:$plugin_dir/agenttij.wasm"
 # Overridable so the settings patching can be tested against a copy.
 settings="${AGENTTIJ_SETTINGS:-$HOME/.claude/settings.json}"
 keybind="${AGENTTIJ_KEYBIND:-Alt a}"
-fold_keybind="${AGENTTIJ_FOLD_KEYBIND:-Alt z}"
 
 want_keybind=1
 want_grant=1
@@ -73,10 +72,10 @@ add_keybind() {
 
     cp "$zellij_config" "$zellij_config.agenttij.bak"
     python3 "$repo/scripts/zellij-keybinds.py" install "$zellij_config" \
-        "$plugin_url" "$keybind" "$fold_keybind"
+        "$plugin_url" "$keybind"
 
     if zellij --config "$zellij_config" setup --check >/dev/null 2>&1; then
-        echo "  bound '$keybind' and '$fold_keybind' (backup: $zellij_config.agenttij.bak)"
+        echo "  bound '$keybind' (backup: $zellij_config.agenttij.bak)"
     else
         mv "$zellij_config.agenttij.bak" "$zellij_config"
         echo "! config check failed, reverted — add them yourself, see docs/KEYBINDS.md"
@@ -88,7 +87,7 @@ remove_keybind() {
     grep -q "agenttij:begin" "$zellij_config" || return 0
     need_python "keybind removal" || return 0
     cp "$zellij_config" "$zellij_config.agenttij.bak"
-    python3 "$repo/scripts/zellij-keybinds.py" uninstall "$zellij_config" "" "" ""
+    python3 "$repo/scripts/zellij-keybinds.py" uninstall "$zellij_config" "" ""
     echo "  keybinds removed (backup: $zellij_config.agenttij.bak)"
 }
 
@@ -147,7 +146,7 @@ the sidebar is a normal pane: focus it as usual, then j/k to move,
 Enter to jump to an agent, p to peek at one without leaving this session.
 
 '$keybind' summons the sidebar in any session — including one you jumped
-into that has no sidebar of its own. In workspace mode, 'c' parks the sidebar
-and '$fold_keybind' brings it back. To give every new session a sidebar, set
-'default_layout "agenttij-left"' in your Zellij config.
+into that has no sidebar of its own. Zellij's swap-layout key ('Alt ]' by
+default) folds the sidebar to a status rail and back. To give every new
+session a sidebar, set 'default_layout "agenttij-left"' in your Zellij config.
 EOF
