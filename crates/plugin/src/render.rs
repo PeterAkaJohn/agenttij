@@ -1,10 +1,17 @@
 //! Drawing the sidebar.
 //!
-//! Layout arithmetic lives in `agenttij_core::format` where it is tested; this
-//! module only adds colour, selection and placement.
+//! Raw ANSI rather than Zellij's `Text` component. The component can only colour
+//! text with one of the theme's four slots, which made every status look alike;
+//! writing the escapes directly lets a status be any colour the user asked for.
+//! Layout arithmetic stays in `agenttij_core::format`, where it is tested.
 
-use agenttij_core::{format, Agent};
-use zellij_tile::prelude::*;
+use agenttij_core::{format, Agent, Colors};
+
+/// Reset everything: colour, and the reverse video used for the cursor row.
+const RESET: &str = "\u{1b}[0m";
+/// Reverse video marks the selected row, so the cursor is visible whatever
+/// colours the user chose.
+const SELECTED: &str = "\u{1b}[7m";
 
 pub struct View<'a> {
     pub rows: usize,
@@ -18,9 +25,12 @@ pub struct View<'a> {
     pub notice: Option<&'a str>,
     /// Which session we are in, so rows elsewhere can be marked.
     pub current_session: &'a str,
+    pub colors: &'a Colors,
 }
 
 pub fn draw(view: &View) {
+    // Rows are padded to the full width, so the previous frame is overwritten
+    // without a clear — clearing first makes the sidebar flicker every tick.
     if let Some(notice) = view.notice {
         line(notice, 0, view.cols);
         return;
@@ -42,25 +52,34 @@ pub fn draw(view: &View) {
 
     let offset = format::scroll_offset(view.cursor, capacity);
     for (row, agent) in view.agents.iter().skip(offset).take(capacity).enumerate() {
-        let mut text = Text::new(format::row(
-            agent,
-            view.now,
-            view.cols,
-            view.current_session,
-        ))
-        .color_range(agent.status.color_slot(), 0..1);
-        if offset + row == view.cursor {
-            text = text.selected();
+        let (glyph, rest) = format::row_parts(agent, view.now, view.cols, view.current_session);
+        let color = view.colors.of(agent.status);
+        let selected = offset + row == view.cursor;
+
+        at(row);
+        if selected {
+            print!("{SELECTED}");
         }
-        print_text_with_coordinates(text, 0, row, Some(view.cols), Some(1));
+        print!("\u{1b}[{color}m{glyph}{RESET}");
+        if selected {
+            print!("{SELECTED}");
+        }
+        print!("{rest}{RESET}");
     }
 
     if hint_fits {
-        line("j/k ↵  p peek  n new  b back", view.rows - 1, view.cols);
+        line("j/k ↵  p/q peek  n new  b back", view.rows - 1, view.cols);
     }
 }
 
+/// Moves to the start of a row, which is where every line begins.
+fn at(row: usize) {
+    print!("\u{1b}[{};1H", row + 1);
+}
+
 fn line(content: &str, row: usize, cols: usize) {
-    let text = Text::new(format::truncate(content, cols));
-    print_text_with_coordinates(text, 0, row, Some(cols), Some(1));
+    let text = format::truncate(content, cols);
+    let padding = cols.saturating_sub(text.chars().count());
+    at(row);
+    print!("{text}{}{RESET}", " ".repeat(padding));
 }

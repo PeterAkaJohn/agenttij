@@ -1,5 +1,6 @@
 //! Plugin configuration, as written in a layout or passed to `zellij plugin -c`.
 
+use crate::color::Colors;
 use std::collections::BTreeMap;
 
 /// What the sidebar calls itself in its pane frame. Without this the frame shows
@@ -28,6 +29,8 @@ pub struct Config {
     pub scope: Scope,
     /// Pane frame title.
     pub title: String,
+    /// Status glyph colours.
+    pub colors: Colors,
     /// Command run when an agent becomes blocked on you, as words to exec. The
     /// agent's name is appended. Empty means no notification.
     pub notify: Vec<String>,
@@ -42,6 +45,7 @@ impl Default for Config {
             agents: DEFAULT_AGENTS.iter().map(|name| name.to_string()).collect(),
             scope: Scope::default(),
             title: DEFAULT_TITLE.to_string(),
+            colors: Colors::default(),
             notify: Vec::new(),
             solo: false,
         }
@@ -82,6 +86,11 @@ impl Config {
             .map(|raw| raw.split_whitespace().map(str::to_owned).collect())
             .unwrap_or_default();
 
+        let colors = configuration
+            .get("colors")
+            .map(|raw| Colors::from_pairs(raw))
+            .unwrap_or_default();
+
         let defaults = Self::default();
         Self {
             agents: if agents.is_empty() {
@@ -91,6 +100,7 @@ impl Config {
             },
             scope,
             title,
+            colors,
             notify,
             solo,
         }
@@ -149,6 +159,17 @@ mod tests {
             Config::from_map(&map(&[("title", " sessions ")])).title,
             "sessions"
         );
+    }
+
+    #[test]
+    fn colours_default_and_can_be_overridden_per_status() {
+        use crate::agent::Status;
+
+        assert_eq!(Config::from_map(&map(&[])).colors, Colors::default());
+
+        let config = Config::from_map(&map(&[("colors", "running=#ff8800")]));
+        assert_eq!(config.colors.of(Status::Running), "38;2;255;136;0");
+        assert_eq!(config.colors.of(Status::Done), "32", "default kept");
     }
 
     #[test]

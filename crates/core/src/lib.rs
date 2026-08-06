@@ -6,11 +6,13 @@
 //! a plain `cargo test`.
 
 pub mod agent;
+pub mod color;
 pub mod config;
 pub mod format;
 pub mod panes;
 pub mod scan;
 
 pub use agent::{Agent, Status};
+pub use color::Colors;
 pub use config::Config;
 pub use panes::PaneSnapshot;

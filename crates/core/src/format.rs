@@ -14,11 +14,29 @@ pub const RAIL_MAX_COLS: usize = 8;
 /// with `⇢`, because reaching it costs a detach and that should never be a
 /// surprise.
 pub fn row(agent: &Agent, now: u64, width: usize, current_session: &str) -> String {
+    let (glyph, rest) = row_parts(agent, now, width, current_session);
+    format!("{glyph}{rest}")
+}
+
+/// A row split where its colour changes: the status cell, then everything else.
+///
+/// The caller paints the first part and leaves the second alone, which is why
+/// this is split at all — the glyph carries the status colour and the label must
+/// not.
+pub fn row_parts(agent: &Agent, now: u64, width: usize, current_session: &str) -> (String, String) {
     let glyph = agent.status.glyph();
 
-    // On a rail there is room for the status and nothing else.
+    // On a rail there is room for the status and nothing else, so centre it
+    // rather than leaving it hanging off the left edge.
     if width < RAIL_MAX_COLS {
-        return truncate(&glyph.to_string(), width);
+        if width == 0 {
+            return (String::new(), String::new());
+        }
+        let left = (width - 1) / 2;
+        return (
+            format!("{}{glyph}", " ".repeat(left)),
+            " ".repeat(width - 1 - left),
+        );
     }
 
     let age = age(now, agent.reported_at);
@@ -32,14 +50,15 @@ pub fn row(agent: &Agent, now: u64, width: usize, current_session: &str) -> Stri
     // age itself.
     let reserved = 3 + elsewhere.chars().count() + age.chars().count();
     if width <= reserved {
-        return truncate(&format!("{glyph} {elsewhere}{}", agent.label()), width);
+        let rest = truncate(&format!(" {elsewhere}{}", agent.label()), width - 1);
+        return (glyph.to_string(), rest);
     }
 
     let label_width = width - reserved;
     let label = truncate(agent.label(), label_width);
     let gap = " ".repeat(label_width - label.chars().count());
 
-    format!("{glyph} {elsewhere}{label}{gap} {age}")
+    (glyph.to_string(), format!(" {elsewhere}{label}{gap} {age}"))
 }
 
 /// First row to show, so the cursor stays visible in a list taller than the
@@ -119,7 +138,8 @@ mod tests {
                 let row = row(agent, 1_020, width, "sess");
                 let rendered = row.chars().count();
                 if width < RAIL_MAX_COLS {
-                    assert!(rendered <= 1, "{row:?} should be a rail at width {width}");
+                    // A rail row is padded, so it still fills its width.
+                    assert_eq!(rendered, width, "{row:?} as a rail at width {width}");
                 } else if width > 3 + age(1_020, agent.reported_at).chars().count() {
                     assert_eq!(rendered, width, "{row:?} at width {width}");
                 } else {
@@ -130,10 +150,11 @@ mod tests {
     }
 
     #[test]
-    fn a_rail_shows_only_the_status() {
+    fn a_rail_centres_the_status_and_shows_nothing_else() {
         let agent = agent(Status::Done, 1_000, "/home/pp/agenttij");
 
-        assert_eq!(row(&agent, 1_020, 4, "sess"), "✓");
+        assert_eq!(row(&agent, 1_020, 5, "sess"), "  ✓  ");
+        assert_eq!(row(&agent, 1_020, 4, "sess"), " ✓  ");
         assert_eq!(row(&agent, 1_020, 1, "sess"), "✓");
         assert_eq!(row(&agent, 1_020, 0, "sess"), "");
     }
@@ -141,10 +162,20 @@ mod tests {
     #[test]
     fn a_rail_row_never_leaks_a_partial_label() {
         let agent = agent(Status::Running, 900, "/home/pp/api");
-        for width in 0..RAIL_MAX_COLS {
-            let row = row(&agent, 1_020, width, "sess");
-            assert!(row.chars().count() <= 1, "{row:?} at width {width}");
+        for width in 1..RAIL_MAX_COLS {
+            let (glyph, rest) = row_parts(&agent, 1_020, width, "sess");
+            assert_eq!(glyph.trim(), "◐", "at width {width}");
+            assert!(rest.trim().is_empty(), "{rest:?} at width {width}");
         }
+    }
+
+    #[test]
+    fn only_the_glyph_is_in_the_coloured_part() {
+        let agent = agent(Status::Running, 900, "/home/pp/api");
+        let (glyph, rest) = row_parts(&agent, 1_020, 20, "sess");
+
+        assert_eq!(glyph, "◐");
+        assert!(rest.starts_with(' ') && rest.contains("api"));
     }
 
     #[test]

@@ -17,6 +17,8 @@ focused.
 | `Enter` | go to the selected agent |
 | `p` | peek at it without leaving this session |
 | `n` | new agent pane in the slot, parking the current one |
+| `b` | back to the session you came from |
+| `q`, `Esc` | dismiss a peek |
 
 **`Enter`** behaves differently depending on where the agent is and how the
 sidebar is configured:
@@ -26,6 +28,10 @@ sidebar is configured:
 | Agent in this session, `solo "true"` | swaps it into the slot and parks the previous agent — no detach |
 | Agent in this session, otherwise | plain pane focus |
 | Agent in another session (`⇢` in the list) | detaches this client and reattaches to that session, landing on the agent's pane |
+
+While a peek is open **any** key dismisses it, and then still does its own job —
+peeking costs you no keystrokes, and there is no mode to remember. `q` and `Esc`
+are the two that only dismiss.
 
 In solo mode every pane in the session is listed, not just agents — a plain
 shell appears as `·` with its pane title, sorted below the agents. That is what

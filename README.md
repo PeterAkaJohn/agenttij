@@ -25,6 +25,8 @@ The sidebar is an ordinary pane: focus it with your usual pane navigation, then
 | `Enter` | go to that agent (switches session if needed) |
 | `p` | peek at it in a floating pane, without leaving your session |
 | `n` | start a new agent pane in the slot, parking the current one |
+| `b` | back to the session you came from |
+| `q`, `Esc` | dismiss a peek (any key dismisses it, and still does its job) |
 
 Zellij-level: `Alt a` (installed for you) summons a sidebar in any session, and
 `Alt ]` — Zellij's own swap-layout key — folds the sidebar to a status rail and
@@ -152,7 +154,7 @@ To give every new session its own docked sidebar instead, set
 
 ## Configuration
 
-Three knobs:
+The knobs:
 
 ```kdl
 pane size=26 {
@@ -163,6 +165,12 @@ pane size=26 {
         scope "session"
         // "true" to show one agent at a time, parking the others off screen
         solo "true"
+        // what the pane frame calls itself
+        title "agents"
+        // per-status colours: a name, a 256-colour index, or #rrggbb
+        colors "needs-input=yellow,running=blue,done=green,idle=bright-black"
+        // run something when an agent becomes blocked on you
+        notify "notify-send -u critical"
     }
 }
 ```

@@ -33,6 +33,8 @@ pub struct Sidebar {
     live_sessions: Vec<String>,
     /// The session we last switched away from, for `b`.
     previous_session: Option<String>,
+    /// The open peek pane, so `q` can close it and `p` never stacks two.
+    peek: Option<PaneId>,
     current_session: String,
     /// Host clock from the last scan.
     now: u64,
@@ -108,6 +110,7 @@ impl ZellijPlugin for Sidebar {
             now: self.now,
             notice: self.notice(),
             current_session: &self.current_session,
+            colors: &self.config.colors,
         });
     }
 }
@@ -196,7 +199,14 @@ impl Sidebar {
             return false;
         }
 
+        // A peek is a still picture over your work, so the next key dismisses it
+        // whatever that key is — and then still does its job, so peeking never
+        // costs you a keystroke. q and Esc are the keys that only dismiss.
+        let had_peek = self.peek.is_some();
+        self.close_peek();
+
         match key.bare_key {
+            BareKey::Char('q') | BareKey::Esc => had_peek,
             BareKey::Down | BareKey::Char('j') => self.move_cursor(1),
             BareKey::Up | BareKey::Char('k') => self.move_cursor(-1),
             BareKey::Enter => {
@@ -224,8 +234,8 @@ impl Sidebar {
                 false
             }
             BareKey::Char('p') => {
-                if let Some(agent) = self.selected_agent() {
-                    actions::preview(agent);
+                if let Some(agent) = self.selected_agent().cloned() {
+                    self.peek = actions::preview(&agent);
                 }
                 false
             }
@@ -242,6 +252,12 @@ impl Sidebar {
         let next = self.cursor().saturating_add_signed(delta).min(last);
         self.selected = Some((self.agents[next].session.clone(), self.agents[next].pane));
         true
+    }
+
+    fn close_peek(&mut self) {
+        if let Some(peek) = self.peek.take() {
+            close_pane_with_id(peek);
+        }
     }
 
     fn cursor(&self) -> usize {

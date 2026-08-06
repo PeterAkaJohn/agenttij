@@ -119,18 +119,22 @@ fn own_cwd() -> PathBuf {
 ///
 /// The cost is a poll instead of a stream: one `dump-screen` per second while
 /// the preview is open, and a redraw you can see. Worth it for a preview that
-/// is never quietly stale. `q` or `Esc` closes it.
-pub fn preview(agent: &Agent) {
+/// is never quietly stale.
+///
+/// Returns the pane it opened, so the sidebar can close it again.
+pub fn preview(agent: &Agent) -> Option<PaneId> {
     // Arguments are passed positionally rather than interpolated, so a session
     // name with a quote or a space in it cannot break out of the script.
     //
-    // `read` doubles as the poll delay and the key handler: it waits a second
-    // for a keypress, and a timeout just means "redraw". A peek is read-only —
-    // there is nothing to type into — so q and Esc close it. Needs bash for
-    // `read -t`; sh cannot time out a read.
+    // A peek is a still picture you cannot type into, so any key dismisses it.
+    //
+    // The key has to come from `/dev/tty`, not stdin: Zellij gives a command
+    // pane /dev/null for stdin, so a `read` there sees EOF instantly — which
+    // would also spin this loop, since the read doubles as the one-second delay.
+    // Needs bash; sh cannot time out a read.
     const POLL: &str = "while :; do \
          clear; zellij --session \"$1\" action dump-screen --pane-id \"$2\" --ansi; \
-         IFS= read -rsn1 -t 1 key && case \"$key\" in q|$'\\e') exit 0;; esac; \
+         IFS= read -rsn1 -t 1 key </dev/tty && exit 0; \
        done";
 
     let command = CommandToRun {
@@ -156,5 +160,8 @@ pub fn preview(agent: &Agent) {
         None, // borderless
     );
 
-    open_command_pane_floating(command, coordinates, BTreeMap::new());
+    // The peek takes focus, which is what lets it catch the key that dismisses
+    // it. Refocusing the sidebar here does not work anyway: the open is applied
+    // after this call and takes the focus back.
+    open_command_pane_floating(command, coordinates, BTreeMap::new())
 }
