@@ -1,0 +1,42 @@
+// Workspace mode: one persistent sidebar, and a stack of agents beside it.
+//
+// The sidebar is a sibling of the stack, so it never moves and never reloads —
+// picking an agent expands that agent's pane in place and collapses the others
+// to title lines. This is the layout to use if you want the sidebar to stay put
+// while the right-hand side changes.
+//
+// The tradeoff: panes belong to the session that owns them, so this only works
+// for agents running in *this* session. Start them here — a new pane opened
+// while the stack is focused joins the stack automatically. Agents in other
+// sessions still show up in the sidebar; reaching those means jumping (Enter),
+// which detaches and reattaches, or peeking (p), which does not.
+//
+// The stack starts with two panes on purpose. A `stacked=true` group holding a
+// single pane is not treated as a stack, and panes opened next to it split
+// normally instead of joining. With two, everything opened afterwards joins.
+//
+// agenttij never calls `stack_panes` itself: it does not need to, since new
+// panes join on their own, and re-stacking already-stacked panes is a
+// needless risk when a pane holds a running agent.
+layout {
+    pane size=1 borderless=true {
+        plugin location="zellij:tab-bar"
+    }
+    pane split_direction="vertical" {
+        pane size=26 {
+            plugin location="file:~/.config/zellij/plugins/agenttij.wasm" {
+                // Only this session's agents, so Enter always stays in the
+                // stack and never detaches you out of the workspace. Drop this
+                // to see every agent on the machine, marked with ⇢.
+                scope "session"
+            }
+        }
+        pane stacked=true {
+            pane
+            pane
+        }
+    }
+    pane size=2 borderless=true {
+        plugin location="zellij:status-bar"
+    }
+}

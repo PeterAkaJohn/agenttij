@@ -112,7 +112,8 @@ if [ "$uninstall" -eq 1 ]; then
     set_permissions revoke
     remove_keybind
     rm -f "$hook_path" "$plugin_dir/agenttij.wasm" \
-        "$layout_dir/agenttij-left.kdl" "$layout_dir/agenttij-right.kdl"
+        "$layout_dir/agenttij-left.kdl" "$layout_dir/agenttij-right.kdl" \
+        "$layout_dir/agenttij-workspace.kdl"
     echo "removed."
     exit 0
 fi
@@ -126,7 +127,7 @@ cp "$wasm" "$plugin_dir/agenttij.wasm"
 
 echo "installing layouts -> $layout_dir"
 mkdir -p "$layout_dir"
-for side in left right; do
+for side in left right workspace; do
     sed "s|file:~/.config/zellij/plugins/agenttij.wasm|$plugin_url|" \
         "$repo/layouts/agenttij-$side.kdl" >"$layout_dir/agenttij-$side.kdl"
 done

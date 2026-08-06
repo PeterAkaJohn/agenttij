@@ -54,6 +54,48 @@ keyed by plugin URL, so a rebuild installed elsewhere gets asked again.
 Which side the sidebar sits on is a layout property, not a plugin setting —
 use `agenttij-right`, or edit the layout and change `size=26` to taste.
 
+### Workspace mode: a sidebar that never reloads
+
+```sh
+zellij --new-session-with-layout agenttij-workspace
+```
+
+This is the layout to use if you want the sidebar to *stay put* while the area
+beside it changes. The sidebar and a **pane stack** are siblings in one tab, so
+picking an agent expands that agent's pane in place and collapses the others to
+title lines. The sidebar never moves, never re-renders from scratch, and there
+is no detach — `Enter` is a plain pane focus.
+
+```
+┌ agents ────┬──────────────────────────┐
+│ ● bravo    │ agent-alpha              │  ← collapsed to a title line
+│ ◐ delta    ├──────────────────────────┤
+│ ✓ alpha    │                          │
+│ ○ charlie  │ bravo, expanded          │  ← the selected agent
+│            │                          │
+└────────────┴──────────────────────────┘
+```
+
+Start agents in this session: a new pane opened while a stack pane is focused
+joins the stack on its own. The layout ships `scope "session"` so the sidebar
+lists only this session's agents and `Enter` can never throw you out of the
+workspace.
+
+The catch is a hard one: **panes belong to the session that owns them.** Zellij
+has no way to render another session's pane inside yours, so this only works for
+agents running here. That is also why jumping to another session "reloads" the
+sidebar — it is a real detach and reattach, with a different plugin instance on
+the other side. If you want the persistent-sidebar feel, run your agents in one
+workspace session rather than one session each.
+
+Tabs cannot do this: switching tabs replaces the whole screen, sidebar
+included. You can put a sidebar in every tab via `new_tab_template`, but that is
+one plugin instance per tab with its own selection, not one that persists.
+
+Outside workspace mode the sidebar lists agents everywhere, sorting this
+session's agents first and marking the rest with `⇢` — so a row that will cost
+you a detach always says so before you press `Enter`.
+
 ### Landing in a session with no sidebar
 
 Jumping to a session that has no sidebar leaves you nothing to jump back with.
@@ -74,12 +116,15 @@ To give every new session its own docked sidebar instead, set
 
 ## Configuration
 
-One knob, for the process names used to spot agents that aren't reporting:
+Two knobs:
 
 ```kdl
 pane size=26 {
     plugin location="file:~/.config/zellij/plugins/agenttij.wasm" {
+        // process names used to spot agents that are not reporting
         agents "claude,codex,aider,gemini,my-agent"
+        // "all" (default) or "session" to list only this session's agents
+        scope "session"
     }
 }
 ```
@@ -135,7 +180,7 @@ runtime. Anything slow is handed over and comes back as an event:
 crates/core    agenttij-core — zero dependencies, all the decisions, unit-tested
 crates/plugin  agenttij — the wasm plugin: lifecycle, rendering, navigation
 hooks/         the shell hook agents run
-layouts/       left and right sidebar layouts
+layouts/       sidebar layouts: left, right, and workspace (persistent sidebar)
 scripts/       installer
 docs/PLAN.md   design notes and the Zellij constraints they follow from
 ```

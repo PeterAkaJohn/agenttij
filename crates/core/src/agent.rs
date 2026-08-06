@@ -84,8 +84,17 @@ impl Agent {
 }
 
 /// Orders agents by attention needed, then most recently active first.
-pub fn sort_for_display(agents: &mut [Agent]) {
-    agents.sort_by_key(|agent| (agent.status, Reverse(agent.reported_at)));
+///
+/// Agents in this session sort above agents elsewhere, so the rows you can
+/// reach without detaching are the ones under the cursor first.
+pub fn sort_for_display(agents: &mut [Agent], current_session: &str) {
+    agents.sort_by_key(|agent| {
+        (
+            agent.session != current_session,
+            agent.status,
+            Reverse(agent.reported_at),
+        )
+    });
 }
 
 #[cfg(test)]
@@ -123,8 +132,21 @@ mod tests {
             agent(Status::NeedsInput, 1, "/b"),
             agent(Status::Running, 900, "/c"),
         ];
-        sort_for_display(&mut agents);
+        sort_for_display(&mut agents, "sess");
         let labels: Vec<&str> = agents.iter().map(Agent::label).collect();
         assert_eq!(labels, vec!["b", "c", "a"]);
+    }
+
+    /// Reaching an agent in another session costs a detach, so those rows sort
+    /// below everything local even when they are the ones shouting.
+    #[test]
+    fn this_session_sorts_above_other_sessions() {
+        let mut elsewhere = agent(Status::NeedsInput, 900, "/remote");
+        elsewhere.session = "other".into();
+        let mut agents = vec![elsewhere, agent(Status::Idle, 1, "/local")];
+
+        sort_for_display(&mut agents, "sess");
+        let labels: Vec<&str> = agents.iter().map(Agent::label).collect();
+        assert_eq!(labels, vec!["local", "remote"]);
     }
 }

@@ -5,24 +5,38 @@ use std::collections::BTreeMap;
 /// Process names that mark a pane as an agent when nothing is reporting on it.
 pub const DEFAULT_AGENTS: [&str; 4] = ["claude", "codex", "aider", "gemini"];
 
+/// Which agents a sidebar lists.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Scope {
+    /// Every agent on the machine. Picking one in another session means
+    /// detaching from this one.
+    #[default]
+    All,
+    /// Only agents in this session, for a workspace layout where picking an
+    /// agent should never move you out of the session you are sitting in.
+    Session,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Config {
     /// Lowercased names matched against pane titles for discovery.
     pub agents: Vec<String>,
+    pub scope: Scope,
 }
 
 impl Default for Config {
     fn default() -> Self {
         Self {
             agents: DEFAULT_AGENTS.iter().map(|name| name.to_string()).collect(),
+            scope: Scope::default(),
         }
     }
 }
 
 impl Config {
-    /// Reads the `agents` key, a comma-separated list. Anything unparseable
-    /// falls back to the defaults: a typo in a layout should not leave the
-    /// sidebar unable to recognise anything.
+    /// Reads `agents` (a comma-separated list) and `scope`. Anything
+    /// unparseable falls back to the default: a typo in a layout should not
+    /// leave the sidebar unable to recognise anything.
     pub fn from_map(configuration: &BTreeMap<String, String>) -> Self {
         let agents: Vec<String> = configuration
             .get("agents")
@@ -34,10 +48,20 @@ impl Config {
             })
             .unwrap_or_default();
 
-        if agents.is_empty() {
-            return Self::default();
+        let scope = match configuration.get("scope").map(|raw| raw.trim()) {
+            Some("session") => Scope::Session,
+            _ => Scope::All,
+        };
+
+        let defaults = Self::default();
+        Self {
+            agents: if agents.is_empty() {
+                defaults.agents
+            } else {
+                agents
+            },
+            scope,
         }
-        Self { agents }
     }
 }
 
@@ -62,6 +86,34 @@ mod tests {
     fn reads_and_normalises_a_list() {
         let config = Config::from_map(&map(&[("agents", "Claude, my-agent ,CODEX")]));
         assert_eq!(config.agents, vec!["claude", "my-agent", "codex"]);
+    }
+
+    #[test]
+    fn scope_defaults_to_every_session() {
+        assert_eq!(Config::from_map(&map(&[])).scope, Scope::All);
+        assert_eq!(
+            Config::from_map(&map(&[("scope", "nonsense")])).scope,
+            Scope::All
+        );
+    }
+
+    #[test]
+    fn scope_can_be_narrowed_to_this_session() {
+        assert_eq!(
+            Config::from_map(&map(&[("scope", "session")])).scope,
+            Scope::Session
+        );
+        assert_eq!(
+            Config::from_map(&map(&[("scope", " session ")])).scope,
+            Scope::Session
+        );
+    }
+
+    #[test]
+    fn scope_and_agents_are_read_independently() {
+        let config = Config::from_map(&map(&[("agents", "claude"), ("scope", "session")]));
+        assert_eq!(config.agents, vec!["claude"]);
+        assert_eq!(config.scope, Scope::Session);
     }
 
     #[test]

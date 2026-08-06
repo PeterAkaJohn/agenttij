@@ -6,21 +6,30 @@ use crate::agent::Agent;
 /// age column lines up down the list.
 ///
 /// Colour and selection are the plugin's business; this is only the layout.
-pub fn row(agent: &Agent, now: u64, width: usize) -> String {
+/// `current_session` marks which rows are local: an agent elsewhere is prefixed
+/// with `⇢`, because reaching it costs a detach and that should never be a
+/// surprise.
+pub fn row(agent: &Agent, now: u64, width: usize, current_session: &str) -> String {
     let age = age(now, agent.reported_at);
     let glyph = agent.status.glyph();
+    let elsewhere = if agent.session == current_session {
+        ""
+    } else {
+        "⇢"
+    };
 
-    // glyph, its space, the gap before the age, and the age itself.
-    let reserved = 3 + age.chars().count();
+    // glyph, its space, the elsewhere marker, the gap before the age, and the
+    // age itself.
+    let reserved = 3 + elsewhere.chars().count() + age.chars().count();
     if width <= reserved {
-        return truncate(&format!("{glyph} {}", agent.label()), width);
+        return truncate(&format!("{glyph} {elsewhere}{}", agent.label()), width);
     }
 
     let label_width = width - reserved;
     let label = truncate(agent.label(), label_width);
     let gap = " ".repeat(label_width - label.chars().count());
 
-    format!("{glyph} {label}{gap} {age}")
+    format!("{glyph} {elsewhere}{label}{gap} {age}")
 }
 
 /// First row to show, so the cursor stays visible in a list taller than the
@@ -79,7 +88,7 @@ mod tests {
     #[test]
     fn a_row_is_glyph_label_and_right_aligned_age() {
         let agent = agent(Status::Running, 900, "/home/pp/api");
-        assert_eq!(row(&agent, 1_020, 20), "◐ api             2m");
+        assert_eq!(row(&agent, 1_020, 20, "sess"), "◐ api             2m");
     }
 
     #[test]
@@ -96,7 +105,7 @@ mod tests {
 
         for agent in &cases {
             for width in 1..40 {
-                let row = row(agent, 1_020, width);
+                let row = row(agent, 1_020, width, "sess");
                 let rendered = row.chars().count();
                 if width > 3 + age(1_020, agent.reported_at).chars().count() {
                     assert_eq!(rendered, width, "{row:?} at width {width}");
@@ -110,7 +119,7 @@ mod tests {
     #[test]
     fn a_row_never_wraps_in_a_pane_too_narrow_for_the_age() {
         let agent = agent(Status::Done, 1_000, "/home/pp/agenttij");
-        assert_eq!(row(&agent, 1_020, 4), "✓ a…");
+        assert_eq!(row(&agent, 1_020, 4, "sess"), "✓ a…");
     }
 
     #[test]

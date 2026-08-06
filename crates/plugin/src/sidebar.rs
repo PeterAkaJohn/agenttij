@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 
-use agenttij_core::{agent, panes, scan, Agent, Config, PaneSnapshot};
+use agenttij_core::{agent, config::Scope, panes, scan, Agent, Config, PaneSnapshot};
 use zellij_tile::prelude::*;
 
 use crate::{actions, render, snapshot};
@@ -97,6 +97,7 @@ impl ZellijPlugin for Sidebar {
             cursor: self.cursor(),
             now: self.now,
             notice: self.notice(),
+            current_session: &self.current_session,
         });
     }
 }
@@ -138,7 +139,11 @@ impl Sidebar {
         let mut agents = panes::reconcile(self.reported.clone(), &self.panes, &self.live_sessions);
         let discovered = panes::discover(&self.panes, &agents, &self.config.agents);
         agents.extend(discovered);
-        agent::sort_for_display(&mut agents);
+
+        if self.config.scope == Scope::Session {
+            agents.retain(|agent| agent.session == self.current_session);
+        }
+        agent::sort_for_display(&mut agents, &self.current_session);
 
         self.agents = agents;
         self.resync_selection();

@@ -16,6 +16,8 @@ pub struct View<'a> {
     /// Shown instead of the list when there is nothing to show, or nothing we
     /// are allowed to show.
     pub notice: Option<&'a str>,
+    /// Which session we are in, so rows elsewhere can be marked.
+    pub current_session: &'a str,
 }
 
 pub fn draw(view: &View) {
@@ -40,8 +42,13 @@ pub fn draw(view: &View) {
 
     let offset = format::scroll_offset(view.cursor, capacity);
     for (row, agent) in view.agents.iter().skip(offset).take(capacity).enumerate() {
-        let mut text = Text::new(format::row(agent, view.now, view.cols))
-            .color_range(agent.status.color_slot(), 0..1);
+        let mut text = Text::new(format::row(
+            agent,
+            view.now,
+            view.cols,
+            view.current_session,
+        ))
+        .color_range(agent.status.color_slot(), 0..1);
         if offset + row == view.cursor {
             text = text.selected();
         }
