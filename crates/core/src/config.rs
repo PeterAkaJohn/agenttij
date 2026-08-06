@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 
 /// Process names that mark a pane as an agent when nothing is reporting on it.
-pub const DEFAULT_AGENTS: [&str; 4] = ["claude", "codex", "aider", "gemini"];
+pub const DEFAULT_AGENTS: [&str; 5] = ["claude", "codex", "opencode", "aider", "gemini"];
 
 /// Which agents a sidebar lists.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

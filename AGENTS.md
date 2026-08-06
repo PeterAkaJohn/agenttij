@@ -24,7 +24,8 @@ one, then `zellij -s <session> action start-or-reload-plugin "file:$HOME/.config
 ```
 crates/core    agenttij-core — zero dependencies, all the decisions, unit-tested
 crates/plugin  agenttij — wasm: lifecycle, rendering, navigation
-hooks/         the shell hook agents run
+hooks/         the shell hook agents run — tool-agnostic: `$1` is the state
+integrations/  per-tool glue that calls that hook (opencode plugin)
 layouts/       left, right, workspace (+ a `rail` swap layout in each)
 scripts/       installer and its three helpers
 ```

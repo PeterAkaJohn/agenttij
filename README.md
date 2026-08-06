@@ -196,6 +196,27 @@ an agent process to a Zellij pane.
 State goes in files rather than plugin memory so that a sidebar in a session
 that started later still sees every running agent, and a reload loses nothing.
 
+### Other agents
+
+The hook is not Claude-specific: it takes a state word as its argument and reads
+`$ZELLIJ_SESSION_NAME` / `$ZELLIJ_PANE_ID` from the environment, so anything that
+can run a command on an event can feed the sidebar.
+
+**opencode** ships a plugin system, and `integrations/opencode/agenttij.js` uses
+it. Copy that file to `~/.config/opencode/plugins/`:
+
+| opencode event | Status |
+|---|---|
+| `session.created` | idle |
+| `tool.execute.before` | running |
+| `permission.asked` | needs input |
+| `session.idle` | done |
+| `session.deleted` | removed |
+
+For anything else, call `agenttij-state.sh <state>` from whatever event
+mechanism it has. Without one, a tool still appears — by pane title if its name
+is in `agents`, and always in a solo workspace, just without a live status.
+
 Agents that never report are still listed, discovered by pane title, as
 `?`/unknown. Note that Claude Code sets its own terminal title, so this
 fallback mostly helps *other* tools; hooked agents don't need it.
