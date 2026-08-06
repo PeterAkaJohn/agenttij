@@ -16,6 +16,7 @@ focused.
 | `k`, `↑` | previous agent |
 | `Enter` | go to the selected agent |
 | `p` | peek at it without leaving this session |
+| `n` | new agent pane in the slot, parking the current one |
 
 **`Enter`** behaves differently depending on where the agent is and how the
 sidebar is configured:
@@ -25,6 +26,16 @@ sidebar is configured:
 | Agent in this session, `solo "true"` | swaps it into the slot and parks the previous agent — no detach |
 | Agent in this session, otherwise | plain pane focus |
 | Agent in another session (`⇢` in the list) | detaches this client and reattaches to that session, landing on the agent's pane |
+
+**`n`** opens a fresh terminal *in place of* whatever is in the slot, suspending
+it rather than splitting the screen — this is the "managed pane" that keeps
+workspace mode down to one agent on screen. Close the new pane and Zellij brings
+the suspended one back, so the slot is never empty and starting an agent never
+costs you the one you were looking at. Outside solo mode there is no slot to
+manage, so `n` is an ordinary new pane.
+
+Zellij's own `new pane` binding (`Ctrl p`, then `n`) splits instead, leaving two
+panes on screen. That is why `n` exists.
 
 **`p`** opens a floating pane polling `dump-screen` once a second. It reaches
 panes anywhere — another session, a background tab, a session nobody is attached
@@ -73,6 +84,10 @@ entirely, and `--uninstall` removes it, restoring the file byte for byte.
 
 Two things to know:
 
+- **`n` needs the `OpenTerminalsOrPlugins` permission.** The installer grants it,
+  but a sidebar installed before `n` existed was granted three permissions
+  rather than four — re-run `scripts/install.sh`, or `n` will be denied in
+  silence.
 - **Keybinds are read when a session starts.** Sessions already running when you
   installed will not have them — this is the usual reason a binding "does not
   work". Start a new session, or use the manual commands below.

@@ -22,6 +22,7 @@ The sidebar is an ordinary pane: focus it with your usual pane navigation, then
 | `j` / `k`, `↓` / `↑` | move |
 | `Enter` | go to that agent (switches session if needed) |
 | `p` | peek at it in a floating pane, without leaving your session |
+| `n` | start a new agent pane in the slot, parking the current one |
 
 Zellij-level: `Alt a` (installed for you) summons a sidebar in any session, and
 `Alt ]` — Zellij's own swap-layout key — folds the sidebar to a status rail and
@@ -86,7 +87,10 @@ is no detach: `Enter` is a pane swap.
 └────────────┴──────────────────────────┘
 ```
 
-Open agents however you like in this session — the first swap parks the extras.
+Start agents with `n`: it opens a terminal *in place of* the one in the slot and
+suspends that one, instead of splitting the screen the way Zellij's own new-pane
+binding does. Close a pane and the suspended one comes back. Opening panes any
+other way works too — the first swap parks the extras.
 The layout ships `scope "session"`, so the sidebar lists only this session's
 agents and `Enter` can never throw you out of the workspace, and `solo "true"`,
 which is what parks the others instead of leaving them on screen.

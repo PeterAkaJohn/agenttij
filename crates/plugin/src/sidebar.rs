@@ -48,6 +48,7 @@ impl ZellijPlugin for Sidebar {
             PermissionType::ReadApplicationState, // session and pane metadata
             PermissionType::ChangeApplicationState, // focus a pane, switch session
             PermissionType::RunCommands,          // read state files, open a preview
+            PermissionType::OpenTerminalsOrPlugins, // start an agent pane with `n`
         ]);
         subscribe(&[
             EventType::Timer,
@@ -182,6 +183,12 @@ impl Sidebar {
                         actions::go_to(&agent, &self.current_session, &self.panes);
                     }
                 }
+                false
+            }
+            // A new agent pane that takes over the slot, parking the current
+            // one rather than splitting the screen with it.
+            BareKey::Char('n') => {
+                actions::new_in_slot(&self.panes, &self.current_session, self.config.solo);
                 false
             }
             BareKey::Char('p') => {

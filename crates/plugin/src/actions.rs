@@ -1,6 +1,7 @@
 //! What the sidebar does with the agent you picked: peek at it, or go to it.
 
 use std::collections::BTreeMap;
+use std::path::PathBuf;
 
 use agenttij_core::{panes, Agent, PaneSnapshot};
 use zellij_tile::prelude::*;
@@ -43,6 +44,37 @@ pub fn solo(agent: &Agent, all_panes: &[PaneSnapshot], session: &str) {
         // Everything is parked, so there is no slot to take over.
         None => show_pane_with_id(target, false, true),
     }
+}
+
+/// Opens a fresh terminal in the workspace slot, parking whatever is there.
+///
+/// `close_replaced_pane: false` suspends the replaced pane instead of closing
+/// it, and Zellij brings it back when the new pane exits — so starting an agent
+/// never costs you the one you were looking at, and the slot is never empty.
+///
+/// Without solo mode there is no slot to manage, so this is an ordinary new
+/// pane.
+pub fn new_in_slot(all_panes: &[PaneSnapshot], session: &str, solo: bool) {
+    let tab = get_focused_pane_info().ok().map(|(tab, _)| tab);
+    let slot = tab.and_then(|tab| panes::visible_terminal(all_panes, session, tab));
+
+    let Some(slot) = slot.filter(|_| solo) else {
+        open_terminal(own_cwd());
+        return;
+    };
+
+    let replaced = PaneId::Terminal(slot);
+    let cwd = get_pane_cwd(replaced).unwrap_or_else(|_| own_cwd());
+
+    // Opening in place deliberately does not move focus, so we do it ourselves:
+    // a new pane you have to navigate to is not much of a shortcut.
+    if let Some(opened) = open_terminal_pane_in_place_of_pane_id(replaced, cwd, false) {
+        focus_pane_with_id(opened, false, false);
+    }
+}
+
+fn own_cwd() -> PathBuf {
+    get_plugin_ids().initial_cwd
 }
 
 /// Repeatedly dumps an agent's pane into a floating pane, so you can check on

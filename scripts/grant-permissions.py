@@ -19,6 +19,7 @@ PERMISSIONS = (
     "ReadApplicationState",  # session and pane metadata
     "ChangeApplicationState",  # focus a pane, switch session
     "RunCommands",  # read state files, open a preview
+    "OpenTerminalsOrPlugins",  # start an agent pane with `n`
 )
 
 

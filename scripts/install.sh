@@ -127,7 +127,8 @@ register_hooks install
 
 if [ "$want_grant" -eq 1 ]; then
     echo "granting plugin permissions in $permissions"
-    echo "  ReadApplicationState, ChangeApplicationState, RunCommands"
+    echo "  ReadApplicationState, ChangeApplicationState, RunCommands,"
+    echo "  OpenTerminalsOrPlugins"
     set_permissions grant
 fi
 
