@@ -52,10 +52,15 @@ keep `crates/plugin` to wiring, host calls and drawing.
   return nothing for plugin panes, including for third-party ones. Verify
   behaviour through side effects instead: `list-panes`, `list-clients`,
   `dump-layout`, or a file the plugin touches.
-- **Test keybinds with real keystrokes.** `zellij action send-keys` writes to the
-  pane and bypasses keybind resolution — it proves nothing. Pipe the bytes into
-  the client's stdin instead: `{ sleep 7; printf '\033a'; sleep 6; } | script
-  -qec "zellij --config <cfg> -s test" /dev/null &`.
+- **Test anything input-related with `scripts/press-keys.sh`.** It pipes real
+  bytes into a throwaway client's stdin and prints a second-by-second timeline of
+  panes and focus, which is the only way to see what a key actually did:
+  `scripts/press-keys.sh test layouts/agenttij-workspace.kdl 7:'\033h' 3:p 6:q`.
+  Two traps it exists to avoid: `zellij action send-keys` bypasses keybind
+  resolution, and `write-chars` does not reach command panes at all — their
+  stdin is `/dev/null`, and even a real keypress to a focused command pane is
+  not readable from `/dev/tty`. Move focus from inside the keystream (`\033h` is
+  Alt+h, focus left); an external `focus-pane-id` gets overridden on startup.
 - **`zellij setup --check` proves a config parses, not that it works.** A second
   `keybinds` block passes the check and is then ignored.
 - **`dump-layout` prints the live layout *and* the templates.** Cut at the first
@@ -89,6 +94,10 @@ Each of these cost a debugging round already:
   TODO about it). Bindings must be inserted inside it.
 - **A pane with a fixed `size=` cannot be resized**, by a plugin or by Zellij's
   own `resize`. Layouts use percentages so the `rail` swap layout works.
+- **Command panes cannot read the keyboard.** Their stdin is `/dev/null`, so a
+  polling command pane cannot close itself on a keypress — the plugin has to do
+  it. And a pane opened from a plugin steals focus *after* the call returns, so
+  taking focus back has to wait for a later event.
 - **Suppressed panes forget their geometry.** Unsuppressing puts the pane
   wherever Zellij likes, so hide/show is not a reversible collapse — that is
   what swap layouts are for.

@@ -126,19 +126,18 @@ pub fn preview(agent: &Agent) -> Option<PaneId> {
     // Arguments are passed positionally rather than interpolated, so a session
     // name with a quote or a space in it cannot break out of the script.
     //
-    // A peek is a still picture you cannot type into, so any key dismisses it.
-    //
-    // The key has to come from `/dev/tty`, not stdin: Zellij gives a command
-    // pane /dev/null for stdin, so a `read` there sees EOF instantly — which
-    // would also spin this loop, since the read doubles as the one-second delay.
-    // Needs bash; sh cannot time out a read.
+    // A command pane cannot read the keyboard at all: Zellij gives it /dev/null
+    // for stdin, and a real keypress delivered to the focused pane does not
+    // reach a read on /dev/tty either (measured with scripts/press-keys.sh). So
+    // the pane just redraws, and the sidebar handles dismissal — see
+    // `Sidebar::reclaim_focus`.
     const POLL: &str = "while :; do \
          clear; zellij --session \"$1\" action dump-screen --pane-id \"$2\" --ansi; \
-         IFS= read -rsn1 -t 1 key </dev/tty && exit 0; \
+         sleep 1; \
        done";
 
     let command = CommandToRun {
-        path: "bash".into(),
+        path: "sh".into(),
         args: vec![
             "-c".to_owned(),
             POLL.to_owned(),
@@ -160,8 +159,8 @@ pub fn preview(agent: &Agent) -> Option<PaneId> {
         None, // borderless
     );
 
-    // The peek takes focus, which is what lets it catch the key that dismisses
-    // it. Refocusing the sidebar here does not work anyway: the open is applied
-    // after this call and takes the focus back.
+    // The peek takes focus whether we like it or not — and cannot use it. The
+    // caller takes focus back on the next event; doing it here is too early,
+    // since the open is applied afterwards and would win.
     open_command_pane_floating(command, coordinates, BTreeMap::new())
 }

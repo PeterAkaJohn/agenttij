@@ -35,6 +35,9 @@ pub struct Sidebar {
     previous_session: Option<String>,
     /// The open peek pane, so `q` can close it and `p` never stacks two.
     peek: Option<PaneId>,
+    /// Set after opening a peek: the focus it stole has to come back to us on a
+    /// later event, because the open is applied after our own calls.
+    reclaim_focus: bool,
     current_session: String,
     /// Host clock from the last scan.
     now: u64,
@@ -70,6 +73,7 @@ impl ZellijPlugin for Sidebar {
     fn update(&mut self, event: Event) -> bool {
         match event {
             Event::Timer(_) => {
+                self.reclaim_focus();
                 self.tick();
                 false
             }
@@ -236,6 +240,10 @@ impl Sidebar {
             BareKey::Char('p') => {
                 if let Some(agent) = self.selected_agent().cloned() {
                     self.peek = actions::preview(&agent);
+                    self.reclaim_focus = true;
+                    // Sooner than the next tick: a peek that holds the keyboard
+                    // is a peek you cannot dismiss.
+                    set_timeout(0.1);
                 }
                 false
             }
@@ -252,6 +260,15 @@ impl Sidebar {
         let next = self.cursor().saturating_add_signed(delta).min(last);
         self.selected = Some((self.agents[next].session.clone(), self.agents[next].pane));
         true
+    }
+
+    /// Takes focus back from a peek pane, which cannot use it.
+    fn reclaim_focus(&mut self) {
+        if !self.reclaim_focus {
+            return;
+        }
+        self.reclaim_focus = false;
+        focus_plugin_pane(get_plugin_ids().plugin_id, false, false);
     }
 
     fn close_peek(&mut self) {
