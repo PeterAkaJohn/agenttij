@@ -134,7 +134,11 @@ turn has already ended and would revive an idle pane. (Herdr's own integration
 carries a comment about exactly this bug.)
 
 Sort order is attention-first: `needs-input`, `running`, `done`, `idle`,
-`unknown`; ties broken by most recently active.
+`unknown`, then plain panes — with pane id as the tiebreaker rather than
+recency, so rows hold still. Zellij hands panes over in a `HashMap` whose
+iteration order is not stable between updates, and ordering by recency would
+lift a row the moment its agent reported; either way the row under the cursor
+would move while you were aiming at it.
 
 ### Trust
 

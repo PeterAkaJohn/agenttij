@@ -1,7 +1,5 @@
 //! The unit the sidebar tracks: one coding agent, in one pane, in one session.
 
-use std::cmp::Reverse;
-
 /// What an agent is doing.
 ///
 /// The variant order is the sidebar's sort order, deliberately: whatever wants
@@ -91,17 +89,26 @@ impl Agent {
     }
 }
 
-/// Orders agents by attention needed, then most recently active first.
+/// Orders the list: this session first, then by attention needed, then by pane.
 ///
-/// Agents in this session sort above agents elsewhere, so the rows you can
-/// reach without detaching are the ones under the cursor first.
+/// The last key matters more than it looks. Rows must not move under the cursor
+/// while you are using the sidebar, and two things would otherwise shuffle them:
+/// Zellij hands us panes in a `HashMap`, whose iteration order is not stable
+/// between updates, and ordering by recency would lift a row the moment its
+/// agent reported — including the one you just pressed Enter on. Sorting by pane
+/// id pins every row that is not actually changing status. Recency is still
+/// visible, in the age column.
 pub fn sort_for_display(agents: &mut [Agent], current_session: &str) {
-    agents.sort_by_key(|agent| {
-        (
-            agent.session != current_session,
-            agent.status,
-            Reverse(agent.reported_at),
-        )
+    agents.sort_by(|left, right| {
+        let key = |agent: &Agent| {
+            (
+                agent.session != current_session,
+                agent.status,
+                agent.session.clone(),
+                agent.pane,
+            )
+        };
+        key(left).cmp(&key(right))
     });
 }
 
@@ -148,16 +155,44 @@ mod tests {
         assert_eq!(agents[0].label(), "idle");
     }
 
+    fn at_pane(status: Status, pane: u32, cwd: &str) -> Agent {
+        Agent {
+            pane,
+            ..agent(status, 100, cwd)
+        }
+    }
+
     #[test]
-    fn attention_sorts_above_recency() {
+    fn attention_sorts_first() {
         let mut agents = vec![
-            agent(Status::Running, 500, "/a"),
-            agent(Status::NeedsInput, 1, "/b"),
-            agent(Status::Running, 900, "/c"),
+            at_pane(Status::Running, 1, "/a"),
+            at_pane(Status::NeedsInput, 2, "/b"),
+            at_pane(Status::Done, 3, "/c"),
         ];
         sort_for_display(&mut agents, "sess");
         let labels: Vec<&str> = agents.iter().map(Agent::label).collect();
-        assert_eq!(labels, vec!["b", "c", "a"]);
+        assert_eq!(labels, vec!["b", "a", "c"]);
+    }
+
+    /// Rows must not move under the cursor just because Zellij handed us the
+    /// panes in a different order, or because an agent reported.
+    #[test]
+    fn order_ignores_input_order_and_recency() {
+        let rows = |mut agents: Vec<Agent>| {
+            sort_for_display(&mut agents, "sess");
+            agents.iter().map(|a| a.pane).collect::<Vec<_>>()
+        };
+
+        let a = at_pane(Status::Running, 1, "/a");
+        let b = at_pane(Status::Running, 2, "/b");
+        let c = Agent {
+            reported_at: 9_999,
+            ..at_pane(Status::Running, 3, "/c")
+        };
+
+        assert_eq!(rows(vec![a.clone(), b.clone(), c.clone()]), vec![1, 2, 3]);
+        assert_eq!(rows(vec![c.clone(), a.clone(), b.clone()]), vec![1, 2, 3]);
+        assert_eq!(rows(vec![b, c, a]), vec![1, 2, 3]);
     }
 
     /// Reaching an agent in another session costs a detach, so those rows sort

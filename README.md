@@ -2,7 +2,8 @@
 
 A Zellij sidebar that tracks coding agents — Claude Code and friends — across
 every session on the machine. It shows what each one is doing, sorts whatever
-needs you to the top, and lets you peek at an agent or jump to it.
+needs you to the top, holds the rest still, and lets you peek at an agent or
+jump to it.
 
 ```
 ┌ agents ────────────┐
