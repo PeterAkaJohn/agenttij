@@ -31,6 +31,8 @@ pub struct Sidebar {
     panes: Vec<PaneSnapshot>,
     /// Live sessions from the last scan — the reliable liveness signal.
     live_sessions: Vec<String>,
+    /// The session we last switched away from, for `b`.
+    previous_session: Option<String>,
     current_session: String,
     /// Host clock from the last scan.
     now: u64,
@@ -84,6 +86,13 @@ impl ZellijPlugin for Sidebar {
                     PermissionStatus::Granted => Permissions::Granted,
                     PermissionStatus::Denied => Permissions::Denied,
                 };
+
+                // Renaming needs ChangeApplicationState, and permissions are
+                // granted asynchronously — doing this in `load` is too early and
+                // is denied in silence, leaving the frame showing our wasm path.
+                if self.permissions == Permissions::Granted {
+                    rename_plugin_pane(get_plugin_ids().plugin_id, &self.config.title);
+                }
                 true
             }
             _ => false,
@@ -126,8 +135,16 @@ impl Sidebar {
 
         self.now = result.now;
         self.live_sessions = result.live_sessions;
-        self.reported = result.agents;
+        self.previous_session = result.previous_session;
+
+        let before = std::mem::replace(&mut self.reported, result.agents);
         self.rebuild();
+
+        // Only agents that *became* blocked, so a waiting agent is announced
+        // once rather than every second.
+        for agent in agent::newly_blocked(&before, &self.reported) {
+            actions::notify(&self.config.notify, agent);
+        }
         true
     }
 
@@ -197,6 +214,13 @@ impl Sidebar {
             // one rather than splitting the screen with it.
             BareKey::Char('n') => {
                 actions::new_in_slot(&self.panes, &self.current_session, self.config.solo);
+                false
+            }
+            // Back to the session we came from.
+            BareKey::Char('b') => {
+                if let Some(previous) = self.previous_session.clone() {
+                    actions::go_back(&previous, &self.current_session);
+                }
                 false
             }
             BareKey::Char('p') => {

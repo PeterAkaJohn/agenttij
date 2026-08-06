@@ -2,6 +2,10 @@
 
 use std::collections::BTreeMap;
 
+/// What the sidebar calls itself in its pane frame. Without this the frame shows
+/// the plugin's url, which is a filesystem path and tells you nothing.
+pub const DEFAULT_TITLE: &str = "agents";
+
 /// Process names that mark a pane as an agent when nothing is reporting on it.
 pub const DEFAULT_AGENTS: [&str; 5] = ["claude", "codex", "opencode", "aider", "gemini"];
 
@@ -22,6 +26,11 @@ pub struct Config {
     /// Lowercased names matched against pane titles for discovery.
     pub agents: Vec<String>,
     pub scope: Scope,
+    /// Pane frame title.
+    pub title: String,
+    /// Command run when an agent becomes blocked on you, as words to exec. The
+    /// agent's name is appended. Empty means no notification.
+    pub notify: Vec<String>,
     /// Show only the selected agent's pane, parking the others out of sight
     /// instead of leaving them on screen.
     pub solo: bool,
@@ -32,6 +41,8 @@ impl Default for Config {
         Self {
             agents: DEFAULT_AGENTS.iter().map(|name| name.to_string()).collect(),
             scope: Scope::default(),
+            title: DEFAULT_TITLE.to_string(),
+            notify: Vec::new(),
             solo: false,
         }
     }
@@ -59,6 +70,18 @@ impl Config {
 
         let solo = configuration.get("solo").map(|raw| raw.trim()) == Some("true");
 
+        let title = configuration
+            .get("title")
+            .map(|raw| raw.trim())
+            .filter(|raw| !raw.is_empty())
+            .unwrap_or(DEFAULT_TITLE)
+            .to_string();
+
+        let notify: Vec<String> = configuration
+            .get("notify")
+            .map(|raw| raw.split_whitespace().map(str::to_owned).collect())
+            .unwrap_or_default();
+
         let defaults = Self::default();
         Self {
             agents: if agents.is_empty() {
@@ -67,6 +90,8 @@ impl Config {
                 agents
             },
             scope,
+            title,
+            notify,
             solo,
         }
     }
@@ -113,6 +138,28 @@ mod tests {
         assert_eq!(
             Config::from_map(&map(&[("scope", " session ")])).scope,
             Scope::Session
+        );
+    }
+
+    #[test]
+    fn the_pane_title_has_a_default_and_can_be_set() {
+        assert_eq!(Config::from_map(&map(&[])).title, "agents");
+        assert_eq!(Config::from_map(&map(&[("title", "")])).title, "agents");
+        assert_eq!(
+            Config::from_map(&map(&[("title", " sessions ")])).title,
+            "sessions"
+        );
+    }
+
+    #[test]
+    fn notifications_are_off_until_a_command_is_given() {
+        assert!(Config::from_map(&map(&[])).notify.is_empty());
+        assert!(Config::from_map(&map(&[("notify", "   ")]))
+            .notify
+            .is_empty());
+        assert_eq!(
+            Config::from_map(&map(&[("notify", "notify-send -u critical")])).notify,
+            vec!["notify-send", "-u", "critical"]
         );
     }
 

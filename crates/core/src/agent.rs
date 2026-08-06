@@ -35,7 +35,7 @@ impl Status {
 
     pub fn glyph(self) -> char {
         match self {
-            Self::NeedsInput => '●',
+            Self::NeedsInput => '⚠',
             Self::Running => '◐',
             Self::Done => '✓',
             Self::Idle => '○',
@@ -87,6 +87,24 @@ impl Agent {
             .or(Some(self.title.as_str()).filter(|title| !title.is_empty()))
             .unwrap_or(&self.session)
     }
+}
+
+/// Agents that have just become blocked on you.
+///
+/// Compares two snapshots rather than reacting to every scan, so a notification
+/// fires once when an agent starts waiting — not once a second for as long as it
+/// keeps waiting.
+pub fn newly_blocked<'a>(previous: &[Agent], current: &'a [Agent]) -> Vec<&'a Agent> {
+    current
+        .iter()
+        .filter(|agent| agent.status == Status::NeedsInput)
+        .filter(|agent| {
+            previous
+                .iter()
+                .find(|before| before.key() == agent.key())
+                .is_none_or(|before| before.status != Status::NeedsInput)
+        })
+        .collect()
 }
 
 /// Orders the list: this session first, then by attention needed, then by pane.
@@ -160,6 +178,37 @@ mod tests {
             pane,
             ..agent(status, 100, cwd)
         }
+    }
+
+    #[test]
+    fn only_fresh_blocks_are_reported() {
+        let waiting = at_pane(Status::NeedsInput, 1, "/a");
+        let working = at_pane(Status::Running, 2, "/b");
+
+        let before = vec![working.clone()];
+        let after = vec![waiting.clone(), working.clone()];
+        let still = vec![waiting.clone()];
+        let none = vec![working.clone()];
+
+        // First time it blocks: reported.
+        let fresh = newly_blocked(&before, &after);
+        assert_eq!(fresh.len(), 1);
+        assert_eq!(fresh[0].label(), "a");
+
+        // Still blocked on the next scan: not reported again.
+        assert_eq!(newly_blocked(&still, &still).len(), 0);
+
+        // Nothing blocked at all.
+        assert_eq!(newly_blocked(&none, &none).len(), 0);
+    }
+
+    /// An agent that answers and blocks again is worth a second mention.
+    #[test]
+    fn blocking_again_after_working_is_reported_again() {
+        let before = vec![at_pane(Status::Running, 1, "/a")];
+        let after = vec![at_pane(Status::NeedsInput, 1, "/a")];
+
+        assert_eq!(newly_blocked(&before, &after).len(), 1);
     }
 
     #[test]

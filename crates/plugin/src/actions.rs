@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use agenttij_core::{panes, Agent, PaneSnapshot};
+use agenttij_core::{panes, scan, Agent, PaneSnapshot};
 use zellij_tile::prelude::*;
 
 /// Focuses an agent's pane.
@@ -19,8 +19,39 @@ pub fn go_to(agent: &Agent, current_session: &str, all_panes: &[PaneSnapshot]) {
         return;
     }
 
+    remember(current_session);
     let tab = panes::tab_of(all_panes, &agent.session, agent.pane);
     switch_session_with_focus(&agent.session, tab, Some((agent.pane, false)));
+}
+
+/// Goes back to the session we last left.
+pub fn go_back(previous: &str, current_session: &str) {
+    if previous == current_session {
+        return;
+    }
+    remember(current_session);
+    switch_session(Some(previous));
+}
+
+/// Records the session we are leaving, so the sidebar on the other side knows
+/// the way back. It has to go through a file: the plugin over there is a
+/// different instance in a different process with no memory of this one.
+fn remember(session: &str) {
+    let command = scan::remember_previous(session);
+    let words: Vec<&str> = command.iter().map(String::as_str).collect();
+    run_command(&words, BTreeMap::new());
+}
+
+/// Tells you an agent is blocked, when you are not looking at the sidebar.
+pub fn notify(command: &[String], agent: &Agent) {
+    if command.is_empty() {
+        return;
+    }
+    let message = format!("{} needs input", agent.label());
+    let mut words: Vec<&str> = command.iter().map(String::as_str).collect();
+    words.push("agenttij");
+    words.push(&message);
+    run_command(&words, BTreeMap::new());
 }
 
 /// Puts an agent's pane in the workspace slot and parks whoever was there.
@@ -88,20 +119,26 @@ fn own_cwd() -> PathBuf {
 ///
 /// The cost is a poll instead of a stream: one `dump-screen` per second while
 /// the preview is open, and a redraw you can see. Worth it for a preview that
-/// is never quietly stale.
+/// is never quietly stale. `q` or `Esc` closes it.
 pub fn preview(agent: &Agent) {
     // Arguments are passed positionally rather than interpolated, so a session
     // name with a quote or a space in it cannot break out of the script.
-    const POLL: &str = "while :; do clear; \
-         zellij --session \"$1\" action dump-screen --pane-id \"$2\" --ansi; \
-         sleep 1; done";
+    //
+    // `read` doubles as the poll delay and the key handler: it waits a second
+    // for a keypress, and a timeout just means "redraw". A peek is read-only —
+    // there is nothing to type into — so q and Esc close it. Needs bash for
+    // `read -t`; sh cannot time out a read.
+    const POLL: &str = "while :; do \
+         clear; zellij --session \"$1\" action dump-screen --pane-id \"$2\" --ansi; \
+         IFS= read -rsn1 -t 1 key && case \"$key\" in q|$'\\e') exit 0;; esac; \
+       done";
 
     let command = CommandToRun {
-        path: "sh".into(),
+        path: "bash".into(),
         args: vec![
             "-c".to_owned(),
             POLL.to_owned(),
-            "agenttij-preview".to_owned(),
+            "agenttij-peek".to_owned(),
             agent.session.clone(),
             format!("terminal_{}", agent.pane),
         ],

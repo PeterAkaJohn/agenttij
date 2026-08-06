@@ -30,10 +30,28 @@ pub const STATE_DIR: &str = "/tmp/agenttij";
 const SCAN_SCRIPT: &str = "mkdir -p /tmp/agenttij && date +%s; \
      zellij list-sessions --no-formatting 2>/dev/null \
      | grep -v EXITED | sed 's/[[:space:]].*//; s/^/session=/'; \
+     sed 's/^/previous=/' /tmp/agenttij/previous 2>/dev/null; \
      cat /tmp/agenttij/*.state 2>/dev/null; true";
 
 /// Marks a live-session line in the scan output.
 const SESSION_PREFIX: &str = "session=";
+/// Marks the session we last switched away from.
+const PREVIOUS_PREFIX: &str = "previous=";
+
+/// File holding the session we last switched away from. Written on the way out,
+/// so it survives the switch — the sidebar in the session you land in is a
+/// different instance with no memory of where you came from.
+pub const PREVIOUS_FILE: &str = "/tmp/agenttij/previous";
+
+/// Command that records a session as the one to come back to.
+pub fn remember_previous(session: &str) -> [String; 4] {
+    [
+        "sh".to_owned(),
+        "-c".to_owned(),
+        format!("printf %s \"$1\" > {PREVIOUS_FILE}"),
+        session.to_owned(),
+    ]
+}
 
 /// Marks our own `RunCommandResult` events, so we ignore anyone else's.
 pub const CONTEXT_KEY: &str = "agenttij";
@@ -50,6 +68,8 @@ pub struct Scan {
     pub now: u64,
     /// Every session currently running on this machine.
     pub live_sessions: Vec<String>,
+    /// The session we last switched away from, if any.
+    pub previous_session: Option<String>,
     pub agents: Vec<Agent>,
 }
 
@@ -62,20 +82,28 @@ pub fn parse(stdout: &[u8]) -> Option<Scan> {
     let now = lines.next()?.trim().parse().ok()?;
 
     let mut live_sessions = Vec::new();
+    let mut previous_session = None;
     let mut agents = Vec::new();
     for line in lines {
-        match line.strip_prefix(SESSION_PREFIX) {
-            Some(session) if !session.trim().is_empty() => {
-                live_sessions.push(session.trim().to_owned())
+        if let Some(session) = line.strip_prefix(SESSION_PREFIX) {
+            let session = session.trim();
+            if !session.is_empty() {
+                live_sessions.push(session.to_owned());
             }
-            Some(_) => {}
-            None => agents.extend(parse_agent(line)),
+        } else if let Some(session) = line.strip_prefix(PREVIOUS_PREFIX) {
+            let session = session.trim();
+            if !session.is_empty() {
+                previous_session = Some(session.to_owned());
+            }
+        } else {
+            agents.extend(parse_agent(line));
         }
     }
 
     Some(Scan {
         now,
         live_sessions,
+        previous_session,
         agents,
     })
 }
@@ -129,6 +157,31 @@ mod tests {
 
         assert_eq!(scan.live_sessions, vec!["running"]);
         assert_eq!(scan.agents, vec![]);
+    }
+
+    #[test]
+    fn remembers_where_we_came_from() {
+        let out = b"1754400000\nsession=main\nprevious=other\ndone\tmain\t1\t2\t/x\n";
+        let scan = parse(out).expect("parses");
+
+        assert_eq!(scan.previous_session.as_deref(), Some("other"));
+        assert_eq!(scan.live_sessions, vec!["main"]);
+        assert_eq!(scan.agents.len(), 1);
+    }
+
+    #[test]
+    fn no_previous_session_yet() {
+        assert_eq!(
+            parse(b"1754400000\n").expect("parses").previous_session,
+            None
+        );
+    }
+
+    #[test]
+    fn the_remember_command_writes_the_shared_file() {
+        let command = remember_previous("main");
+        assert!(command[2].contains(PREVIOUS_FILE));
+        assert_eq!(command[3], "main");
     }
 
     #[test]
