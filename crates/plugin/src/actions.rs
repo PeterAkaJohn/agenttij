@@ -30,12 +30,22 @@ pub fn go_back(previous: &str, current_session: &str) {
         return;
     }
     remember(current_session);
-    switch_session(Some(previous));
+    // `switch_session` by name alone does nothing here; the variant that takes a
+    // focus target is the one that actually moves the client (verified).
+    switch_session_with_focus(previous, None, None);
 }
 
 /// Records the session we are leaving, so the sidebar on the other side knows
 /// the way back. It has to go through a file: the plugin over there is a
 /// different instance in a different process with no memory of this one.
+/// Claims this session as the one being looked at, moving the previous holder
+/// into `previous`.
+pub fn claim_current(session: &str) {
+    let command = scan::claim_current(session);
+    let words: Vec<&str> = command.iter().map(String::as_str).collect();
+    run_command(&words, BTreeMap::new());
+}
+
 fn remember(session: &str) {
     let command = scan::remember_previous(session);
     let words: Vec<&str> = command.iter().map(String::as_str).collect();

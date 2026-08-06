@@ -69,6 +69,9 @@ pub struct Agent {
     /// Short name from the pane's title, for entries that have no cwd to name
     /// them — a plain pane, or an agent found by process name.
     pub title: String,
+    /// How many panes this row owns, counting the agent. Shown when it is more
+    /// than one, so a row with an editor behind it does not look bare.
+    pub panes: usize,
 }
 
 impl Agent {
@@ -142,6 +145,7 @@ mod tests {
             reported_at,
             cwd: cwd.into(),
             title: String::new(),
+            panes: 1,
         }
     }
 

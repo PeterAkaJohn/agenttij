@@ -79,7 +79,9 @@ iterated — which is why the bindings go in there.
 | Key | Does |
 |---|---|
 | `Alt a` | summon a sidebar in whatever session you are in, as a floating pane |
+| `Alt s` | focus the sidebar from wherever you are |
 | `Alt v` | cycle to the next pane in the row on screen |
+| `Alt b` | back to the session you came from |
 | `Alt ]` | fold the sidebar to a status rail, and back (Zellij's own key) |
 
 `Alt a` is the way out of a session that has no sidebar of its own — the one you

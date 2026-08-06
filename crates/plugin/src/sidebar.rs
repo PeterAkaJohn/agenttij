@@ -31,8 +31,15 @@ pub struct Sidebar {
     panes: Vec<PaneSnapshot>,
     /// Live sessions from the last scan — the reliable liveness signal.
     live_sessions: Vec<String>,
-    /// The session we last switched away from, for `b`.
+    /// The session we last switched away from, for going back.
     previous_session: Option<String>,
+    /// Whether we have been drawn since the last tick, which is how we know a
+    /// client is looking at this session — `Tab::render` does not run for a
+    /// session nobody is attached to. `SessionInfo::connected_clients` reads 0
+    /// even while attached, so this is the signal that works.
+    on_screen: bool,
+    /// The session recorded as being looked at, from the last scan.
+    current_holder: Option<String>,
     /// The open peek pane, so `q` can close it and `p` never stacks two.
     peek: Option<PaneId>,
     /// Lines of the pane this instance is peeking at, when it is a peek.
@@ -127,13 +134,18 @@ impl ZellijPlugin for Sidebar {
     /// an agent and want the editor beside it, without going through the sidebar
     /// first.
     fn pipe(&mut self, message: PipeMessage) -> bool {
-        if message.name == "cycle" {
-            self.cycle();
+        match message.name.as_str() {
+            "cycle" => self.cycle(),
+            "back" => self.go_back(),
+            _ => {}
         }
         false
     }
 
     fn render(&mut self, rows: usize, cols: usize) {
+        // Being drawn at all means somebody is looking at this session.
+        self.on_screen = true;
+
         if self.config.peek.is_some() {
             render::draw_peek(&self.peeked, rows, cols);
             return;
@@ -156,6 +168,11 @@ impl Sidebar {
     /// Re-arms the timer first, so a failed scan never stops the clock.
     fn tick(&mut self) {
         set_timeout(TICK_SECONDS);
+
+        if self.on_screen {
+            self.on_screen = false;
+            self.claim_current();
+        }
 
         if self.permissions == Permissions::Denied {
             return;
@@ -193,6 +210,7 @@ impl Sidebar {
         self.now = result.now;
         self.live_sessions = result.live_sessions;
         self.previous_session = result.previous_session;
+        self.current_holder = result.current_holder;
 
         let before = std::mem::replace(&mut self.reported, result.agents);
         self.rebuild();
@@ -305,9 +323,7 @@ impl Sidebar {
             }
             // Back to the session we came from.
             BareKey::Char('b') => {
-                if let Some(previous) = self.previous_session.clone() {
-                    actions::go_back(&previous, &self.current_session);
-                }
+                self.go_back();
                 false
             }
             BareKey::Char('p') => {
@@ -375,6 +391,29 @@ impl Sidebar {
     fn slot(&self) -> Option<u32> {
         let (tab, _) = get_focused_pane_info().ok()?;
         panes::visible_terminal(&self.panes, &self.current_session, tab)
+    }
+
+    /// While this session has a client, it is the one being looked at — so it
+    /// takes over as `current`, and whoever held that becomes `previous`.
+    ///
+    /// Recorded while attached, not on the way out: a session stops receiving
+    /// events once its last client leaves. And not from `Enter` alone either —
+    /// in a workspace layout `Enter` never switches sessions, so nothing was ever
+    /// recorded and going back did nothing.
+    fn claim_current(&mut self) {
+        if self.current_session.is_empty() {
+            return;
+        }
+        if self.current_holder.as_deref() == Some(self.current_session.as_str()) {
+            return;
+        }
+        actions::claim_current(&self.current_session);
+    }
+
+    fn go_back(&mut self) {
+        if let Some(previous) = self.previous_session.clone() {
+            actions::go_back(&previous, &self.current_session);
+        }
     }
 
     /// Shows the next pane in the row currently on screen.

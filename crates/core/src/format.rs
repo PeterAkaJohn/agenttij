@@ -45,10 +45,16 @@ pub fn row_parts(agent: &Agent, now: u64, width: usize, current_session: &str) -
     } else {
         "⇢"
     };
+    // A row that owns more than one pane says so; one that does not stays quiet.
+    let owned = if agent.panes > 1 {
+        format!("{} ", agent.panes)
+    } else {
+        String::new()
+    };
 
-    // glyph, its space, the elsewhere marker, the gap before the age, and the
-    // age itself.
-    let reserved = 3 + elsewhere.chars().count() + age.chars().count();
+    // glyph, its space, the elsewhere marker, the count, the gap before the age,
+    // and the age itself.
+    let reserved = 3 + elsewhere.chars().count() + owned.chars().count() + age.chars().count();
     if width <= reserved {
         let rest = truncate(&format!(" {elsewhere}{}", agent.label()), width - 1);
         return (glyph.to_string(), rest);
@@ -58,7 +64,10 @@ pub fn row_parts(agent: &Agent, now: u64, width: usize, current_session: &str) -
     let label = truncate(agent.label(), label_width);
     let gap = " ".repeat(label_width - label.chars().count());
 
-    (glyph.to_string(), format!(" {elsewhere}{label}{gap} {age}"))
+    (
+        glyph.to_string(),
+        format!(" {elsewhere}{label}{gap} {owned}{age}"),
+    )
 }
 
 /// First row to show, so the cursor stays visible in a list taller than the
@@ -112,12 +121,24 @@ mod tests {
             reported_at,
             cwd: cwd.into(),
             title: String::new(),
+            panes: 1,
         }
     }
 
     #[test]
     fn a_row_is_glyph_label_and_right_aligned_age() {
         let agent = agent(Status::Running, 900, "/home/pp/api");
+        assert_eq!(row(&agent, 1_020, 20, "sess"), "◐ api             2m");
+    }
+
+    #[test]
+    fn a_row_with_companions_shows_how_many_panes_it_owns() {
+        let mut agent = agent(Status::Running, 900, "/home/pp/api");
+        agent.panes = 3;
+
+        assert_eq!(row(&agent, 1_020, 20, "sess"), "◐ api           3 2m");
+        // One pane is the normal case and says nothing.
+        agent.panes = 1;
         assert_eq!(row(&agent, 1_020, 20, "sess"), "◐ api             2m");
     }
 
@@ -131,6 +152,10 @@ mod tests {
                 "/home/pp/a-very-long-project-name",
             ),
             agent(Status::Unknown, 0, ""),
+            Agent {
+                panes: 4,
+                ..agent(Status::Done, 900, "/home/pp/with-companions")
+            },
         ];
 
         for agent in &cases {
@@ -140,7 +165,10 @@ mod tests {
                 if width < RAIL_MAX_COLS {
                     // A rail row is padded, so it still fills its width.
                     assert_eq!(rendered, width, "{row:?} as a rail at width {width}");
-                } else if width > 3 + age(1_020, agent.reported_at).chars().count() {
+                } else if width
+                    > 3 + age(1_020, agent.reported_at).chars().count()
+                        + if agent.panes > 1 { 2 } else { 0 }
+                {
                     assert_eq!(rendered, width, "{row:?} at width {width}");
                 } else {
                     assert!(rendered <= width, "{row:?} overflows width {width}");

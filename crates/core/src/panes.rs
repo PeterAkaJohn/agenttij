@@ -92,6 +92,7 @@ pub fn discover(panes: &[PaneSnapshot], reported: &[Agent], names: &[String]) ->
             reported_at: 0,
             cwd: String::new(),
             title: short_title(&pane.title),
+            panes: 1,
         })
         .collect()
 }
@@ -124,6 +125,7 @@ pub fn list_panes(panes: &[PaneSnapshot], listed: &[Agent], session: &str) -> Ve
             reported_at: 0,
             cwd: String::new(),
             title: short_title(&pane.title),
+            panes: 1,
         })
         .collect()
 }
@@ -195,6 +197,7 @@ mod tests {
             reported_at: 10,
             cwd: "/x".into(),
             title: String::new(),
+            panes: 1,
         }
     }
 
