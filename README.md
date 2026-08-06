@@ -24,6 +24,10 @@ The sidebar is an ordinary pane: focus it with your usual pane navigation, then
 | `p` | peek at it in a floating pane, without leaving your session |
 | `c` | park the sidebar off screen (`Alt z` brings it back) |
 
+Zellij-level, installed for you: `Alt a` summons a sidebar in any session,
+`Alt z` parks and unparks it. Full reference, including how to rebind and how to
+drive it without keybinds: [docs/KEYBINDS.md](docs/KEYBINDS.md).
+
 Peeking is the point. Checking on an agent shouldn't cost you a detach and a
 reattach, so `p` gives you a live view of its pane wherever it is — another
 session, a background tab, a session nobody is attached to.
@@ -200,7 +204,8 @@ crates/plugin  agenttij — the wasm plugin: lifecycle, rendering, navigation
 hooks/         the shell hook agents run
 layouts/       sidebar layouts: left, right, and workspace (persistent sidebar)
 scripts/       installer
-docs/PLAN.md   design notes and the Zellij constraints they follow from
+docs/KEYBINDS.md  every key, and how to change them
+docs/PLAN.md      design notes and the Zellij constraints they follow from
 ```
 
 `core` deliberately does not depend on `zellij-tile`; the plugin crate adapts
