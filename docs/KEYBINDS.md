@@ -47,9 +47,11 @@ manage, so `n` is an ordinary new pane.
 Zellij's own `new pane` binding (`Ctrl p`, then `n`) splits instead, leaving two
 panes on screen. That is why `n` exists.
 
-**`p`** opens a floating pane polling `dump-screen` once a second. It reaches
-panes anywhere — another session, a background tab, a session nobody is attached
-to — and does not disturb the target.
+**`p`** opens a floating pane that mirrors the agent's pane once a second. It
+reaches panes anywhere — another session, a background tab, a session nobody is
+attached to — and does not disturb the target. The peek is another instance of
+this same plugin, which is what lets it hold focus (so it stays on screen) and
+still close on a key.
 
 ## From anywhere in Zellij
 

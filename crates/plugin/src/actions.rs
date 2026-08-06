@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use agenttij_core::{panes, scan, Agent, PaneSnapshot};
+use agenttij_core::{panes, scan, Agent, Config, PaneSnapshot};
 use zellij_tile::prelude::*;
 
 /// Focuses an agent's pane.
@@ -108,59 +108,38 @@ fn own_cwd() -> PathBuf {
     get_plugin_ids().initial_cwd
 }
 
-/// Repeatedly dumps an agent's pane into a floating pane, so you can check on
-/// it without leaving this session.
+/// Opens a peek: another instance of this plugin, floating, mirroring an
+/// agent's pane once a second.
 ///
-/// `zellij subscribe` looks like the natural fit here and is not: it is fed by
-/// the render pipeline, and `Tab::render` skips tabs that have no client
-/// watching them. Previewing an agent in a background tab or an unattended
-/// session — the whole point — gets you one initial snapshot and then silence.
-/// `dump-screen` queries the pane directly, so it works wherever the pane is.
-///
-/// The cost is a poll instead of a stream: one `dump-screen` per second while
-/// the preview is open, and a redraw you can see. Worth it for a preview that
-/// is never quietly stale.
-///
-/// Returns the pane it opened, so the sidebar can close it again.
-pub fn preview(agent: &Agent) -> Option<PaneId> {
-    // Arguments are passed positionally rather than interpolated, so a session
-    // name with a quote or a space in it cannot break out of the script.
-    //
-    // A command pane cannot read the keyboard at all: Zellij gives it /dev/null
-    // for stdin, and a real keypress delivered to the focused pane does not
-    // reach a read on /dev/tty either (measured with scripts/press-keys.sh). So
-    // the pane just redraws, and the sidebar handles dismissal — see
-    // `Sidebar::reclaim_focus`.
-    const POLL: &str = "while :; do \
-         clear; zellij --session \"$1\" action dump-screen --pane-id \"$2\" --ansi; \
-         sleep 1; \
-       done";
+/// A peek has to be a plugin pane. A command pane cannot read the keyboard —
+/// Zellij gives it /dev/null for stdin, and even a real keypress is not
+/// readable from /dev/tty — and a floating pane is only on screen while it holds
+/// focus. So a command pane peek is either invisible or undismissable. A plugin
+/// pane receives keys, so it can hold focus, stay visible, and close itself.
+pub fn preview(agent: &Agent, own_url: &str, config: &Config) -> Option<PaneId> {
+    let mut configuration = BTreeMap::from([
+        (
+            "peek".to_owned(),
+            format!("{}:{}", agent.session, agent.pane),
+        ),
+        ("title".to_owned(), format!("peek {}", agent.label())),
+    ]);
+    // Colours are the user's, and a peek is an instance of the same plugin, so
+    // carry them across rather than reverting to the defaults.
+    if !config.colors_raw.is_empty() {
+        configuration.insert("colors".to_owned(), config.colors_raw.clone());
+    }
 
-    let command = CommandToRun {
-        path: "sh".into(),
-        args: vec![
-            "-c".to_owned(),
-            POLL.to_owned(),
-            "agenttij-peek".to_owned(),
-            agent.session.clone(),
-            format!("terminal_{}", agent.pane),
-        ],
-        cwd: None,
-    };
-
-    // Zellij's default floating pane is 40x10, which re-wraps a normal agent
-    // pane into unreadable ribbon. Ask for something you can actually read.
+    // Zellij's default floating pane is 40x10, which re-wraps an agent pane into
+    // unreadable ribbon. Ask for something you can actually read.
     let coordinates = FloatingPaneCoordinates::new(
         Some("10%".to_owned()),
         Some("10%".to_owned()),
         Some("80%".to_owned()),
         Some("80%".to_owned()),
-        None, // pinned
-        None, // borderless
+        None,
+        None,
     );
 
-    // The peek takes focus whether we like it or not — and cannot use it. The
-    // caller takes focus back on the next event; doing it here is too early,
-    // since the open is applied afterwards and would win.
-    open_command_pane_floating(command, coordinates, BTreeMap::new())
+    open_plugin_pane_floating(own_url, configuration, coordinates, BTreeMap::new())
 }

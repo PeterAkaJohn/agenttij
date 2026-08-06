@@ -35,9 +35,12 @@ pub struct Sidebar {
     previous_session: Option<String>,
     /// The open peek pane, so `q` can close it and `p` never stacks two.
     peek: Option<PaneId>,
-    /// Set after opening a peek: the focus it stole has to come back to us on a
-    /// later event, because the open is applied after our own calls.
-    reclaim_focus: bool,
+    /// Lines of the pane this instance is peeking at, when it is a peek.
+    peeked: Vec<String>,
+    /// Our own plugin url, for launching a peek instance of ourselves.
+    own_url: Option<String>,
+    /// Whether the pane has been named yet.
+    named: bool,
     current_session: String,
     /// Host clock from the last scan.
     now: u64,
@@ -73,7 +76,6 @@ impl ZellijPlugin for Sidebar {
     fn update(&mut self, event: Event) -> bool {
         match event {
             Event::Timer(_) => {
-                self.reclaim_focus();
                 self.tick();
                 false
             }
@@ -83,6 +85,12 @@ impl ZellijPlugin for Sidebar {
                 if let Some(name) = snapshot::current_session(&sessions) {
                     self.current_session = name;
                 }
+                if self.own_url.is_none() {
+                    self.own_url = snapshot::own_url(&sessions, get_plugin_ids().plugin_id);
+                }
+                // After the url is captured, not before: the title *is* the url
+                // until we overwrite it.
+                self.name_self();
                 self.rebuild();
                 true
             }
@@ -93,12 +101,7 @@ impl ZellijPlugin for Sidebar {
                     PermissionStatus::Denied => Permissions::Denied,
                 };
 
-                // Renaming needs ChangeApplicationState, and permissions are
-                // granted asynchronously — doing this in `load` is too early and
-                // is denied in silence, leaving the frame showing our wasm path.
-                if self.permissions == Permissions::Granted {
-                    rename_plugin_pane(get_plugin_ids().plugin_id, &self.config.title);
-                }
+                self.name_self();
                 true
             }
             _ => false,
@@ -106,6 +109,11 @@ impl ZellijPlugin for Sidebar {
     }
 
     fn render(&mut self, rows: usize, cols: usize) {
+        if self.config.peek.is_some() {
+            render::draw_peek(&self.peeked, rows, cols);
+            return;
+        }
+
         render::draw(&render::View {
             rows,
             cols,
@@ -127,12 +135,29 @@ impl Sidebar {
         if self.permissions == Permissions::Denied {
             return;
         }
+
+        if let Some((session, pane)) = self.config.peek.clone() {
+            let command = scan::dump_command(&session, pane);
+            let words: Vec<&str> = command.iter().map(String::as_str).collect();
+            let context =
+                BTreeMap::from([(scan::CONTEXT_KEY.to_owned(), scan::CONTEXT_PEEK.to_owned())]);
+            run_command(&words, context);
+            return;
+        }
+
         let context =
             BTreeMap::from([(scan::CONTEXT_KEY.to_owned(), scan::CONTEXT_SCAN.to_owned())]);
         run_command(&scan::command(), context);
     }
 
     fn absorb_scan(&mut self, stdout: &[u8], context: &BTreeMap<String, String>) -> bool {
+        if context.get(scan::CONTEXT_KEY).map(String::as_str) == Some(scan::CONTEXT_PEEK) {
+            self.peeked = String::from_utf8_lossy(stdout)
+                .lines()
+                .map(str::to_owned)
+                .collect();
+            return true;
+        }
         if context.get(scan::CONTEXT_KEY).map(String::as_str) != Some(scan::CONTEXT_SCAN) {
             return false;
         }
@@ -169,7 +194,10 @@ impl Sidebar {
         // to list panes that are not agents too — a parked shell you cannot
         // select is a pane you cannot get back to.
         if self.config.solo {
-            let rest = panes::list_panes(&self.panes, &agents, &self.current_session);
+            let mut rest = panes::list_panes(&self.panes, &agents, &self.current_session);
+            if let Some(PaneId::Terminal(peek)) = self.peek {
+                rest.retain(|pane| pane.pane != peek);
+            }
             agents.extend(rest);
         }
 
@@ -200,6 +228,16 @@ impl Sidebar {
     fn on_key(&mut self, key: KeyWithModifier) -> bool {
         // Leave modified keys to Zellij, so the sidebar never eats a binding.
         if !key.key_modifiers.is_empty() {
+            return false;
+        }
+
+        // A peek is a still picture of someone else's pane: there is nothing to
+        // type into it, so any key dismisses it. This is why a peek is a plugin
+        // pane and not a command pane — a command pane cannot read a key at all,
+        // and a floating pane is only visible while it holds focus, so the two
+        // together made a peek impossible to dismiss.
+        if self.config.peek.is_some() {
+            close_self();
             return false;
         }
 
@@ -238,12 +276,10 @@ impl Sidebar {
                 false
             }
             BareKey::Char('p') => {
-                if let Some(agent) = self.selected_agent().cloned() {
-                    self.peek = actions::preview(&agent);
-                    self.reclaim_focus = true;
-                    // Sooner than the next tick: a peek that holds the keyboard
-                    // is a peek you cannot dismiss.
-                    set_timeout(0.1);
+                if let (Some(agent), Some(url)) =
+                    (self.selected_agent().cloned(), self.own_url.clone())
+                {
+                    self.peek = actions::preview(&agent, &url, &self.config);
                 }
                 false
             }
@@ -262,13 +298,15 @@ impl Sidebar {
         true
     }
 
-    /// Takes focus back from a peek pane, which cannot use it.
-    fn reclaim_focus(&mut self) {
-        if !self.reclaim_focus {
+    /// Names our pane, once. Renaming needs ChangeApplicationState, and
+    /// permissions arrive asynchronously, so `load` is too early — a command
+    /// issued before the grant is denied in silence.
+    fn name_self(&mut self) {
+        if self.named || self.permissions != Permissions::Granted || self.own_url.is_none() {
             return;
         }
-        self.reclaim_focus = false;
-        focus_plugin_pane(get_plugin_ids().plugin_id, false, false);
+        self.named = true;
+        rename_plugin_pane(get_plugin_ids().plugin_id, &self.config.title);
     }
 
     fn close_peek(&mut self) {

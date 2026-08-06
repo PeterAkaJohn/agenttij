@@ -31,9 +31,15 @@ pub struct Config {
     pub title: String,
     /// Status glyph colours.
     pub colors: Colors,
+    /// The `colors` string as written, to pass on to a peek instance.
+    pub colors_raw: String,
     /// Command run when an agent becomes blocked on you, as words to exec. The
     /// agent's name is appended. Empty means no notification.
     pub notify: Vec<String>,
+    /// Set on a peek instance: the pane it mirrors, as `<session>:<pane>`. A
+    /// sidebar with this set *is* the peek — it renders that pane and closes on
+    /// any key, which a command pane cannot do because it cannot read one.
+    pub peek: Option<(String, u32)>,
     /// Show only the selected agent's pane, parking the others out of sight
     /// instead of leaving them on screen.
     pub solo: bool,
@@ -46,7 +52,9 @@ impl Default for Config {
             scope: Scope::default(),
             title: DEFAULT_TITLE.to_string(),
             colors: Colors::default(),
+            colors_raw: String::new(),
             notify: Vec::new(),
+            peek: None,
             solo: false,
         }
     }
@@ -86,10 +94,17 @@ impl Config {
             .map(|raw| raw.split_whitespace().map(str::to_owned).collect())
             .unwrap_or_default();
 
-        let colors = configuration
-            .get("colors")
-            .map(|raw| Colors::from_pairs(raw))
-            .unwrap_or_default();
+        let colors_raw = configuration.get("colors").cloned().unwrap_or_default();
+        let colors = if colors_raw.is_empty() {
+            Colors::default()
+        } else {
+            Colors::from_pairs(&colors_raw)
+        };
+
+        let peek = configuration.get("peek").and_then(|raw| {
+            let (session, pane) = raw.trim().rsplit_once(':')?;
+            Some((session.to_owned(), pane.trim().parse().ok()?))
+        });
 
         let defaults = Self::default();
         Self {
@@ -101,7 +116,9 @@ impl Config {
             scope,
             title,
             colors,
+            colors_raw,
             notify,
+            peek,
             solo,
         }
     }
@@ -182,6 +199,22 @@ mod tests {
             Config::from_map(&map(&[("notify", "notify-send -u critical")])).notify,
             vec!["notify-send", "-u", "critical"]
         );
+    }
+
+    #[test]
+    fn a_peek_target_is_a_session_and_a_pane() {
+        assert_eq!(Config::from_map(&map(&[])).peek, None);
+        assert_eq!(
+            Config::from_map(&map(&[("peek", "main:7")])).peek,
+            Some(("main".to_string(), 7))
+        );
+        // Session names may contain colons; the pane is the last field.
+        assert_eq!(
+            Config::from_map(&map(&[("peek", "od:d:12")])).peek,
+            Some(("od:d".to_string(), 12))
+        );
+        assert_eq!(Config::from_map(&map(&[("peek", "main:x")])).peek, None);
+        assert_eq!(Config::from_map(&map(&[("peek", "main")])).peek, None);
     }
 
     #[test]

@@ -96,6 +96,11 @@ pub fn discover(panes: &[PaneSnapshot], reported: &[Agent], names: &[String]) ->
         .collect()
 }
 
+/// Marks the sidebar's own peek panes. They are panes in the session like any
+/// other, so without this they turn up in the list as a row showing the shell
+/// command that draws them.
+pub const PEEK_MARKER: &str = "agenttij-peek";
+
 /// Lists every remaining pane in a session, so the sidebar can switch to panes
 /// that are not agents.
 ///
@@ -106,6 +111,7 @@ pub fn list_panes(panes: &[PaneSnapshot], listed: &[Agent], session: &str) -> Ve
     panes
         .iter()
         .filter(|pane| pane.session == session)
+        .filter(|pane| !pane.title.contains(PEEK_MARKER))
         .filter(|pane| {
             !listed
                 .iter()
@@ -306,6 +312,25 @@ mod tests {
         assert_eq!(extra[0].key(), ("main", 3));
         assert_eq!(extra[0].status, Status::Pane);
         assert_eq!(extra[0].label(), "agenttij");
+    }
+
+    /// A peek is the sidebar's own doing, and showing the command that draws it
+    /// as a switchable row is nonsense.
+    #[test]
+    fn our_own_peek_panes_are_not_listed() {
+        let panes = vec![
+            pane("main", 0, 3, "zsh"),
+            pane(
+                "main",
+                0,
+                9,
+                "sh -c while :; do clear; zellij … agenttij-peek main 3",
+            ),
+        ];
+
+        let listed = list_panes(&panes, &[], "main");
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].key(), ("main", 3));
     }
 
     #[test]

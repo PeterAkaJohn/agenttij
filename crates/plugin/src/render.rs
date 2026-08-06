@@ -83,3 +83,25 @@ fn line(content: &str, row: usize, cols: usize) {
     at(row);
     print!("{text}{}{RESET}", " ".repeat(padding));
 }
+
+/// Draws a peek: the mirrored pane's lines, and a hint that any key closes it.
+pub fn draw_peek(lines: &[String], rows: usize, cols: usize) {
+    if lines.is_empty() {
+        line("waiting for the pane…", 0, cols);
+        return;
+    }
+
+    // Keep the last row for the hint: a peek you cannot tell how to close is
+    // worse than no peek.
+    let capacity = rows.saturating_sub(1);
+    for (row, content) in lines.iter().take(capacity).enumerate() {
+        let text = format::truncate(content, cols);
+        let padding = cols.saturating_sub(text.chars().count());
+        at(row);
+        print!("{text}{}", " ".repeat(padding));
+    }
+
+    if rows > 0 {
+        line("any key closes", rows - 1, cols);
+    }
+}

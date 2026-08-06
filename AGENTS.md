@@ -94,10 +94,19 @@ Each of these cost a debugging round already:
   TODO about it). Bindings must be inserted inside it.
 - **A pane with a fixed `size=` cannot be resized**, by a plugin or by Zellij's
   own `resize`. Layouts use percentages so the `rail` swap layout works.
-- **Command panes cannot read the keyboard.** Their stdin is `/dev/null`, so a
-  polling command pane cannot close itself on a keypress — the plugin has to do
-  it. And a pane opened from a plugin steals focus *after* the call returns, so
-  taking focus back has to wait for a later event.
+- **Command panes cannot read the keyboard.** Their stdin is `/dev/null`, and a
+  real keypress to a focused command pane is not readable from `/dev/tty`
+  either. Anything that must react to a key has to be a *plugin* pane.
+- **A floating pane is only on screen while it holds focus.** Focus a tiled pane
+  and Zellij sets the tab's `hide_floating_panes`; `pinned` does not override it.
+  So a floating pane that needs to stay visible must be one that can hold focus
+  usefully — which again means a plugin pane.
+- **`get_session_environment_variables()` panics**, taking the plugin down with
+  it, and `SessionInfo.plugins` is empty in practice. To learn your own plugin
+  url, read your own pane's title from the manifest *before* renaming it — Zellij
+  sets it to the url.
+- **A pane opened from a plugin steals focus after the call returns**, so taking
+  focus back has to wait for a later event, not the same handler.
 - **Suppressed panes forget their geometry.** Unsuppressing puts the pane
   wherever Zellij likes, so hide/show is not a reversible collapse — that is
   what swap layouts are for.

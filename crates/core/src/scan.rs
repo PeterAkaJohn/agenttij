@@ -53,9 +53,26 @@ pub fn remember_previous(session: &str) -> [String; 4] {
     ]
 }
 
+/// Dumps a pane's screen, for a peek to render.
+///
+/// Plain text rather than `--ansi`: a peek pane is usually narrower than what it
+/// mirrors, and truncating a line through an escape sequence corrupts the rest
+/// of the frame.
+pub fn dump_command(session: &str, pane: u32) -> [String; 6] {
+    [
+        "zellij".to_owned(),
+        "--session".to_owned(),
+        session.to_owned(),
+        "action".to_owned(),
+        "dump-screen".to_owned(),
+        format!("--pane-id=terminal_{pane}"),
+    ]
+}
+
 /// Marks our own `RunCommandResult` events, so we ignore anyone else's.
 pub const CONTEXT_KEY: &str = "agenttij";
 pub const CONTEXT_SCAN: &str = "scan";
+pub const CONTEXT_PEEK: &str = "peek";
 
 pub fn command() -> [&'static str; 3] {
     ["sh", "-c", SCAN_SCRIPT]
@@ -175,6 +192,13 @@ mod tests {
             parse(b"1754400000\n").expect("parses").previous_session,
             None
         );
+    }
+
+    #[test]
+    fn the_dump_command_names_the_pane() {
+        let command = dump_command("main", 7);
+        assert_eq!(command[2], "main");
+        assert!(command.last().unwrap().ends_with("terminal_7"));
     }
 
     #[test]

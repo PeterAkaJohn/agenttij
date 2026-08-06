@@ -58,9 +58,13 @@ total=$((total + 8))
 second=0
 while [ "$second" -lt "$total" ]; do
     panes=$(zellij -s "$session" action list-panes 2>/dev/null | tail -n +2 | wc -l | tr -d ' ')
-    peeks=$(zellij -s "$session" action list-panes 2>/dev/null | grep -ac 'agenttij-peek' || true)
+    peeks=$(zellij -s "$session" action list-panes 2>/dev/null | grep -ac 'peek ' || true)
     focus=$(zellij -s "$session" action list-clients 2>/dev/null | tail -n +2 | head -1 | awk '{print $2}')
-    printf '%3ds  panes=%-3s peeks=%-3s focus=%s\n' "$second" "${panes:-–}" "${peeks:-0}" "${focus:-–}"
+    # Existence is not visibility: Zellij hides floating panes when a tiled pane
+    # takes focus, so a pane can be listed and still be off screen.
+    floating=$(zellij -s "$session" action are-floating-panes-visible 2>/dev/null | tr -d '[:space:]')
+    printf '%3ds  panes=%-3s peeks=%-3s visible=%-6s focus=%s\n' \
+        "$second" "${panes:-–}" "${peeks:-0}" "${floating:-–}" "${focus:-–}"
     sleep 1
     second=$((second + 1))
 done
