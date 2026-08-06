@@ -18,6 +18,9 @@ pub enum Status {
     Idle,
     /// Found by process name, with no hook reporting on it.
     Unknown,
+    /// Not an agent at all — a pane in the workspace, listed so it can be
+    /// switched to. A shell you just opened lives here until it reports.
+    Pane,
 }
 
 impl Status {
@@ -39,6 +42,7 @@ impl Status {
             Self::Done => '✓',
             Self::Idle => '○',
             Self::Unknown => '?',
+            Self::Pane => '·',
         }
     }
 
@@ -49,7 +53,7 @@ impl Status {
             Self::NeedsInput => 3,
             Self::Running => 2,
             Self::Done => 1,
-            Self::Idle | Self::Unknown => 0,
+            Self::Idle | Self::Unknown | Self::Pane => 0,
         }
     }
 }
@@ -64,6 +68,9 @@ pub struct Agent {
     pub reported_at: u64,
     /// Directory the agent is working in. Empty when discovered.
     pub cwd: String,
+    /// Short name from the pane's title, for entries that have no cwd to name
+    /// them — a plain pane, or an agent found by process name.
+    pub title: String,
 }
 
 impl Agent {
@@ -73,12 +80,13 @@ impl Agent {
         (self.session.as_str(), self.pane)
     }
 
-    /// Short name for the list: the working directory's basename, falling back
-    /// to the session name when we have no cwd.
+    /// Short name for the list: the working directory's basename, then the
+    /// pane's title, and the session name only as a last resort.
     pub fn label(&self) -> &str {
         self.cwd
             .rsplit('/')
             .find(|part| !part.is_empty())
+            .or(Some(self.title.as_str()).filter(|title| !title.is_empty()))
             .unwrap_or(&self.session)
     }
 }
@@ -108,6 +116,7 @@ mod tests {
             status,
             reported_at,
             cwd: cwd.into(),
+            title: String::new(),
         }
     }
 
@@ -121,8 +130,22 @@ mod tests {
     }
 
     #[test]
-    fn label_falls_back_to_session_without_a_cwd() {
+    fn label_falls_back_to_the_pane_title_then_the_session() {
+        let mut pane = agent(Status::Pane, 0, "");
+        pane.title = "nvim".into();
+        assert_eq!(pane.label(), "nvim");
+
         assert_eq!(agent(Status::Unknown, 0, "").label(), "sess");
+    }
+
+    #[test]
+    fn a_plain_pane_sorts_below_every_agent() {
+        let mut plain = agent(Status::Pane, 900, "/shell");
+        plain.title = "zsh".into();
+        let mut agents = vec![plain, agent(Status::Idle, 1, "/idle")];
+
+        sort_for_display(&mut agents, "sess");
+        assert_eq!(agents[0].label(), "idle");
     }
 
     #[test]

@@ -92,6 +92,7 @@ mod tests {
             status,
             reported_at,
             cwd: cwd.into(),
+            title: String::new(),
         }
     }
 

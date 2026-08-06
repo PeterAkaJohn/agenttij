@@ -91,8 +91,54 @@ pub fn discover(panes: &[PaneSnapshot], reported: &[Agent], names: &[String]) ->
             status: Status::Unknown,
             reported_at: 0,
             cwd: String::new(),
+            title: short_title(&pane.title),
         })
         .collect()
+}
+
+/// Lists every remaining pane in a session, so the sidebar can switch to panes
+/// that are not agents.
+///
+/// Solo mode needs this: a pane opened with `n` holds a shell until an agent
+/// starts reporting from it, and a pane the sidebar cannot list is a pane you
+/// cannot get back to once it is parked.
+pub fn list_panes(panes: &[PaneSnapshot], listed: &[Agent], session: &str) -> Vec<Agent> {
+    panes
+        .iter()
+        .filter(|pane| pane.session == session)
+        .filter(|pane| {
+            !listed
+                .iter()
+                .any(|agent| agent.key() == (pane.session.as_str(), pane.pane))
+        })
+        .map(|pane| Agent {
+            session: pane.session.clone(),
+            pane: pane.pane,
+            status: Status::Pane,
+            reported_at: 0,
+            cwd: String::new(),
+            title: short_title(&pane.title),
+        })
+        .collect()
+}
+
+/// Squeezes a pane title into something that fits a sidebar.
+///
+/// Titles are often a shell's `user@host:~/path/to/dir`, where the only useful
+/// part is the last path segment.
+pub fn short_title(title: &str) -> String {
+    let trimmed = title.trim().trim_end_matches('/');
+    let tail = trimmed
+        .rsplit_once('/')
+        .map(|(_, tail)| tail)
+        .or_else(|| trimmed.rsplit_once(':').map(|(_, tail)| tail))
+        .unwrap_or(trimmed);
+
+    let tail = tail.trim();
+    if tail.is_empty() {
+        return trimmed.to_string();
+    }
+    tail.to_string()
 }
 
 /// Tab position of a pane, needed to land on it when switching sessions.
@@ -142,6 +188,7 @@ mod tests {
             status: Status::Running,
             reported_at: 10,
             cwd: "/x".into(),
+            title: String::new(),
         }
     }
 
@@ -243,6 +290,38 @@ mod tests {
             parked("main", 0, 4, "claude"),
         ];
         assert_eq!(visible_terminal(&panes, "main", 0), None);
+    }
+
+    #[test]
+    fn lists_panes_that_are_not_agents() {
+        let panes = vec![
+            pane("main", 0, 3, "pp@host:~/personal/agenttij"),
+            pane("main", 0, 4, "claude"),
+            pane("other", 0, 9, "zsh"),
+        ];
+        let listed = discover(&panes, &[], &names());
+
+        let extra = list_panes(&panes, &listed, "main");
+        assert_eq!(extra.len(), 1, "only the non-agent pane in this session");
+        assert_eq!(extra[0].key(), ("main", 3));
+        assert_eq!(extra[0].status, Status::Pane);
+        assert_eq!(extra[0].label(), "agenttij");
+    }
+
+    #[test]
+    fn listing_panes_never_duplicates_a_row() {
+        let panes = vec![pane("main", 0, 3, "zsh")];
+        let listed = list_panes(&panes, &[], "main");
+        assert_eq!(list_panes(&panes, &listed, "main"), vec![]);
+    }
+
+    #[test]
+    fn titles_shrink_to_something_readable() {
+        assert_eq!(short_title("pp@host:~/personal/agenttij"), "agenttij");
+        assert_eq!(short_title("~/personal/agenttij/"), "agenttij");
+        assert_eq!(short_title("nvim ."), "nvim .");
+        assert_eq!(short_title("zsh"), "zsh");
+        assert_eq!(short_title(""), "");
     }
 
     #[test]

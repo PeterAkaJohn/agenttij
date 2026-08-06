@@ -27,6 +27,10 @@ sidebar is configured:
 | Agent in this session, otherwise | plain pane focus |
 | Agent in another session (`⇢` in the list) | detaches this client and reattaches to that session, landing on the agent's pane |
 
+In solo mode every pane in the session is listed, not just agents — a plain
+shell appears as `·` with its pane title, sorted below the agents. That is what
+makes a pane you have not started an agent in reachable after it is parked.
+
 **`n`** opens a fresh terminal *in place of* whatever is in the slot, suspending
 it rather than splitting the screen — this is the "managed pane" that keeps
 workspace mode down to one agent on screen. Close the new pane and Zellij brings

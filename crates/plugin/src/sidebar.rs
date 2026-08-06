@@ -141,6 +141,14 @@ impl Sidebar {
         let discovered = panes::discover(&self.panes, &agents, &self.config.agents);
         agents.extend(discovered);
 
+        // In solo mode the sidebar is the workspace's pane switcher, so it has
+        // to list panes that are not agents too — a parked shell you cannot
+        // select is a pane you cannot get back to.
+        if self.config.solo {
+            let rest = panes::list_panes(&self.panes, &agents, &self.current_session);
+            agents.extend(rest);
+        }
+
         if self.config.scope == Scope::Session {
             agents.retain(|agent| agent.session == self.current_session);
         }

@@ -10,6 +10,7 @@ needs you to the top, and lets you peek at an agent or jump to it.
 │ ◐ api-refactor 12s │  ◐ running
 │ ✓ docs-fix     5m  │  ✓ done
 │ ○ scratch      1h  │  ○ idle
+│ · shell        -   │  · a pane, no agent (solo mode)
 │                    │
 │ j/k ↵ go  p peek   │
 └────────────────────┘
@@ -91,6 +92,12 @@ Start agents with `n`: it opens a terminal *in place of* the one in the slot and
 suspends that one, instead of splitting the screen the way Zellij's own new-pane
 binding does. Close a pane and the suspended one comes back. Opening panes any
 other way works too — the first swap parks the extras.
+
+In solo mode the sidebar lists **every** pane in the session, not just agents:
+a plain shell shows as `·` with its title, below all the agents. Without that a
+pane you opened but have not started an agent in would be unreachable the moment
+it was parked, which makes the sidebar the switcher for the whole workspace
+rather than only for agents.
 The layout ships `scope "session"`, so the sidebar lists only this session's
 agents and `Enter` can never throw you out of the workspace, and `solo "true"`,
 which is what parks the others instead of leaving them on screen.

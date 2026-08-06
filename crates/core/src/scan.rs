@@ -99,6 +99,7 @@ fn parse_agent(line: &str) -> Option<Agent> {
         status,
         reported_at,
         cwd: cwd.to_owned(),
+        title: String::new(),
     })
 }
 
