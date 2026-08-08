@@ -76,8 +76,9 @@ which is the other half of the choice.
 The state files are the whole protocol, so watching a machine is reading them
 over ssh — install agenttij there too (the hook is what writes them), and give
 each host key-based login. No second machine handy? `scripts/testbox.sh up`
-starts a container running sshd with two agents' worth of state in it and prints
-the host string to paste into `h`. `Enter` on a remote row opens a pane here attached to
+starts a container running sshd and a zellij session with two panes, one state
+file each, and prints the host string to paste into `h` — enough that peeking
+shows real pane contents and `Enter` attaches to a real session. `Enter` on a remote row opens a pane here attached to
 that session, because Zellij cannot show a pane it does not own; `p` peeks at it
 without leaving.
 

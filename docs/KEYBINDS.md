@@ -60,7 +60,9 @@ which other machines you asked about.
 
 There is a container for trying this without a second machine:
 `scripts/testbox.sh up` prints a host string to paste into `h`, and
-`scripts/testbox.sh down` removes it.
+`scripts/testbox.sh down` removes it. It runs a real zellij session with two
+panes and a state file each, so its rows peek at actual pane contents and `Enter`
+attaches to something.
 
 ### Rows somewhere else
 
