@@ -6,20 +6,33 @@
 //! it, and opens the one you are working in.
 
 use crate::agent::{Agent, Kind, Status};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
-/// The project a row belongs to: the git root the hook resolved, falling back to
-/// the working directory when nothing did, and to nothing at all for a pane we
-/// know neither for.
+/// Where a row's project came from before anyone named it: the git root the hook
+/// resolved, falling back to the working directory when nothing did, and to
+/// nothing at all for a pane we know neither for.
 ///
 /// Panes with no directory of their own therefore share one nameless project,
 /// which is right: they are the ones we cannot place.
-pub fn key(agent: &Agent) -> &str {
+pub fn root(agent: &Agent) -> &str {
     if agent.root.is_empty() {
         &agent.cwd
     } else {
         &agent.root
     }
+}
+
+/// The project a row belongs to: what you called it, or where it lives if you
+/// never did.
+///
+/// This is what makes two repositories one project. A front end and a back end
+/// have different git roots and no shared parent worth grouping by, so the only
+/// thing that can join them is you saying they are the same thing — and once
+/// both roots carry that name, every agent started in either lands in it without
+/// being told again.
+pub fn key<'a>(agent: &'a Agent, names: &'a BTreeMap<String, String>) -> &'a str {
+    let root = root(agent);
+    names.get(root).map(String::as_str).unwrap_or(root)
 }
 
 /// Splices a header above each set of rows sharing a project, and drops the rows
@@ -33,10 +46,14 @@ pub fn key(agent: &Agent) -> &str {
 /// holding whatever needs you is the project at the top. A pane belongs to the
 /// project of the row above it — the list is already in that shape, and reading
 /// it that way means a pane never has to carry a project of its own.
-pub fn group(rows: Vec<Agent>, folded: &BTreeSet<String>) -> Vec<Agent> {
+pub fn group(
+    rows: Vec<Agent>,
+    folded: &BTreeSet<String>,
+    names: &BTreeMap<String, String>,
+) -> Vec<Agent> {
     let mut order: Vec<String> = Vec::new();
     for row in rows.iter().filter(|row| row.kind == Kind::Row) {
-        let key = key(row).to_owned();
+        let key = key(row, names).to_owned();
         if !order.contains(&key) {
             order.push(key);
         }
@@ -48,7 +65,7 @@ pub fn group(rows: Vec<Agent>, folded: &BTreeSet<String>) -> Vec<Agent> {
     let mut out = Vec::with_capacity(rows.len() + order.len());
     for project in &order {
         let folded = folded.contains(project);
-        out.push(header(project, &rows, folded));
+        out.push(header(project, &rows, folded, names));
         if folded {
             continue;
         }
@@ -56,7 +73,7 @@ pub fn group(rows: Vec<Agent>, folded: &BTreeSet<String>) -> Vec<Agent> {
         let mut inside = false;
         for row in &rows {
             match row.kind {
-                Kind::Row => inside = key(row) == project,
+                Kind::Row => inside = key(row, names) == project,
                 // Belongs to whatever row it was listed under.
                 Kind::Pane => {}
                 Kind::Project { .. } => continue,
@@ -77,10 +94,10 @@ pub fn group(rows: Vec<Agent>, folded: &BTreeSet<String>) -> Vec<Agent> {
 /// The status is the minimum because [`Status`] is ordered by how much it wants
 /// you — a folded project with a blocked agent inside has to say so, or folding
 /// it would mean not being told.
-fn header(project: &str, rows: &[Agent], folded: bool) -> Agent {
+fn header(project: &str, rows: &[Agent], folded: bool, names: &BTreeMap<String, String>) -> Agent {
     let members = || {
         rows.iter()
-            .filter(|row| row.kind == Kind::Row && key(row) == project)
+            .filter(|row| row.kind == Kind::Row && key(row, names) == project)
     };
     Agent {
         // No session and no pane: a header is not somewhere you can go, and the
@@ -142,7 +159,7 @@ mod tests {
             row("/home/pp/api", 1, Status::Idle),
             row("/home/pp/api", 2, Status::Done),
         ];
-        let out = group(rows.clone(), &BTreeSet::new());
+        let out = group(rows.clone(), &BTreeSet::new(), &BTreeMap::new());
 
         assert_eq!(out, rows, "a header would cost a line and tell you nothing");
     }
@@ -154,7 +171,7 @@ mod tests {
             row("/home/pp/dotfiles", 2, Status::Idle),
             row("/home/pp/api", 3, Status::Running),
         ];
-        let out = group(rows, &BTreeSet::new());
+        let out = group(rows, &BTreeSet::new(), &BTreeMap::new());
 
         assert_eq!(
             names(&out),
@@ -176,7 +193,7 @@ mod tests {
             row("/home/pp/api", 2, Status::NeedsInput),
             row("/home/pp/dotfiles", 3, Status::Idle),
         ];
-        let out = group(rows, &BTreeSet::new());
+        let out = group(rows, &BTreeSet::new(), &BTreeMap::new());
 
         assert_eq!(
             out[0].status,
@@ -198,8 +215,33 @@ mod tests {
         let folded = BTreeSet::from(["/home/pp/api".to_owned()]);
 
         assert_eq!(
-            names(&group(rows, &folded)),
+            names(&group(rows, &folded, &BTreeMap::new())),
             vec!["▸ api1", "▾ dotfiles1", "  dotfiles:2"]
+        );
+    }
+
+    #[test]
+    fn two_repositories_under_one_name_are_one_project() {
+        let rows = vec![
+            row("/home/pp/acme-frontend", 1, Status::NeedsInput),
+            row("/home/pp/acme-backend", 2, Status::Running),
+            row("/home/pp/dotfiles", 3, Status::Idle),
+        ];
+        let called_acme = BTreeMap::from([
+            ("/home/pp/acme-frontend".to_owned(), "acme".to_owned()),
+            ("/home/pp/acme-backend".to_owned(), "acme".to_owned()),
+        ]);
+
+        assert_eq!(
+            names(&group(rows, &BTreeSet::new(), &called_acme)),
+            vec![
+                "▾ acme2",
+                "  acme-frontend:1",
+                "  acme-backend:2",
+                "▾ dotfiles1",
+                "  dotfiles:3",
+            ],
+            "the rows keep their own names; the project takes the one you gave it"
         );
     }
 
@@ -213,7 +255,7 @@ mod tests {
             },
             row("/home/pp/api", 2, Status::Idle),
         ];
-        let out = group(rows, &BTreeSet::new());
+        let out = group(rows, &BTreeSet::new(), &BTreeMap::new());
 
         assert_eq!(out.len(), 4, "two headers, two rows");
         assert_eq!(

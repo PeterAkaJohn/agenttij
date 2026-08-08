@@ -17,6 +17,7 @@ working while the sidebar has focus.
 | `Tab` | open a row: its panes underneath it — or fold a project |
 | `[`, `]` | previous / next project |
 | `J`, `K` | move this project, or this row inside its project |
+| `r` | name a project — two with the same name are one |
 | `b` | flip back to the row you were on before |
 | `v` | cycle to the next pane *within* the row on screen |
 | `a` | add a pane to the row on screen |
@@ -82,6 +83,19 @@ a floating pane is only on screen while it holds focus, and a *command* pane
 cannot read a key, so a command-pane peek was either invisible or impossible to
 dismiss. Any key dismisses a peek and then still does its own job; `q` and `Esc`
 are the two that only dismiss.
+
+`r` names the project the cursor is on: type, `Enter` keeps it, `Esc` drops it,
+and while you are typing the keyboard belongs to the name — a `d` in a project
+name is a letter, not a key. Enter with nothing typed gives the project its
+directory back.
+
+Naming is also how two repositories become one project. A front end and a back
+end have different git roots and no shared parent worth grouping by, so nothing
+can join them except you saying they are the same thing: name both `acme` and
+they are one project, keeping their own row names inside it. Every agent started
+in either lands there afterwards without being told again, since the name is
+remembered against the git root rather than against the agent. Naming a project
+that is already several repositories renames all of them, so it stays together.
 
 `J` and `K` move things rather than the cursor: a project among the projects, a
 row among the rows of its project. Panes inside a row are left alone — their

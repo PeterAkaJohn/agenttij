@@ -26,6 +26,7 @@ The sidebar is an ordinary pane: focus it with your usual pane navigation (or
 | `Tab` | open a row up: its panes listed underneath — or fold a project |
 | `[`, `]` | jump between projects |
 | `J`, `K` | move a project, or a row within its project |
+| `r` | name a project — two with the same name are one |
 | `b` | flip back to the previous row (`Alt b` anywhere) |
 | `v` | cycle the panes *within* this row (`Alt v` anywhere) |
 | `a` | add a pane to this row: an editor, a log, whatever (`Alt m`) |
@@ -124,7 +125,9 @@ ungrouped becomes a row of its own.
 
 Rows gather into **projects**: everything working on one codebase, under the git
 root the hook records, so an agent started in `crates/core` sits with one started
-at the top of the repo. A project folds to a line that still shows the worst
+at the top of the repo. A front end and a back end in separate repositories are
+one project the moment you say so — `r`, name both `acme`, and they are together
+from then on, including agents you start in either later. A project folds to a line that still shows the worst
 status inside it, `[` and `]` step between them, `J` and `K` put them in the
 order you want, and both the order and which projects you folded are remembered
 in `~/.cache/agenttij/order`, so a reload or a new day finds them as you left

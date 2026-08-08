@@ -48,7 +48,7 @@ enum Selection {
 impl Selection {
     fn of(agent: &Agent) -> Self {
         match agent.kind {
-            Kind::Project { .. } => Self::Project(project::key(agent).to_owned()),
+            Kind::Project { .. } => Self::Project(project::root(agent).to_owned()),
             _ => Self::Row {
                 session: agent.session.clone(),
                 pane: agent.pane,
@@ -84,6 +84,12 @@ pub struct Sidebar {
     arrangement: order::Arrangement,
     /// Whether the remembered arrangement has been asked for yet.
     order_read: bool,
+    /// A project being named, and what has been typed so far.
+    renaming: Option<(String, String)>,
+    /// Which git roots each project holds, from before folding hid any of them —
+    /// naming a project has to reach every root inside it, or the halves of a
+    /// merged one would come apart the moment you renamed it.
+    project_roots: BTreeMap<String, BTreeSet<String>>,
     /// The rows each project holds in this session, kept from before folding
     /// dropped them — a folded project still has to be openable and closable.
     projects: BTreeMap<String, Vec<u32>>,
@@ -387,16 +393,19 @@ impl Sidebar {
         // Before folding, which drops rows the sidebar still has to be able to
         // act on.
         self.projects.clear();
-        for row in agents
-            .iter()
-            .filter(|row| row.kind == Kind::Row && row.session == self.current_session)
-        {
-            self.projects
-                .entry(project::key(row).to_owned())
+        self.project_roots.clear();
+        for row in agents.iter().filter(|row| row.kind == Kind::Row) {
+            let key = project::key(row, &self.arrangement.names).to_owned();
+            self.project_roots
+                .entry(key.clone())
                 .or_default()
-                .push(row.pane);
+                .insert(project::root(row).to_owned());
+            // Only this session's rows can be shown, closed or interrupted.
+            if row.session == self.current_session {
+                self.projects.entry(key).or_default().push(row.pane);
+            }
         }
-        let agents = project::group(agents, &self.arrangement.folded);
+        let agents = project::group(agents, &self.arrangement.folded, &self.arrangement.names);
 
         self.agents = agents;
         self.resync_selection();
@@ -439,6 +448,12 @@ impl Sidebar {
             return false;
         }
 
+        // Naming a project takes every key until it is done, so a name can
+        // contain a q, a d, or anything else that means something out here.
+        if let Some((project, typed)) = self.renaming.take() {
+            return self.type_name(project, typed, bare_key);
+        }
+
         // A peek is a still picture over your work, so the next key dismisses it
         // whatever that key is — and then still does its job, so peeking never
         // costs you a keystroke. q and Esc are the keys that only dismiss.
@@ -459,7 +474,7 @@ impl Sidebar {
                 // A folded project has nothing to go to until it is open, so
                 // Enter opens it; an open one goes to the first row inside.
                 if let Kind::Project { folded } = agent.kind {
-                    let project = project::key(&agent).to_owned();
+                    let project = project::key(&agent, &self.arrangement.names).to_owned();
                     if folded {
                         self.arrangement.folded.remove(&project);
                         self.save_order();
@@ -494,7 +509,7 @@ impl Sidebar {
             BareKey::Tab => {
                 if let Some(agent) = self.selected_agent().cloned() {
                     if let Kind::Project { folded } = agent.kind {
-                        let project = project::key(&agent).to_owned();
+                        let project = project::key(&agent, &self.arrangement.names).to_owned();
                         if folded {
                             self.arrangement.folded.remove(&project);
                         } else {
@@ -524,6 +539,17 @@ impl Sidebar {
             // list in the order you want it in.
             BareKey::Char('J') => self.shift_selection(true),
             BareKey::Char('K') => self.shift_selection(false),
+            // Name a project — and name two of them the same to make them one.
+            BareKey::Char('r') => {
+                let Some(agent) = self.selected_agent() else {
+                    return false;
+                };
+                if matches!(agent.kind, Kind::Project { .. }) {
+                    let project = project::key(agent, &self.arrangement.names).to_owned();
+                    self.renaming = Some((project, String::new()));
+                }
+                true
+            }
             // Project to project, wrapping, so a long list is a couple of keys
             // rather than a scroll.
             BareKey::Char(']') => self.jump_project(1),
@@ -594,7 +620,7 @@ impl Sidebar {
         let closing: Vec<u32> = match agent.kind {
             // A project takes every row in it, and every row takes its panes.
             Kind::Project { .. } => self
-                .rows_of(project::key(agent))
+                .rows_of(project::key(agent, &self.arrangement.names))
                 .iter()
                 .flat_map(|row| self.groups.closing(*row, true))
                 .collect(),
@@ -627,7 +653,9 @@ impl Sidebar {
             self.expanded.remove(&agent.pane);
         }
         if let Kind::Project { .. } = agent.kind {
-            self.arrangement.folded.remove(project::key(agent));
+            self.arrangement
+                .folded
+                .remove(project::key(agent, &self.arrangement.names));
             self.save_order();
         }
         if self.previous_row.is_some_and(|row| closing.contains(&row)) {
@@ -691,7 +719,7 @@ impl Sidebar {
     /// agent in it.
     fn interrupting(&self, agent: &Agent) -> Vec<u32> {
         match agent.kind {
-            Kind::Project { .. } => self.rows_of(project::key(agent)),
+            Kind::Project { .. } => self.rows_of(project::key(agent, &self.arrangement.names)),
             Kind::Row | Kind::Pane => vec![agent.pane],
         }
     }
@@ -723,6 +751,48 @@ impl Sidebar {
         row.map(|row| self.groups.current_of(row).unwrap_or(row))
     }
 
+    /// A keystroke while a name is being typed. Enter keeps it, Esc drops it,
+    /// and anything else is either a letter or ignored.
+    fn type_name(&mut self, project: String, mut typed: String, key: BareKey) -> bool {
+        match key {
+            BareKey::Enter => self.name_project(&project, typed.trim()),
+            // Dropped: `renaming` was taken on the way in.
+            BareKey::Esc => {}
+            BareKey::Backspace => {
+                typed.pop();
+                self.renaming = Some((project, typed));
+            }
+            BareKey::Char(letter) => {
+                typed.push(letter);
+                self.renaming = Some((project, typed));
+            }
+            _ => self.renaming = Some((project, typed)),
+        }
+        true
+    }
+
+    /// Calls a project something, which is also how two of them become one: the
+    /// name goes on every git root inside it, so anything started in any of them
+    /// lands here from now on. An empty name takes the roots back to being
+    /// themselves.
+    fn name_project(&mut self, project: &str, name: &str) {
+        let Some(roots) = self.project_roots.get(project).cloned() else {
+            return;
+        };
+        for root in roots {
+            if name.is_empty() {
+                self.arrangement.names.remove(&root);
+            } else {
+                self.arrangement.names.insert(root, name.to_owned());
+            }
+        }
+
+        // Follow the project to whatever it is called now.
+        self.selected = (!name.is_empty()).then(|| Selection::Project(name.to_owned()));
+        self.save_order();
+        self.rebuild();
+    }
+
     /// Moves the selected project among projects, or the selected row among the
     /// rows of its project. Panes inside a row keep the order they joined in.
     ///
@@ -739,17 +809,20 @@ impl Sidebar {
                     .agents
                     .iter()
                     .filter(|other| matches!(other.kind, Kind::Project { .. }))
-                    .map(|other| project::key(other).to_owned())
+                    .map(|other| project::key(other, &self.arrangement.names).to_owned())
                     .collect();
-                let key = project::key(&agent).to_owned();
+                let key = project::key(&agent, &self.arrangement.names).to_owned();
                 order::shift(&mut self.arrangement.projects, &natural, &key, down);
             }
             Kind::Row => {
-                let project = project::key(&agent).to_owned();
+                let project = project::key(&agent, &self.arrangement.names).to_owned();
                 let natural: Vec<(String, u32)> = self
                     .agents
                     .iter()
-                    .filter(|other| other.kind == Kind::Row && project::key(other) == project)
+                    .filter(|other| {
+                        other.kind == Kind::Row
+                            && project::key(other, &self.arrangement.names) == project
+                    })
                     .map(|other| (other.session.clone(), other.pane))
                     .collect();
                 let key = (agent.session.clone(), agent.pane);
@@ -789,7 +862,7 @@ impl Sidebar {
 
         let mut projects: Vec<String> = Vec::new();
         for row in rows.iter().filter(|row| row.kind == Kind::Row) {
-            let key = project::key(row).to_owned();
+            let key = project::key(row, &self.arrangement.names).to_owned();
             if !projects.contains(&key) {
                 projects.push(key);
             }
@@ -800,7 +873,9 @@ impl Sidebar {
         for project in &projects {
             let mine: Vec<(String, u32)> = rows
                 .iter()
-                .filter(|row| row.kind == Kind::Row && project::key(row) == project)
+                .filter(|row| {
+                    row.kind == Kind::Row && project::key(row, &self.arrangement.names) == project
+                })
                 .map(|row| (row.session.clone(), row.pane))
                 .collect();
             let remembered = self
@@ -845,6 +920,9 @@ impl Sidebar {
     /// What an armed key would take, so the second press is never a surprise —
     /// and, with nothing armed, what the list is currently hiding.
     fn prompt(&self) -> Option<String> {
+        if let Some((_, typed)) = self.renaming.as_ref() {
+            return Some(format!("name: {typed}▏"));
+        }
         let Some((action, selection)) = self.pending.as_ref() else {
             return self.only_blocked.then(|| "⚠ only — ! shows all".to_owned());
         };
@@ -859,7 +937,7 @@ impl Sidebar {
 
         let panes = match agent.kind {
             Kind::Project { .. } => self
-                .rows_of(project::key(agent))
+                .rows_of(project::key(agent, &self.arrangement.names))
                 .iter()
                 .map(|row| self.groups.closing(*row, true).len())
                 .sum(),

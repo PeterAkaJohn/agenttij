@@ -13,6 +13,7 @@ use std::collections::{BTreeMap, BTreeSet};
 const PROJECT: &str = "p";
 const ROW: &str = "r";
 const FOLDED: &str = "f";
+const NAMED: &str = "n";
 
 /// How you left the sidebar: what order things were in, and what was folded away.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -23,6 +24,10 @@ pub struct Arrangement {
     pub rows: BTreeMap<String, Vec<(String, u32)>>,
     /// Projects folded down to their header line, by project root.
     pub folded: BTreeSet<String>,
+    /// What you called a project, by the git root it was called that from. Two
+    /// roots under one name are one project — which is how a front end and a
+    /// back end in separate repositories become the thing you actually work on.
+    pub names: BTreeMap<String, String>,
 }
 
 /// The order, as a file.
@@ -42,6 +47,9 @@ pub fn encode(arrangement: &Arrangement) -> String {
     }
     for project in &arrangement.folded {
         out.push_str(&format!("{FOLDED}\t{project}\n"));
+    }
+    for (root, name) in &arrangement.names {
+        out.push_str(&format!("{NAMED}\t{root}\t{name}\n"));
     }
     out
 }
@@ -63,6 +71,14 @@ pub fn decode(text: &str) -> Arrangement {
                     out.folded.insert(project.to_owned());
                 } else {
                     out.projects.push(project.to_owned());
+                }
+            }
+            Some(NAMED) => {
+                let (Some(root), Some(name)) = (fields.next(), fields.next()) else {
+                    continue;
+                };
+                if !root.is_empty() && !name.is_empty() {
+                    out.names.insert(root.to_owned(), name.to_owned());
                 }
             }
             Some(ROW) => {
@@ -147,6 +163,10 @@ mod tests {
                 vec![("main".to_owned(), 3), ("other".to_owned(), 7)],
             )]),
             folded: BTreeSet::from(["/home/pp/dotfiles".to_owned()]),
+            names: BTreeMap::from([
+                ("/home/pp/acme-frontend".to_owned(), "acme".to_owned()),
+                ("/home/pp/acme-backend".to_owned(), "acme".to_owned()),
+            ]),
         };
 
         assert_eq!(decode(&encode(&arrangement)), arrangement);
