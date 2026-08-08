@@ -68,6 +68,9 @@ pub struct Sidebar {
     own_url: Option<String>,
     /// Whether the pane has been named yet.
     named: bool,
+    /// Our own pane id. Read once: `get_plugin_ids` is a host round-trip, and it
+    /// answers the same thing every time.
+    plugin_id: u32,
     /// Which panes belong to which row. Only meaningful in solo mode, where a
     /// row is a place to work rather than a single pane.
     groups: Groups,
@@ -83,6 +86,7 @@ pub struct Sidebar {
 impl ZellijPlugin for Sidebar {
     fn load(&mut self, configuration: BTreeMap<String, String>) {
         self.config = Config::from_map(&configuration);
+        self.plugin_id = get_plugin_ids().plugin_id;
 
         request_permission(&[
             PermissionType::ReadApplicationState, // session and pane metadata
@@ -100,7 +104,10 @@ impl ZellijPlugin for Sidebar {
 
         // The sidebar is a pane you navigate to like any other.
         set_selectable(true);
-        set_timeout(TICK_SECONDS);
+        // The keybind list never changes, so it has nothing to wake up for.
+        if !self.config.help {
+            set_timeout(TICK_SECONDS);
+        }
     }
 
     fn update(&mut self, event: Event) -> bool {
@@ -111,7 +118,15 @@ impl ZellijPlugin for Sidebar {
             }
             Event::RunCommandResult(_, stdout, _, context) => self.absorb_scan(&stdout, &context),
             Event::SessionUpdate(sessions, _) => {
-                self.panes = snapshot::panes(&sessions);
+                // Zellij sends this every second whether or not anything moved.
+                // An identical pane list means there is nothing to reconcile and
+                // nothing new to draw, and redrawing anyway cost a second full
+                // render every second, forever. The scan tick keeps ages fresh.
+                let panes = snapshot::panes(&sessions);
+                if panes == self.panes && self.tab.is_some() && self.named {
+                    return false;
+                }
+                self.panes = panes;
                 if let Some(name) = snapshot::current_session(&sessions) {
                     self.current_session = name;
                 }
@@ -126,10 +141,9 @@ impl ZellijPlugin for Sidebar {
                     .map(|pane| pane.pane)
                     .collect();
                 self.groups.reconcile(&here);
-                let plugin_id = get_plugin_ids().plugin_id;
-                self.tab = snapshot::own_tab(&sessions, plugin_id).or(self.tab);
+                self.tab = snapshot::own_tab(&sessions, self.plugin_id).or(self.tab);
                 if self.own_url.is_none() {
-                    self.own_url = snapshot::own_url(&sessions, plugin_id);
+                    self.own_url = snapshot::own_url(&sessions, self.plugin_id);
                 }
                 // After the url is captured, not before: the title *is* the url
                 // until we overwrite it.
@@ -434,7 +448,7 @@ impl Sidebar {
             return;
         }
         self.named = true;
-        rename_plugin_pane(get_plugin_ids().plugin_id, &self.config.title);
+        rename_plugin_pane(self.plugin_id, &self.config.title);
     }
 
     /// One row per group, named by the group's primary.

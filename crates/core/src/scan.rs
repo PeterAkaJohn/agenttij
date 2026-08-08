@@ -26,8 +26,10 @@ pub const STATE_DIR: &str = "/tmp/agenttij";
 /// `EXITED` lines are resurrectable corpses, not live sessions.
 ///
 /// Trailing `true` keeps the exit code clean when the glob matches nothing,
-/// which is the normal case with no agents running.
-const SCAN_SCRIPT: &str = "mkdir -p /tmp/agenttij && date +%s; \
+/// which is the normal case with no agents running — and is also why the
+/// directory is not created here: the hook makes it when it has something to
+/// write, and a `mkdir` per tick is a fork per tick for nothing.
+const SCAN_SCRIPT: &str = "date +%s; \
      zellij list-sessions --no-formatting 2>/dev/null \
      | grep -v EXITED | sed 's/[[:space:]].*//; s/^/session=/'; \
      cat /tmp/agenttij/*.state 2>/dev/null; true";
@@ -35,8 +37,7 @@ const SCAN_SCRIPT: &str = "mkdir -p /tmp/agenttij && date +%s; \
 /// The same without the session list, for the ticks in between: reading the
 /// state files is a `cat`, while listing sessions forks a `zellij` client that
 /// dials every session's socket. Sessions do not appear and vanish at 1Hz.
-const STATE_SCRIPT: &str =
-    "mkdir -p /tmp/agenttij && date +%s; cat /tmp/agenttij/*.state 2>/dev/null; true";
+const STATE_SCRIPT: &str = "date +%s; cat /tmp/agenttij/*.state 2>/dev/null; true";
 
 /// Marks a live-session line in the scan output.
 const SESSION_PREFIX: &str = "session=";
