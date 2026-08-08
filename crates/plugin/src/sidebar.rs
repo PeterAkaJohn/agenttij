@@ -9,12 +9,13 @@ use zellij_tile::prelude::*;
 
 use crate::{actions, render, snapshot};
 
+/// How many ticks between session lists. Sessions come and go far more slowly
+/// than agent state, and listing them forks a whole `zellij` client.
+const SESSION_TICKS: u8 = 5;
+
 /// How often the state files are re-read. A `sh` fork at this rate is noise;
 /// see `agenttij_core::scan` for why we shell out at all.
 const TICK_SECONDS: f64 = 1.0;
-
-/// How many ticks a cached cwd or running command is trusted for.
-const CACHE_TICKS: u8 = 5;
 
 #[derive(Default, PartialEq, Eq)]
 enum Permissions {
@@ -51,8 +52,14 @@ pub struct Sidebar {
     /// a `cd` still shows up.
     cwds: BTreeMap<u32, String>,
     programs: BTreeMap<u32, String>,
-    /// Ticks until the caches are thrown away.
-    stale_in: u8,
+    /// The pane whose cached answers are refreshed next. One per tick, so a
+    /// stale `cd` is noticed without a burst of round-trips landing on whatever
+    /// keypress happens to be in flight.
+    refresh_next: usize,
+    /// Ticks until the session list is re-read.
+    sessions_in: u8,
+    /// The tab we live in, from the manifest rather than a host call.
+    tab: Option<usize>,
     /// The open peek pane, so `q` can close it and `p` never stacks two.
     peek: Option<PaneId>,
     /// Lines of the pane this instance is peeking at, when it is a peek.
@@ -119,8 +126,10 @@ impl ZellijPlugin for Sidebar {
                     .map(|pane| pane.pane)
                     .collect();
                 self.groups.reconcile(&here);
+                let plugin_id = get_plugin_ids().plugin_id;
+                self.tab = snapshot::own_tab(&sessions, plugin_id).or(self.tab);
                 if self.own_url.is_none() {
-                    self.own_url = snapshot::own_url(&sessions, get_plugin_ids().plugin_id);
+                    self.own_url = snapshot::own_url(&sessions, plugin_id);
                 }
                 // After the url is captured, not before: the title *is* the url
                 // until we overwrite it.
@@ -185,12 +194,21 @@ impl Sidebar {
     fn tick(&mut self) {
         set_timeout(TICK_SECONDS);
 
-        // Cheap enough to redo every few seconds, far too expensive per render.
-        self.stale_in = self.stale_in.saturating_sub(1);
-        if self.stale_in == 0 {
-            self.stale_in = CACHE_TICKS;
-            self.cwds.clear();
-            self.programs.clear();
+        // One pane per tick rather than everything at once: the answers go stale
+        // slowly (a `cd`, a program starting), and a burst of round-trips is
+        // exactly what makes a keypress wait.
+        let known: BTreeSet<u32> = self
+            .cwds
+            .keys()
+            .chain(self.programs.keys())
+            .copied()
+            .collect();
+        let known: Vec<u32> = known.into_iter().collect();
+        if !known.is_empty() {
+            self.refresh_next = (self.refresh_next + 1) % known.len();
+            let pane = known[self.refresh_next];
+            self.cwds.remove(&pane);
+            self.programs.remove(&pane);
         }
 
         if self.permissions == Permissions::Denied || self.config.help {
@@ -208,7 +226,8 @@ impl Sidebar {
 
         let context =
             BTreeMap::from([(scan::CONTEXT_KEY.to_owned(), scan::CONTEXT_SCAN.to_owned())]);
-        run_command(&scan::command(), context);
+        self.sessions_in = self.sessions_in.checked_sub(1).unwrap_or(SESSION_TICKS);
+        run_command(&scan::command(self.sessions_in == SESSION_TICKS), context);
     }
 
     fn absorb_scan(&mut self, stdout: &[u8], context: &BTreeMap<String, String>) -> bool {
@@ -227,7 +246,11 @@ impl Sidebar {
         };
 
         self.now = result.now;
-        self.live_sessions = result.live_sessions;
+        // Empty means this scan did not ask for the list, not that every session
+        // died: our own is always in it. Keep what we had.
+        if !result.live_sessions.is_empty() {
+            self.live_sessions = result.live_sessions;
+        }
 
         let before = std::mem::replace(&mut self.reported, result.agents);
         self.rebuild();
@@ -530,9 +553,15 @@ impl Sidebar {
             for member in members.into_iter().filter(|member| *member != row.pane) {
                 // What is running in it, not the pane title: a shell's title is
                 // its prompt, which is the row's own name three times over.
-                let command =
-                    get_pane_running_command(PaneId::Terminal(member)).unwrap_or_default();
-                let title = panes::program_name(&command, row.label());
+                // From the cache `group_rows` filled a moment ago — asking the
+                // host here instead cost one round-trip per hidden pane per
+                // rebuild, which on a row of seven is what made j and k crawl.
+                let title = self
+                    .programs
+                    .get(&member)
+                    .filter(|program| !program.is_empty())
+                    .cloned()
+                    .unwrap_or_else(|| row.label().to_owned());
 
                 out.push(Agent {
                     pane: member,
@@ -551,8 +580,7 @@ impl Sidebar {
 
     /// The pane on screen in our tab, which is the one the slot holds.
     fn slot(&self) -> Option<u32> {
-        let (tab, _) = get_focused_pane_info().ok()?;
-        panes::visible_terminal(&self.panes, &self.current_session, tab)
+        panes::visible_terminal(&self.panes, &self.current_session, self.tab?)
     }
 
     /// Shows one particular pane of a row, rather than whichever the row was

@@ -38,6 +38,26 @@ pub fn panes(sessions: &[SessionInfo]) -> Vec<PaneSnapshot> {
     panes
 }
 
+/// The tab our own pane sits in.
+///
+/// Taken from the manifest we are handed rather than `get_focused_pane_info`,
+/// which is a round-trip to the server — and one made on every rebuild and every
+/// key that moves a pane, which is enough to be felt.
+pub fn own_tab(sessions: &[SessionInfo], plugin_id: u32) -> Option<usize> {
+    sessions
+        .iter()
+        .find(|session| session.is_current_session)?
+        .panes
+        .panes
+        .iter()
+        .find(|(_, panes)| {
+            panes
+                .iter()
+                .any(|pane| pane.is_plugin && pane.id == plugin_id)
+        })
+        .map(|(tab, _)| *tab)
+}
+
 /// The session we are running in.
 ///
 /// Read from the metadata rather than `ZELLIJ_SESSION_NAME`, which is captured

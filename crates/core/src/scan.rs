@@ -32,6 +32,12 @@ const SCAN_SCRIPT: &str = "mkdir -p /tmp/agenttij && date +%s; \
      | grep -v EXITED | sed 's/[[:space:]].*//; s/^/session=/'; \
      cat /tmp/agenttij/*.state 2>/dev/null; true";
 
+/// The same without the session list, for the ticks in between: reading the
+/// state files is a `cat`, while listing sessions forks a `zellij` client that
+/// dials every session's socket. Sessions do not appear and vanish at 1Hz.
+const STATE_SCRIPT: &str =
+    "mkdir -p /tmp/agenttij && date +%s; cat /tmp/agenttij/*.state 2>/dev/null; true";
+
 /// Marks a live-session line in the scan output.
 const SESSION_PREFIX: &str = "session=";
 
@@ -56,8 +62,13 @@ pub const CONTEXT_KEY: &str = "agenttij";
 pub const CONTEXT_SCAN: &str = "scan";
 pub const CONTEXT_PEEK: &str = "peek";
 
-pub fn command() -> [&'static str; 3] {
-    ["sh", "-c", SCAN_SCRIPT]
+pub fn command(with_sessions: bool) -> [&'static str; 3] {
+    let script = if with_sessions {
+        SCAN_SCRIPT
+    } else {
+        STATE_SCRIPT
+    };
+    ["sh", "-c", script]
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -130,6 +141,13 @@ mod tests {
     #[test]
     fn scan_script_uses_the_state_dir() {
         assert!(SCAN_SCRIPT.contains(STATE_DIR));
+        assert!(STATE_SCRIPT.contains(STATE_DIR));
+    }
+
+    #[test]
+    fn only_the_full_scan_lists_sessions() {
+        assert!(command(true)[2].contains("list-sessions"));
+        assert!(!command(false)[2].contains("list-sessions"));
     }
 
     #[test]
