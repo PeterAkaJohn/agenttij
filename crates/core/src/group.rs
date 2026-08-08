@@ -50,14 +50,16 @@ impl Group {
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Groups {
     groups: Vec<Group>,
-    /// Panes added since the last reconciliation.
+    /// Members asked for but not yet seen alive, with the number of updates
+    /// they may still go unseen.
     ///
-    /// A pane is added the moment it is asked for, and the update that proves it
-    /// exists may not be the next one to arrive — a focus change alone triggers
-    /// one, carrying a pane list from before the pane was made. Without this,
-    /// reconciliation drops the new member instantly and the group falls back to
-    /// singletons.
-    fresh: Vec<u32>,
+    /// A pane joins a row the moment it is asked for, and several updates can
+    /// arrive before the one that proves it exists — a focus change alone
+    /// triggers one, carrying a pane list from before the pane was made. Without
+    /// this grace, reconciliation drops the new member and the row falls back to
+    /// singletons. The count is a bound, so a pane that never appears cannot
+    /// haunt a row forever.
+    unseen: Vec<(u32, u8)>,
 }
 
 impl Groups {
@@ -65,11 +67,19 @@ impl Groups {
     /// members are dropped, empty groups disappear, and anything unrecognised
     /// becomes its own group.
     pub fn reconcile(&mut self, live: &[u32]) {
-        let fresh = std::mem::take(&mut self.fresh);
+        // Anything seen alive is no longer waiting to be seen; anything still
+        // waiting spends one of its lives.
+        self.unseen.retain(|(pane, _)| !live.contains(pane));
+        for (_, lives) in self.unseen.iter_mut() {
+            *lives = lives.saturating_sub(1);
+        }
+        self.unseen.retain(|(_, lives)| *lives > 0);
+
+        let waiting: Vec<u32> = self.unseen.iter().map(|(pane, _)| *pane).collect();
         for group in &mut self.groups {
             group
                 .members
-                .retain(|member| live.contains(member) || fresh.contains(member));
+                .retain(|member| live.contains(member) || waiting.contains(member));
         }
         self.groups.retain(|group| !group.members.is_empty());
 
@@ -100,7 +110,9 @@ impl Groups {
             }
             None => self.groups.push(Group::new(pane)),
         }
-        self.fresh.push(pane);
+        // Ten updates is a second or so of slack — far more than the two or
+        // three that arrive around a pane being created.
+        self.unseen.push((pane, 10));
     }
 
     /// The next member to cycle to within the group holding `pane`.
@@ -190,12 +202,36 @@ mod tests {
 
     /// It does not get a second reprieve: a pane that never appears is gone.
     #[test]
-    fn a_pane_that_never_arrives_is_dropped() {
+    fn a_pane_that_never_arrives_is_dropped_eventually() {
         let mut groups = Groups::default();
         groups.reconcile(&[3]);
         groups.add(3, 4);
 
+        for _ in 0..9 {
+            groups.reconcile(&[3]);
+        }
+        assert_eq!(
+            groups.rows().collect::<Vec<_>>(),
+            vec![(3, 2)],
+            "still waiting"
+        );
+
         groups.reconcile(&[3]);
+        assert_eq!(
+            groups.rows().collect::<Vec<_>>(),
+            vec![(3, 1)],
+            "given up on"
+        );
+    }
+
+    /// Once a pane has been seen, it is held to the normal rule again.
+    #[test]
+    fn a_member_seen_once_is_dropped_as_soon_as_it_goes() {
+        let mut groups = Groups::default();
+        groups.reconcile(&[3]);
+        groups.add(3, 4);
+
+        groups.reconcile(&[3, 4]);
         groups.reconcile(&[3]);
         assert_eq!(groups.rows().collect::<Vec<_>>(), vec![(3, 1)]);
     }
@@ -225,8 +261,8 @@ mod tests {
         let mut groups = Groups::default();
         groups.reconcile(&[3]);
         groups.add(3, 4);
-        groups.reconcile(&[3]);
-        groups.reconcile(&[3]); // past the one update a new pane is given
+        groups.reconcile(&[3, 4]); // seen
+        groups.reconcile(&[3]); // and now gone
 
         assert_eq!(groups.rows().collect::<Vec<_>>(), vec![(3, 1)]);
         assert_eq!(
@@ -242,8 +278,8 @@ mod tests {
         let mut groups = Groups::default();
         groups.reconcile(&[3]);
         groups.add(3, 4);
-        groups.reconcile(&[4]);
-        groups.reconcile(&[4]);
+        groups.reconcile(&[3, 4]); // seen
+        groups.reconcile(&[4]); // the agent closes
 
         assert_eq!(groups.rows().collect::<Vec<_>>(), vec![(4, 1)]);
     }
@@ -255,8 +291,8 @@ mod tests {
         groups.add(3, 4);
         assert_eq!(groups.current_of(3), Some(4));
 
-        groups.reconcile(&[3]);
-        groups.reconcile(&[3]); // past the one update a new pane is given
+        groups.reconcile(&[3, 4]); // seen
+        groups.reconcile(&[3]); // and now gone
         assert_eq!(groups.current_of(3), Some(3));
     }
 
