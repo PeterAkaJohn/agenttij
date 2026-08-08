@@ -101,6 +101,12 @@ the same side at the same percentage width. A plugin can only resize itself in
 coarse asynchronous steps, so the width drifts; and hiding the pane is worse,
 since a suppressed pane comes back wherever Zellij decides to put it.
 
+In a session still holding the panes its layout was written with, the first
+`Alt ]` lands on `sidebar` — the same arrangement under another name — and the
+second folds to the rail. That layout exists so that opening a pane does not fold
+the sidebar on its own (see the swap-layout trap in AGENTS.md); once you have
+opened one, `Alt ]` folds on the first press.
+
 On the rail the sidebar shows one status glyph per row, centred, and every key
 still works.
 

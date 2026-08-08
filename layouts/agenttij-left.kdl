@@ -22,6 +22,32 @@ layout {
     //     plugin location="zellij:status-bar"
     // }
 
+    // A new pane makes Zellij re-apply a swap layout, and the base layout is
+    // registered with `ExactPanes` — it stops fitting the moment there is one
+    // more pane than it was written for (`set_base_layout`, tab/swap_layouts.rs,
+    // with a comment saying the base is "not intended to be progressive"). The
+    // next candidate then wins, so with only a rail to fall through to, opening
+    // a pane folded the sidebar on its own. This is the same arrangement with no
+    // pane-count constraint, so it is what a new pane lands in — and because
+    // Zellij re-applies the *current* layout rather than the next one, a rail
+    // that you chose stays a rail.
+    swap_tiled_layout name="sidebar" {
+        tab {
+            // pane size=1 borderless=true {
+            //     plugin location="zellij:tab-bar"
+            // }
+            pane split_direction="vertical" {
+                pane size="20%" {
+                    plugin location="file:~/.config/zellij/plugins/agenttij.wasm"
+                }
+                pane
+            }
+            // pane size=2 borderless=true {
+            //     plugin location="zellij:status-bar"
+            // }
+        }
+    }
+
     // Fold the sidebar to a rail with Zellij's swap-layout key (Alt ] by
     // default): same position, exact widths both ways. This is a swap layout
     // rather than a plugin key because a plugin can only resize itself in

@@ -279,7 +279,7 @@ crates/core    agenttij-core — zero dependencies, all the decisions, unit-test
 crates/plugin  agenttij — the wasm plugin: lifecycle, rendering, navigation
 hooks/         the shell hook agents run — tool-agnostic
 integrations/  per-tool glue that calls it (an opencode plugin)
-layouts/       left, right, workspace, each with a `rail` swap layout
+layouts/       left, right, workspace, each with `sidebar` and `rail` swaps
 scripts/       installer, its helpers, and a real-keystroke test harness
 docs/KEYBINDS.md  every key, and how to change them
 docs/PLAN.md      design notes and the Zellij constraints they follow from

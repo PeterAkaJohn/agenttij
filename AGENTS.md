@@ -95,6 +95,22 @@ Each of these cost a debugging round already:
   Adding one to `request_permission` means adding it to
   `scripts/grant-permissions.py` too, or users get a prompt they cannot see in a
   narrow pane.
+- **Permission grants are keyed by the plugin's path with no `file:` prefix.**
+  Zellij writes `~/.cache/zellij/permissions.kdl` as bare paths, so an entry
+  written as `"file:/path/x.wasm"` is never matched: the plugin loads, asks, and
+  sits on a prompt too wide for the pane. `scripts/grant-permissions.py` takes
+  whatever url you hand it, so hand it the path.
+- **Adding a pane re-applies a swap layout, and the base layout stops fitting.**
+  Zellij registers your base layout as swap position 0 with `ExactPanes` set to
+  the pane count you wrote it with (`set_base_layout`, `tab/swap_layouts.rs`:
+  "not intended to be progressive"). Open one more pane and it no longer fits, so
+  the next swap layout wins — which is how a lone `rail` folded the sidebar every
+  time a pane was added. Each layout therefore defines an unconstrained `sidebar`
+  swap layout *before* `rail`. Re-applying keeps the *current* position rather
+  than advancing (`add_tiled_pane` sets the damaged flag first, deliberately), so
+  a rail you chose stays a rail. Constraining that first layout by pane count
+  does not work: suppressing a pane relayouts too (`extract_pane`), and in solo
+  mode that drops the count straight back down.
 - **A plugin's identity is its url *plus* its configuration.** A pipe, message or
   `LaunchOrFocusPlugin` whose configuration differs launches a *second* instance
   instead of reaching the one running. Layout configuration and anything
