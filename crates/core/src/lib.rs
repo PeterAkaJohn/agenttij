@@ -11,6 +11,7 @@ pub mod config;
 pub mod format;
 pub mod group;
 pub mod help;
+pub mod order;
 pub mod panes;
 pub mod project;
 pub mod scan;

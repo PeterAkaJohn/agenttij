@@ -3,8 +3,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use agenttij_core::{
-    agent, config::Scope, format, panes, project, scan, Agent, Config, Groups, Kind, PaneSnapshot,
-    Status,
+    agent, config::Scope, format, order, panes, project, scan, Agent, Config, Groups, Kind,
+    PaneSnapshot, Status,
 };
 use zellij_tile::prelude::*;
 
@@ -81,6 +81,10 @@ pub struct Sidebar {
     expanded: BTreeSet<u32>,
     /// Projects folded down to their header line, by root.
     folded: BTreeSet<String>,
+    /// The order you put the projects in, once you have put them in one.
+    project_order: Vec<String>,
+    /// The order you put a project's rows in, by project root.
+    row_order: BTreeMap<String, Vec<(String, u32)>>,
     /// The rows each project holds in this session, kept from before folding
     /// dropped them — a folded project still has to be openable and closable.
     projects: BTreeMap<String, Vec<u32>>,
@@ -360,6 +364,7 @@ impl Sidebar {
             agents.retain(|agent| agent.session == self.current_session);
         }
         agent::sort_for_display(&mut agents, &self.current_session);
+        let mut agents = self.arranged(agents);
         if self.config.solo {
             agents = self.with_expanded_panes(agents);
         }
@@ -396,10 +401,18 @@ impl Sidebar {
     }
 
     fn on_key(&mut self, key: KeyWithModifier) -> bool {
-        // Leave modified keys to Zellij, so the sidebar never eats a binding.
-        if !key.key_modifiers.is_empty() {
+        // Leave modified keys to Zellij, so the sidebar never eats a binding —
+        // except Shift, which is not a binding, it is a capital letter. Some
+        // terminals report it as one and some report the modifier separately, so
+        // both arrive here as the capital.
+        let shift = key.key_modifiers.len() == 1 && key.key_modifiers.contains(&KeyModifier::Shift);
+        if !key.key_modifiers.is_empty() && !shift {
             return false;
         }
+        let bare_key = match key.bare_key {
+            BareKey::Char(letter) if shift => BareKey::Char(letter.to_ascii_uppercase()),
+            other => other,
+        };
 
         // A peek is a still picture of someone else's pane: there is nothing to
         // type into it, so any key dismisses it. This is why a peek is a plugin
@@ -420,7 +433,7 @@ impl Sidebar {
         // does something else entirely.
         let armed = self.pending.take();
 
-        match key.bare_key {
+        match bare_key {
             BareKey::Char('q') | BareKey::Esc => had_peek,
             BareKey::Down | BareKey::Char('j') => self.move_cursor(1),
             BareKey::Up | BareKey::Char('k') => self.move_cursor(-1),
@@ -490,6 +503,10 @@ impl Sidebar {
                 }
                 true
             }
+            // Move what the cursor is on, rather than the cursor: J and K put the
+            // list in the order you want it in.
+            BareKey::Char('J') => self.shift_selection(true),
+            BareKey::Char('K') => self.shift_selection(false),
             // Project to project, wrapping, so a long list is a couple of keys
             // rather than a scroll.
             BareKey::Char(']') => self.jump_project(1),
@@ -686,6 +703,86 @@ impl Sidebar {
                 .map(|other| other.pane),
         };
         row.map(|row| self.groups.current_of(row).unwrap_or(row))
+    }
+
+    /// Moves the selected project among projects, or the selected row among the
+    /// rows of its project. Panes inside a row keep the order they joined in.
+    ///
+    /// Against what is on screen, not against what is remembered: the order you
+    /// are looking at is the one you are rearranging.
+    fn shift_selection(&mut self, down: bool) -> bool {
+        let Some(agent) = self.selected_agent().cloned() else {
+            return false;
+        };
+
+        match agent.kind {
+            Kind::Project { .. } => {
+                let natural: Vec<String> = self
+                    .agents
+                    .iter()
+                    .filter(|other| matches!(other.kind, Kind::Project { .. }))
+                    .map(|other| project::key(other).to_owned())
+                    .collect();
+                let key = project::key(&agent).to_owned();
+                order::shift(&mut self.project_order, &natural, &key, down);
+            }
+            Kind::Row => {
+                let project = project::key(&agent).to_owned();
+                let natural: Vec<(String, u32)> = self
+                    .agents
+                    .iter()
+                    .filter(|other| other.kind == Kind::Row && project::key(other) == project)
+                    .map(|other| (other.session.clone(), other.pane))
+                    .collect();
+                let key = (agent.session.clone(), agent.pane);
+                let remembered = self.row_order.entry(project).or_default();
+                order::shift(remembered, &natural, &key, down);
+            }
+            // A pane's place in its row is the order it joined in, which is the
+            // only thing `v` can cycle through predictably.
+            Kind::Pane => return false,
+        }
+
+        self.rebuild();
+        true
+    }
+
+    /// The rows in the order you asked for: projects first, each project's rows
+    /// inside it, and anything nobody has moved left where the sort put it.
+    ///
+    /// One pass over the flat list, before the panes and the headers go in:
+    /// grouping keeps the relative order it is given, so arranging the rows here
+    /// arranges the projects too.
+    fn arranged(&self, rows: Vec<Agent>) -> Vec<Agent> {
+        if self.project_order.is_empty() && self.row_order.is_empty() {
+            return rows;
+        }
+
+        let mut projects: Vec<String> = Vec::new();
+        for row in rows.iter().filter(|row| row.kind == Kind::Row) {
+            let key = project::key(row).to_owned();
+            if !projects.contains(&key) {
+                projects.push(key);
+            }
+        }
+        let projects = order::arrange(projects, &self.project_order, String::clone);
+
+        let mut wanted: Vec<(String, u32)> = Vec::new();
+        for project in &projects {
+            let mine: Vec<(String, u32)> = rows
+                .iter()
+                .filter(|row| row.kind == Kind::Row && project::key(row) == project)
+                .map(|row| (row.session.clone(), row.pane))
+                .collect();
+            let remembered = self
+                .row_order
+                .get(project)
+                .map(Vec::as_slice)
+                .unwrap_or(&[]);
+            wanted.extend(order::arrange(mine, remembered, Clone::clone));
+        }
+
+        order::arrange(rows, &wanted, |row| (row.session.clone(), row.pane))
     }
 
     /// Moves the cursor to the next project header, wrapping at the ends.

@@ -25,6 +25,7 @@ The sidebar is an ordinary pane: focus it with your usual pane navigation (or
 | `Enter` | show that row — switches session if the agent is elsewhere |
 | `Tab` | open a row up: its panes listed underneath — or fold a project |
 | `[`, `]` | jump between projects |
+| `J`, `K` | move a project, or a row within its project |
 | `b` | flip back to the previous row (`Alt b` anywhere) |
 | `v` | cycle the panes *within* this row (`Alt v` anywhere) |
 | `a` | add a pane to this row: an editor, a log, whatever (`Alt m`) |
@@ -124,8 +125,9 @@ ungrouped becomes a row of its own.
 Rows gather into **projects**: everything working on one codebase, under the git
 root the hook records, so an agent started in `crates/core` sits with one started
 at the top of the repo. A project folds to a line that still shows the worst
-status inside it, `[` and `]` step between them, and headers only appear once
-there is more than one project to tell apart. Four repositories become four
+status inside it, `[` and `]` step between them, `J` and `K` put them in the
+order you want, and headers only appear once there is more than one project to
+tell apart. Four repositories become four
 lines you can open, instead of fifteen you have to read.
 
 In solo mode a **row is a group of panes**, not a single pane. `a` adds a pane to

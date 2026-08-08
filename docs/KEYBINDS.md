@@ -16,6 +16,7 @@ working while the sidebar has focus.
 | `Enter` | show the selected row, or the pane under it |
 | `Tab` | open a row: its panes underneath it — or fold a project |
 | `[`, `]` | previous / next project |
+| `J`, `K` | move this project, or this row inside its project |
 | `b` | flip back to the row you were on before |
 | `v` | cycle to the next pane *within* the row on screen |
 | `a` | add a pane to the row on screen |
@@ -81,6 +82,16 @@ a floating pane is only on screen while it holds focus, and a *command* pane
 cannot read a key, so a command-pane peek was either invisible or impossible to
 dismiss. Any key dismisses a peek and then still does its own job; `q` and `Esc`
 are the two that only dismiss.
+
+`J` and `K` move things rather than the cursor: a project among the projects, a
+row among the rows of its project. Panes inside a row are left alone — their
+order is the order they joined in, which is what `v` cycles through.
+
+The sidebar sorts by what needs you until you have an opinion; from the first
+time you move something, what you arranged stays arranged, and anything that
+turns up later lands after it rather than in the middle of it. Shift is the only
+modifier the sidebar reads — every other one still passes straight through to
+your own Zellij bindings.
 
 `!` shows only agents that need you — every project, every session, nothing else
 — and the bottom line says so while it is on. Press it again for the whole list.
