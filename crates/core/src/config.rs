@@ -40,6 +40,9 @@ pub struct Config {
     /// sidebar with this set *is* the peek — it renders that pane and closes on
     /// any key, which a command pane cannot do because it cannot read one.
     pub peek: Option<(String, u32)>,
+    /// Set on a help instance: this sidebar is the keybind list, and closes on
+    /// any key.
+    pub help: bool,
     /// Show only the selected agent's pane, parking the others out of sight
     /// instead of leaving them on screen.
     pub solo: bool,
@@ -55,6 +58,7 @@ impl Default for Config {
             colors_raw: String::new(),
             notify: Vec::new(),
             peek: None,
+            help: false,
             solo: false,
         }
     }
@@ -81,6 +85,7 @@ impl Config {
         };
 
         let solo = configuration.get("solo").map(|raw| raw.trim()) == Some("true");
+        let help = configuration.get("help").map(|raw| raw.trim()) == Some("true");
 
         let title = configuration
             .get("title")
@@ -119,6 +124,7 @@ impl Config {
             colors_raw,
             notify,
             peek,
+            help,
             solo,
         }
     }

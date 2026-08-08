@@ -10,6 +10,7 @@ pub mod color;
 pub mod config;
 pub mod format;
 pub mod group;
+pub mod help;
 pub mod panes;
 pub mod scan;
 

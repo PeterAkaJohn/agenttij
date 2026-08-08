@@ -30,6 +30,7 @@ The sidebar is an ordinary pane: focus it with your usual pane navigation (or
 | `n` | new agent pane — a new row (`Alt g`) |
 | `p` | peek at an agent without leaving your session |
 | `q`, `Esc` | dismiss a peek |
+| `?` | show every key and what it does |
 
 Every one of those that makes sense away from the sidebar has a global binding,
 installed for you: `Alt s` focuses the sidebar, `Alt v` cycles a row's panes,

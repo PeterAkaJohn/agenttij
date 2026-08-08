@@ -79,6 +79,27 @@ fn own_cwd() -> PathBuf {
     get_plugin_ids().initial_cwd
 }
 
+/// Opens the keybind list: this plugin again, floating, in help mode.
+///
+/// Same shape as a peek and for the same reason — a plugin pane can hold focus
+/// and read the key that dismisses it, which no other kind of pane can.
+pub fn help(own_url: &str) -> Option<PaneId> {
+    let configuration = BTreeMap::from([
+        ("help".to_owned(), "true".to_owned()),
+        ("title".to_owned(), "keys".to_owned()),
+    ]);
+    let coordinates = FloatingPaneCoordinates::new(
+        Some("15%".to_owned()),
+        Some("15%".to_owned()),
+        Some("70%".to_owned()),
+        Some("70%".to_owned()),
+        None,
+        None,
+    );
+
+    open_plugin_pane_floating(own_url, configuration, coordinates, BTreeMap::new())
+}
+
 /// Opens a peek: another instance of this plugin, floating, mirroring an
 /// agent's pane once a second.
 ///

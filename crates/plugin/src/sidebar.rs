@@ -142,6 +142,10 @@ impl ZellijPlugin for Sidebar {
     }
 
     fn render(&mut self, rows: usize, cols: usize) {
+        if self.config.help {
+            render::draw_peek(&agenttij_core::help::lines(cols), rows, cols);
+            return;
+        }
         if self.config.peek.is_some() {
             render::draw_peek(&self.peeked, rows, cols);
             return;
@@ -165,7 +169,7 @@ impl Sidebar {
     fn tick(&mut self) {
         set_timeout(TICK_SECONDS);
 
-        if self.permissions == Permissions::Denied {
+        if self.permissions == Permissions::Denied || self.config.help {
             return;
         }
 
@@ -266,7 +270,7 @@ impl Sidebar {
         // pane and not a command pane — a command pane cannot read a key at all,
         // and a floating pane is only visible while it holds focus, so the two
         // together made a peek impossible to dismiss.
-        if self.config.peek.is_some() {
+        if self.config.peek.is_some() || self.config.help {
             close_self();
             return false;
         }
@@ -291,6 +295,14 @@ impl Sidebar {
                     } else {
                         actions::go_to(&agent, &self.current_session, &self.panes);
                     }
+                }
+                false
+            }
+            // Every key and what it does, for when you have forgotten.
+            BareKey::Char('?') => {
+                self.close_peek();
+                if let Some(url) = self.own_url.clone() {
+                    self.peek = actions::help(&url);
                 }
                 false
             }

@@ -21,6 +21,7 @@ working while the sidebar has focus.
 | `n` | new agent pane — a new row |
 | `p` | peek at a row's agent without leaving this session |
 | `q`, `Esc` | dismiss a peek |
+| `?` | this list, in a floating pane |
 
 ### Rows, not panes
 
