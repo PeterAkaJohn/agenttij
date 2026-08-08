@@ -24,7 +24,13 @@ pub fn row(agent: &Agent, now: u64, width: usize, current_session: &str) -> Stri
 /// this is split at all — the glyph carries the status colour and the label must
 /// not.
 pub fn row_parts(agent: &Agent, now: u64, width: usize, current_session: &str) -> (String, String) {
-    let glyph = agent.status.glyph();
+    // A pane listed under its row carries no status of its own — the indent
+    // already says what it is, and a glyph there just adds noise.
+    let glyph = if agent.depth > 0 {
+        ' '
+    } else {
+        agent.status.glyph()
+    };
 
     // On a rail there is room for the status and nothing else, so centre it
     // rather than leaving it hanging off the left edge.
@@ -146,7 +152,7 @@ mod tests {
         child.depth = 1;
 
         let row = row(&child, 1_020, 20, "sess");
-        assert_eq!(row, "·  nvim            -");
+        assert_eq!(row, "   nvim            -", "no glyph, just the indent");
         assert_eq!(row.chars().count(), 20);
     }
 

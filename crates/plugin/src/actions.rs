@@ -86,7 +86,7 @@ fn own_cwd() -> PathBuf {
 pub fn help(own_url: &str) -> Option<PaneId> {
     let configuration = BTreeMap::from([
         ("help".to_owned(), "true".to_owned()),
-        ("title".to_owned(), "keys".to_owned()),
+        ("pane_title".to_owned(), "keys".to_owned()),
     ]);
     let coordinates = FloatingPaneCoordinates::new(
         Some("15%".to_owned()),
@@ -114,7 +114,7 @@ pub fn preview(agent: &Agent, own_url: &str, config: &Config) -> Option<PaneId> 
             "peek".to_owned(),
             format!("{}:{}", agent.session, agent.pane),
         ),
-        ("title".to_owned(), format!("peek {}", agent.label())),
+        ("pane_title".to_owned(), format!("peek {}", agent.label())),
     ]);
     // Colours are the user's, and a peek is an instance of the same plugin, so
     // carry them across rather than reverting to the defaults.

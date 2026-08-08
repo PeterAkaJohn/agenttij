@@ -98,7 +98,7 @@ detach: `Enter` is a pane swap.
 ┌ agents ────┬──────────────────────────┐
 │ ⚠ bravo    │                          │
 │ ◐ delta  2 │  delta's editor          │ ← the row on screen is showing
-│   · nvim   │                          │   its second pane; Tab opened
+│    nvim    │                          │   its second pane; Tab opened
 │ ✓ alpha    │                          │   the row to list it
 │ · scratch  │  (every other pane is    │
 │            │   parked, still running) │
@@ -186,8 +186,8 @@ pane size="20%" {
         scope "session"
         // "true" makes a row a group of panes, one on screen at a time
         solo "true"
-        // what the pane frame calls itself
-        title "agents"
+        // what the pane frame calls itself (not `title`: Zellij keeps that one)
+        pane_title "agents"
         // per-status colours: a name, a 256-colour index, or #rrggbb.
         // statuses are needs-input, running, done, idle, unknown, pane
         colors "needs-input=yellow,running=blue,done=green,idle=bright-black"

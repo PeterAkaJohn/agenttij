@@ -375,7 +375,14 @@ impl Sidebar {
     /// permissions arrive asynchronously, so `load` is too early — a command
     /// issued before the grant is denied in silence.
     fn name_self(&mut self) {
-        if self.named || self.permissions != Permissions::Granted || self.own_url.is_none() {
+        if self.named || self.permissions != Permissions::Granted {
+            return;
+        }
+        // The sidebar has to wait: its own url is read from this very title, and
+        // renaming first would erase it. A peek or the help list never launches
+        // anything, so it has nothing to wait for.
+        let needs_url = self.config.peek.is_none() && !self.config.help;
+        if needs_url && self.own_url.is_none() {
             return;
         }
         self.named = true;
@@ -426,12 +433,11 @@ impl Sidebar {
             out.push(row.clone());
 
             for member in members.into_iter().filter(|member| *member != row.pane) {
-                let title = self
-                    .panes
-                    .iter()
-                    .find(|pane| pane.session == self.current_session && pane.pane == member)
-                    .map(|pane| panes::short_title(&pane.title))
-                    .unwrap_or_default();
+                // What is running in it, not the pane title: a shell's title is
+                // its prompt, which is the row's own name three times over.
+                let command =
+                    get_pane_running_command(PaneId::Terminal(member)).unwrap_or_default();
+                let title = panes::program_name(&command, row.label());
 
                 out.push(Agent {
                     pane: member,

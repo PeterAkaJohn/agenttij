@@ -151,6 +151,31 @@ pub fn short_title(title: &str) -> String {
     tail.to_string()
 }
 
+/// Shells that mean "nothing in particular is running here".
+const SHELLS: [&str; 6] = ["sh", "bash", "zsh", "fish", "dash", "nu"];
+
+/// Names a pane by the program running in it — `nvim`, `lazygit` — falling back
+/// to the row's own name when that is just a shell.
+///
+/// A pane sitting at a prompt has no better name than the row it belongs to;
+/// saying "zsh" three times over tells you nothing about which is which.
+pub fn program_name(command: &[String], fallback: &str) -> String {
+    let Some(program) = command.first() else {
+        return fallback.to_string();
+    };
+    let program = program
+        .rsplit('/')
+        .next()
+        .unwrap_or(program)
+        .trim()
+        .trim_start_matches('-'); // login shells arrive as "-zsh"
+
+    if program.is_empty() || SHELLS.contains(&program) {
+        return fallback.to_string();
+    }
+    program.to_string()
+}
+
 /// Tab position of a pane, needed to land on it when switching sessions.
 pub fn tab_of(panes: &[PaneSnapshot], session: &str, pane: u32) -> Option<usize> {
     panes
@@ -344,6 +369,22 @@ mod tests {
         let panes = vec![pane("main", 0, 3, "zsh")];
         let listed = list_panes(&panes, &[], "main");
         assert_eq!(list_panes(&panes, &listed, "main"), vec![]);
+    }
+
+    #[test]
+    fn a_pane_is_named_after_what_runs_in_it() {
+        let command = |words: &[&str]| words.iter().map(|w| w.to_string()).collect::<Vec<_>>();
+
+        assert_eq!(program_name(&command(&["nvim", "."]), "api"), "nvim");
+        assert_eq!(
+            program_name(&command(&["/usr/bin/lazygit"]), "api"),
+            "lazygit"
+        );
+        // A shell is not a program worth naming a row after.
+        assert_eq!(program_name(&command(&["zsh"]), "api"), "api");
+        assert_eq!(program_name(&command(&["-zsh"]), "api"), "api");
+        assert_eq!(program_name(&command(&["/bin/bash"]), "api"), "api");
+        assert_eq!(program_name(&[], "api"), "api");
     }
 
     #[test]

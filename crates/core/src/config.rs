@@ -87,8 +87,11 @@ impl Config {
         let solo = configuration.get("solo").map(|raw| raw.trim()) == Some("true");
         let help = configuration.get("help").map(|raw| raw.trim()) == Some("true");
 
+        // Not `title`: Zellij keeps that key for itself and it never reaches the
+        // plugin — measured by dumping a launched plugin's configuration, which
+        // showed every other key and not this one.
         let title = configuration
-            .get("title")
+            .get("pane_title")
             .map(|raw| raw.trim())
             .filter(|raw| !raw.is_empty())
             .unwrap_or(DEFAULT_TITLE)
@@ -177,10 +180,18 @@ mod tests {
     #[test]
     fn the_pane_title_has_a_default_and_can_be_set() {
         assert_eq!(Config::from_map(&map(&[])).title, "agents");
-        assert_eq!(Config::from_map(&map(&[("title", "")])).title, "agents");
         assert_eq!(
-            Config::from_map(&map(&[("title", " sessions ")])).title,
+            Config::from_map(&map(&[("pane_title", "")])).title,
+            "agents"
+        );
+        assert_eq!(
+            Config::from_map(&map(&[("pane_title", " sessions ")])).title,
             "sessions"
+        );
+        // `title` is Zellij's own key and never arrives, so it must not be ours.
+        assert_eq!(
+            Config::from_map(&map(&[("title", "ignored")])).title,
+            "agents"
         );
     }
 

@@ -31,9 +31,10 @@ of which exactly one is on screen. Companions get no row of their own; the row
 *is* the agent session. Each row remembers which member you were last on, so
 coming back to it puts you where you left off.
 
-`Tab` opens a row up: its panes are listed underneath, indented by a space, and
-`Enter` on one goes straight to that pane rather than to whichever the row was
-last on. Rows owning a single pane have nothing to open, so `Tab` leaves them
+`Tab` opens a row up: its panes are listed underneath, indented and named after
+whatever is running in them — `nvim`, `lazygit` — or after the row itself when
+that is just a shell. `Enter` on one goes straight to that pane rather than to
+whichever the row was last on. Rows owning a single pane have nothing to open, so `Tab` leaves them
 alone.
 
 `v` moves *inside* a row without opening it. `b` moves *between* rows, flipping
