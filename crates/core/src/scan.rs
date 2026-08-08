@@ -50,11 +50,46 @@ pub fn dump_command(session: &str, pane: u32) -> [String; 6] {
 /// Marks our own `RunCommandResult` events, so we ignore anyone else's.
 pub const CONTEXT_KEY: &str = "agenttij";
 pub const CONTEXT_ORDER: &str = "order";
+pub const CONTEXT_PROJECT: &str = "project";
+/// Which pane a project answer is about.
+pub const CONTEXT_PANE: &str = "pane";
+/// Names the project a directory belongs to. Kept in step with
+/// `hooks/agenttij-state.sh` by `the_hook_and_the_plugin_look_for_the_same_file`.
+pub const MARKER: &str = ".agenttij";
 pub const CONTEXT_SCAN: &str = "scan";
 pub const CONTEXT_PEEK: &str = "peek";
 
 pub fn command() -> [&'static str; 3] {
     ["sh", "-c", SCAN_SCRIPT]
+}
+
+/// Asks what project a directory belongs to, for a pane that never reported one
+/// — a shell someone opened rather than an agent.
+///
+/// The same three answers the hook gives, in the same order: a `.agenttij` above
+/// it, the git root, or the directory itself. Once per pane, cached, and asked
+/// again only when the cache rotates: it forks, and the tick is the whole cost of
+/// this plugin.
+const PROJECT_SCRIPT: &str = r#"d="$0"; p="$d"
+while [ -n "$p" ]; do
+    if [ -f "$p/.agenttij" ]; then
+        IFS= read -r n <"$p/.agenttij" || n=""
+        n=$(printf '%s' "$n" | tr -d '[:cntrl:]')
+        [ -n "$n" ] || n=${p##*/}
+        printf '%s' "$n"
+        exit 0
+    fi
+    p=${p%/*}
+done
+git -C "$d" rev-parse --show-toplevel 2>/dev/null || printf '%s' "$d""#;
+
+pub fn project_command(cwd: &str) -> [String; 4] {
+    [
+        "sh".to_owned(),
+        "-c".to_owned(),
+        PROJECT_SCRIPT.to_owned(),
+        cwd.to_owned(),
+    ]
 }
 
 /// Where an arrangement is kept: a cache file, since it is a preference about
@@ -138,6 +173,21 @@ fn parse_agent(line: &str) -> Option<Agent> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Two places resolve a project — the hook for agents, the plugin for panes
+    /// nobody reports on — and they have to agree, or a marker would group one
+    /// and not the other.
+    #[test]
+    fn the_hook_and_the_plugin_look_for_the_same_file() {
+        let hook = include_str!("../../../hooks/agenttij-state.sh");
+        assert!(hook.contains(MARKER), "the hook stopped reading {MARKER}");
+        assert!(PROJECT_SCRIPT.contains(MARKER));
+        assert!(
+            hook.contains("rev-parse --show-toplevel")
+                && PROJECT_SCRIPT.contains("rev-parse --show-toplevel"),
+            "both fall back to the git root"
+        );
+    }
 
     #[test]
     fn scan_script_uses_the_state_dir_and_forks_nothing_else() {

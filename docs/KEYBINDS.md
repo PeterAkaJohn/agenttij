@@ -89,6 +89,15 @@ and while you are typing the keyboard belongs to the name — a `d` in a project
 name is a letter, not a key. Enter with nothing typed gives the project its
 directory back.
 
+There is a second way to say it, for when the answer belongs to the code rather
+than to you: a `.agenttij` file. The hook looks for one above the working
+directory and takes its first line as the project name — an empty file means
+"named after this directory" — so `~/code/acme/.agenttij` puts every repository
+beneath it in one project, on every machine and for everyone who checks it out.
+Panes that never report are asked the same question, once per directory, so a
+plain shell in one of those repositories lands there too. `r` still wins over a
+marker, since it is the more specific thing to have said.
+
 Naming is also how two repositories become one project. A front end and a back
 end have different git roots and no shared parent worth grouping by, so nothing
 can join them except you saying they are the same thing: name both `acme` and

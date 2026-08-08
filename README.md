@@ -127,7 +127,10 @@ Rows gather into **projects**: everything working on one codebase, under the git
 root the hook records, so an agent started in `crates/core` sits with one started
 at the top of the repo. A front end and a back end in separate repositories are
 one project the moment you say so — `r`, name both `acme`, and they are together
-from then on, including agents you start in either later. A project folds to a line that still shows the worst
+from then on, including agents you start in either later. When the grouping
+belongs to the code rather than to you, put a `.agenttij` file above them holding
+the name (or empty, to use its directory's): it travels with the checkout, works
+on every machine, and needs nobody to press anything. A project folds to a line that still shows the worst
 status inside it, `[` and `]` step between them, `J` and `K` put them in the
 order you want, and both the order and which projects you folded are remembered
 in `~/.cache/agenttij/order`, so a reload or a new day finds them as you left

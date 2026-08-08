@@ -104,6 +104,10 @@ pub struct Sidebar {
     /// a `cd` still shows up.
     cwds: BTreeMap<u32, String>,
     programs: BTreeMap<u32, String>,
+    /// What project a pane's directory belongs to, and the directory it was
+    /// asked about — so a `cd` re-asks and nothing else does. Only panes nothing
+    /// reports on need this; an agent's hook has already answered it.
+    roots: BTreeMap<u32, (String, String)>,
     /// The pane whose cached answers are refreshed next. One per tick, so a
     /// stale `cd` is noticed without a burst of round-trips landing on whatever
     /// keypress happens to be in flight.
@@ -329,6 +333,19 @@ impl Sidebar {
     fn absorb_scan(&mut self, stdout: &[u8], context: &BTreeMap<String, String>) -> bool {
         if context.get(scan::CONTEXT_KEY).map(String::as_str) == Some(scan::CONTEXT_ORDER) {
             self.arrangement = order::decode(&String::from_utf8_lossy(stdout));
+            self.rebuild();
+            return true;
+        }
+        if context.get(scan::CONTEXT_KEY).map(String::as_str) == Some(scan::CONTEXT_PROJECT) {
+            let project = String::from_utf8_lossy(stdout).trim().to_owned();
+            let pane = context
+                .get(scan::CONTEXT_PANE)
+                .and_then(|pane| pane.parse::<u32>().ok());
+            if let (Some(pane), false) = (pane, project.is_empty()) {
+                if let Some((_, known)) = self.roots.get_mut(&pane) {
+                    *known = project;
+                }
+            }
             self.rebuild();
             return true;
         }
@@ -1021,10 +1038,35 @@ impl Sidebar {
             };
             row.cwd = cwd;
         }
-        // Nothing resolved a git root for these — a plain pane never reported —
-        // so the directory is the project. Rows from the hook already have one.
+        // Nothing resolved a project for these — a plain pane never reported —
+        // so ask the same question the hook answers, once per directory. The
+        // directory stands in until the answer lands, which is also the answer
+        // when there is no marker and no repository.
         for row in rows.iter_mut().filter(|row| row.root.is_empty()) {
-            row.root = row.cwd.clone();
+            if row.cwd.is_empty() {
+                continue;
+            }
+            match self.roots.get(&row.pane) {
+                Some((asked, project)) if *asked == row.cwd => row.root = project.clone(),
+                _ => {
+                    self.roots
+                        .insert(row.pane, (row.cwd.clone(), row.cwd.clone()));
+                    row.root = row.cwd.clone();
+
+                    let command = scan::project_command(&row.cwd);
+                    let words: Vec<&str> = command.iter().map(String::as_str).collect();
+                    run_command(
+                        &words,
+                        BTreeMap::from([
+                            (
+                                scan::CONTEXT_KEY.to_owned(),
+                                scan::CONTEXT_PROJECT.to_owned(),
+                            ),
+                            (scan::CONTEXT_PANE.to_owned(), row.pane.to_string()),
+                        ]),
+                    );
+                }
+            }
         }
 
         rows.extend(remote);

@@ -29,7 +29,9 @@ crates/core    agenttij-core — zero dependencies, all the decisions, unit-test
                and its file), panes (reconciliation, discovery),
                scan (state files), color (SGR), config, format (row layout)
 crates/plugin  agenttij — wasm: lifecycle, rendering, navigation, peek mode
-hooks/         the shell hook agents run — tool-agnostic: `$1` is the state
+hooks/         the shell hook agents run — tool-agnostic: `$1` is the state.
+               Also resolves the project (`.agenttij`, git root, cwd), because
+               the sidebar cannot afford that per row per tick
 integrations/  per-tool glue that calls that hook (opencode plugin)
 layouts/       left, right, workspace (+ `sidebar` and `rail` swap layouts)
 scripts/       installer, three helpers, and press-keys.sh

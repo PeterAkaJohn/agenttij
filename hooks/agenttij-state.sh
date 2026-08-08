@@ -17,9 +17,27 @@ f="$d/$ZELLIJ_SESSION_NAME.$ZELLIJ_PANE_ID.state"
 [ "$s" = gone ] && { rm -f "$f"; exit 0; }
 
 w="${CLAUDE_PROJECT_DIR:-$PWD}"
+
 # The project this belongs to, resolved here because the sidebar cannot: it
 # would need a git call per row per tick, and it redraws every second.
-r=$(git -C "$w" rev-parse --show-toplevel 2>/dev/null) || r="$w"
+#
+# A `.agenttij` file above us wins: two repositories that are one project — a
+# front end and a back end — have no shared git root to be found, so this is the
+# only way the filesystem can say they belong together. Its first line is the
+# name; an empty file means "named after this directory". Walking up uses shell
+# expansion rather than `dirname` so it costs no processes.
+r=""
+p="$w"
+while [ -n "$p" ]; do
+    if [ -f "$p/.agenttij" ]; then
+        IFS= read -r r <"$p/.agenttij" || r=""
+        r=$(printf '%s' "$r" | tr -d '[:cntrl:]')
+        [ -n "$r" ] || r=${p##*/}
+        break
+    fi
+    p=${p%/*}
+done
+[ -n "$r" ] || r=$(git -C "$w" rev-parse --show-toplevel 2>/dev/null) || r="$w"
 
 mkdir -p "$d" 2>/dev/null || exit 0
 printf '%s\t%s\t%s\t%s\t%s\t%s\n' \

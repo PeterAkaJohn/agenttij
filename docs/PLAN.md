@@ -96,7 +96,9 @@ Claude Code hook ──> /tmp/agenttij/<session>.<pane>.state
 ```
 
 A state line is `<status> <session> <pane> <unix-seconds> <cwd> <root> <host>`,
-tab separated. The last two arrived after the first five and are optional, since
+tab separated. `<root>` is the project as the machine sees it: the name in the
+nearest `.agenttij` above the working directory, else the git root, else the
+directory itself. The last two arrived after the first five and are optional, since
 a hook older than the plugin is the normal state of an upgrade: no `root` means
 the project is the working directory, no `host` means this machine. `root` is
 resolved by the hook — one `git rev-parse` when an agent reports, rather than one
