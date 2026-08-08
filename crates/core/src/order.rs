@@ -14,6 +14,7 @@ const PROJECT: &str = "p";
 const ROW: &str = "r";
 const FOLDED: &str = "f";
 const NAMED: &str = "n";
+const HOST: &str = "h";
 
 /// How you left the sidebar: what order things were in, and what was folded away.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -28,6 +29,10 @@ pub struct Arrangement {
     /// roots under one name are one project — which is how a front end and a
     /// back end in separate repositories become the thing you actually work on.
     pub names: BTreeMap<String, String>,
+    /// Machines to watch besides this one. Kept here rather than only in a
+    /// layout because which boxes you care about changes during a day, and
+    /// editing a layout file to say so is not something anyone does twice.
+    pub hosts: Vec<String>,
 }
 
 /// The order, as a file.
@@ -51,6 +56,9 @@ pub fn encode(arrangement: &Arrangement) -> String {
     for (root, name) in &arrangement.names {
         out.push_str(&format!("{NAMED}\t{root}\t{name}\n"));
     }
+    for host in &arrangement.hosts {
+        out.push_str(&format!("{HOST}\t{host}\n"));
+    }
     out
 }
 
@@ -71,6 +79,11 @@ pub fn decode(text: &str) -> Arrangement {
                     out.folded.insert(project.to_owned());
                 } else {
                     out.projects.push(project.to_owned());
+                }
+            }
+            Some(HOST) => {
+                if let Some(host) = fields.next().filter(|host| !host.is_empty()) {
+                    out.hosts.push(host.to_owned());
                 }
             }
             Some(NAMED) => {
@@ -167,6 +180,7 @@ mod tests {
                 ("/home/pp/acme-frontend".to_owned(), "acme".to_owned()),
                 ("/home/pp/acme-backend".to_owned(), "acme".to_owned()),
             ]),
+            hosts: vec!["dev1".to_owned(), "build2".to_owned()],
         };
 
         assert_eq!(decode(&encode(&arrangement)), arrangement);

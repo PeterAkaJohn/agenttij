@@ -67,9 +67,15 @@ plugin location="file:~/.config/zellij/plugins/agenttij.wasm" {
 }
 ```
 
+Or press `h` in the sidebar and type them — that list is remembered with
+everything else you arranged, so a box you only care about this week does not
+have to go in a layout file.
+
 The state files are the whole protocol, so watching a machine is reading them
 over ssh — install agenttij there too (the hook is what writes them), and give
-each host key-based login. `Enter` on a remote row opens a pane here attached to
+each host key-based login. No second machine handy? `scripts/testbox.sh up`
+starts a container running sshd with two agents' worth of state in it and prints
+the host string to paste into `h`. `Enter` on a remote row opens a pane here attached to
 that session, because Zellij cannot show a pane it does not own; `p` peeks at it
 without leaving.
 

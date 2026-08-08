@@ -40,6 +40,17 @@ enum Permissions {
     Denied,
 }
 
+/// What the sidebar's one input line is for at the moment.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum Field {
+    /// Naming the project with this key — and joining it to any other project of
+    /// that name.
+    Project(String),
+    /// The machines to watch, as a comma-separated list, so adding and removing
+    /// one are the same edit.
+    Hosts,
+}
+
 /// Something that cannot be undone, waiting for the second press that does it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Pending {
@@ -94,8 +105,8 @@ pub struct Sidebar {
     arrangement: order::Arrangement,
     /// Whether the remembered arrangement has been asked for yet.
     order_read: bool,
-    /// A project being named, and what has been typed so far.
-    renaming: Option<(String, String)>,
+    /// What the input line is collecting, and what has been typed so far.
+    typing: Option<(Field, String)>,
     /// Which git roots each project holds, from before folding hid any of them —
     /// naming a project has to reach every root inside it, or the halves of a
     /// merged one would come apart the moment you renamed it.
@@ -379,7 +390,7 @@ impl Sidebar {
         }
         self.sessions_in = self.sessions_in.saturating_sub(1);
 
-        for host in self.config.hosts.clone() {
+        for host in self.hosts() {
             let due = self.hosts_in.entry(host.clone()).or_default();
             if *due > 0 {
                 *due -= 1;
@@ -527,7 +538,10 @@ impl Sidebar {
         }
 
         if self.config.scope == Scope::Session {
-            agents.retain(|agent| agent.session == self.current_session);
+            // A machine you asked to watch is not "another session": `scope`
+            // decides how far to look on *this* box, and you already said how
+            // far to look beyond it by naming the host.
+            agents.retain(|agent| !agent.host.is_empty() || agent.session == self.current_session);
         }
         agent::sort_for_display(&mut agents, &self.current_session);
         let mut agents = self.arranged(agents);
@@ -624,8 +638,8 @@ impl Sidebar {
 
         // Naming a project takes every key until it is done, so a name can
         // contain a q, a d, or anything else that means something out here.
-        if let Some((project, typed)) = self.renaming.take() {
-            return self.type_name(project, typed, bare_key);
+        if let Some((field, typed)) = self.typing.take() {
+            return self.type_into(field, typed, bare_key);
         }
 
         // A peek is a still picture over your work, so the next key dismisses it
@@ -735,8 +749,14 @@ impl Sidebar {
                 };
                 if matches!(agent.kind, Kind::Project { .. }) {
                     let project = project::key(agent, &self.arrangement.names).to_owned();
-                    self.renaming = Some((project, String::new()));
+                    self.typing = Some((Field::Project(project), String::new()));
                 }
+                true
+            }
+            // The machines to watch. Prefilled with the ones already watched,
+            // because removing one is the same edit as adding one.
+            BareKey::Char('h') => {
+                self.typing = Some((Field::Hosts, self.arrangement.hosts.join(",")));
                 true
             }
             // Project to project, wrapping, so a long list is a couple of keys
@@ -942,22 +962,55 @@ impl Sidebar {
 
     /// A keystroke while a name is being typed. Enter keeps it, Esc drops it,
     /// and anything else is either a letter or ignored.
-    fn type_name(&mut self, project: String, mut typed: String, key: BareKey) -> bool {
+    fn type_into(&mut self, field: Field, mut typed: String, key: BareKey) -> bool {
         match key {
-            BareKey::Enter => self.name_project(&project, typed.trim()),
-            // Dropped: `renaming` was taken on the way in.
+            BareKey::Enter => match &field {
+                Field::Project(project) => self.name_project(&project.clone(), typed.trim()),
+                Field::Hosts => self.watch_hosts(&typed),
+            },
+            // Dropped: what was being typed was taken on the way in.
             BareKey::Esc => {}
             BareKey::Backspace => {
                 typed.pop();
-                self.renaming = Some((project, typed));
+                self.typing = Some((field, typed));
             }
             BareKey::Char(letter) => {
                 typed.push(letter);
-                self.renaming = Some((project, typed));
+                self.typing = Some((field, typed));
             }
-            _ => self.renaming = Some((project, typed)),
+            _ => self.typing = Some((field, typed)),
         }
         true
+    }
+
+    /// Replaces the watched machines with the list as typed.
+    ///
+    /// A host that has just been dropped takes its rows with it immediately —
+    /// they were only ever its answer to a question we have stopped asking.
+    fn watch_hosts(&mut self, typed: &str) {
+        self.arrangement.hosts = typed
+            .split(',')
+            .map(|host| host.trim().to_owned())
+            .filter(|host| !host.is_empty())
+            .collect();
+
+        let watched = self.hosts();
+        self.remote.retain(|host, _| watched.contains(host));
+        self.hosts_in.retain(|host, _| watched.contains(host));
+
+        self.save_order();
+        self.rebuild();
+    }
+
+    /// Every machine to ask: the ones a layout named, and the ones you added.
+    fn hosts(&self) -> Vec<String> {
+        let mut hosts = self.config.hosts.clone();
+        for host in &self.arrangement.hosts {
+            if !hosts.contains(host) {
+                hosts.push(host.clone());
+            }
+        }
+        hosts
     }
 
     /// Calls a project something, which is also how two of them become one: the
@@ -1123,8 +1176,12 @@ impl Sidebar {
     /// What an armed key would take, so the second press is never a surprise —
     /// and, with nothing armed, what the list is currently hiding.
     fn prompt(&self) -> Option<String> {
-        if let Some((_, typed)) = self.renaming.as_ref() {
-            return Some(format!("name: {typed}▏"));
+        if let Some((field, typed)) = self.typing.as_ref() {
+            let what = match field {
+                Field::Project(_) => "name",
+                Field::Hosts => "hosts",
+            };
+            return Some(format!("{what}: {typed}▏"));
         }
         let Some((action, selection)) = self.pending.as_ref() else {
             return self.only_blocked.then(|| "⚠ only — ! shows all".to_owned());

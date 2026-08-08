@@ -18,6 +18,7 @@ working while the sidebar has focus.
 | `[`, `]` | previous / next project |
 | `J`, `K` | move this project, or this row inside its project |
 | `r` | name a project — two with the same name are one |
+| `h` | the machines to watch, over ssh |
 | `b` | flip back to the row you were on before |
 | `v` | cycle to the next pane *within* the row on screen |
 | `a` | add a pane to the row on screen |
@@ -42,6 +43,22 @@ the header is a line taken from a list twenty columns wide. A header carries the
 worst status inside it, so folding a project away never hides an agent that is
 waiting for you. `Tab` folds and unfolds, `[` and `]` step between projects, and
 `Enter` opens a folded one.
+
+### Machines
+
+`h` opens the list of machines to watch, prefilled with the ones already being
+watched, so adding and removing one are the same edit: type a comma-separated
+list of ssh hosts and press `Enter`. It is remembered with everything else you
+arranged, and a machine you drop takes its rows with it immediately — they were
+only ever its answer to a question that has stopped being asked.
+
+A layout can name hosts too, and both are watched; `scope "session"` does not
+hide them, because how far to look on *this* machine is a different question from
+which other machines you asked about.
+
+There is a container for trying this without a second machine:
+`scripts/testbox.sh up` prints a host string to paste into `h`, and
+`scripts/testbox.sh down` removes it.
 
 ### Rows somewhere else
 
