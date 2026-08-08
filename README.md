@@ -250,6 +250,10 @@ For anything else, call `agenttij-state.sh <state>` from whatever event
 mechanism it has. Without one, a tool still appears — by pane title if its name
 is in `agents`, and always in a solo workspace, just without a live status.
 
+A row is named after the folder it is working in — the last component, not the
+whole path. An agent reports its own through the hook; a plain pane is asked for
+its cwd, since its title is a shell prompt and says whatever your prompt says.
+
 Agents that never report are still listed, discovered by pane title, as
 `?`/unknown. Note that Claude Code sets its own terminal title, so this
 fallback mostly helps *other* tools; hooked agents don't need it.

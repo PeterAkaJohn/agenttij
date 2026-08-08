@@ -410,6 +410,18 @@ impl Sidebar {
                     .or_else(|| plain.iter().find(|entry| entry.pane == primary))
                     .cloned()
             })
+            .map(|mut row| {
+                // A row is named after the project it is in. An agent reports its
+                // own cwd through the hook; a plain pane has to be asked, because
+                // its title is a shell prompt and says whatever the user's prompt
+                // says.
+                if row.cwd.is_empty() {
+                    if let Ok(cwd) = get_pane_cwd(PaneId::Terminal(row.pane)) {
+                        row.cwd = cwd.to_string_lossy().into_owned();
+                    }
+                }
+                row
+            })
             .collect();
 
         rows.extend(remote);
