@@ -173,6 +173,13 @@ Each of these cost a debugging round already:
   `get_pane_cwd` / `get_pane_running_command` for every row on every rebuild made
   navigation lag, because rebuilds burst exactly when you are moving around.
   Cache per pane and refresh on a slow tick.
+- **The tick is the whole cost.** Idling beside a row of eight panes the sidebar
+  burns about 24ms of CPU a second; with the timer off, 1ms. Reconciling,
+  sorting and drawing are noise next to forking the scan and carrying its output
+  back through the host, so anything that wants to be cheaper has to happen less
+  often, not faster. `SessionUpdate` arrives every second whether or not a pane
+  moved, and rebuilding and redrawing on all of them doubled the bill for
+  nothing — compare the pane list and return early.
 - **`PaneManifest.panes` is a `HashMap`.** Sort anything derived from it, or rows
   shuffle between updates.
 - **Resizing from a plugin is coarse and asynchronous.** Stepping towards a

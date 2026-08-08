@@ -12,7 +12,7 @@ jump to it.
 │ ✓ docs-fix   3 5m  │  ? unknown         · a pane, no agent
 │ ○ scratch      1h  │
 │                    │  "3" = the row owns
-│ j/k ↵ n a v b      │  three panes
+│ j/k ↵ n a v b d    │  three panes
 └────────────────────┘
 ```
 
@@ -110,9 +110,11 @@ detach: `Enter` is a pane swap.
 ```
 
 Start agents with `n` (or `Alt g`) and add panes to a row with `a` (or `Alt m`).
-Both park what was on screen instead of splitting it, and closing a pane brings
-the parked one back. Opening panes any other way works too — the first swap parks
-the extras, and anything ungrouped becomes a row of its own.
+Both park what was on screen instead of splitting it. `d` `d` closes a row and
+everything parked behind it — or one pane of a row, if you opened the row with
+`Tab` — and puts the next row on screen rather than leaving it empty. Opening
+panes any other way works too: the first swap parks the extras, and anything
+ungrouped becomes a row of its own.
 
 In solo mode a **row is a group of panes**, not a single pane. `a` adds a pane to
 the row you are on — an editor next to the agent, a log next to that — and
@@ -133,6 +135,15 @@ layout defined alongside the main one rather than something the plugin does to
 itself. Each layout's `rail` block repeats that layout's plugin configuration,
 since Zellij identifies a plugin by url *and* configuration; change one, change
 both.
+
+There is a second swap layout, `sidebar`, listed before the rail and identical to
+the layout you start in. It is there because Zellij re-applies a swap layout
+every time a pane is added and registers your base layout with an exact pane
+count, so with only a rail to fall through to, opening a pane folded the sidebar
+by itself. It costs one press: in a session still holding the panes its layout
+was written with, the first `Alt ]` lands on `sidebar` and looks like nothing
+happened, and the second folds. After that `Alt ]` folds on the first press, and
+a rail you chose stays a rail when you open panes.
 
 The catch is a hard one: **panes belong to the session that owns them.** Zellij
 has no way to render another session's pane inside yours, so this only works for
