@@ -43,6 +43,9 @@ pub struct Config {
     /// Set on a help instance: this sidebar is the keybind list, and closes on
     /// any key.
     pub help: bool,
+    /// Set on a jump instance: this one is the palette — everywhere you could
+    /// go, filtered by typing.
+    pub jump: bool,
     /// Name each pane in a row `<row> <n>/<total>`, so a pane says where it sits
     /// without the sidebar being on screen. On unless turned off.
     pub position: bool,
@@ -62,6 +65,7 @@ impl Default for Config {
             notify: Vec::new(),
             peek: None,
             help: false,
+            jump: false,
             position: true,
             solo: false,
         }
@@ -90,6 +94,7 @@ impl Config {
 
         let solo = configuration.get("solo").map(|raw| raw.trim()) == Some("true");
         let help = configuration.get("help").map(|raw| raw.trim()) == Some("true");
+        let jump = configuration.get("jump").map(|raw| raw.trim()) == Some("true");
         let position = configuration.get("position").map(|raw| raw.trim()) != Some("false");
 
         // Not `title`: Zellij keeps that key for itself and it never reaches the
@@ -133,6 +138,7 @@ impl Config {
             notify,
             peek,
             help,
+            jump,
             position,
             solo,
         }
@@ -245,6 +251,12 @@ mod tests {
         assert!(Config::from_map(&map(&[])).position);
         assert!(Config::from_map(&map(&[("position", "true")])).position);
         assert!(!Config::from_map(&map(&[("position", "false")])).position);
+    }
+
+    #[test]
+    fn the_jump_palette_is_a_mode_like_the_others() {
+        assert!(!Config::from_map(&map(&[])).jump);
+        assert!(Config::from_map(&map(&[("jump", "true")])).jump);
     }
 
     #[test]

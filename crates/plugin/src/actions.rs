@@ -23,6 +23,28 @@ pub fn go_to(agent: &Agent, current_session: &str, all_panes: &[PaneSnapshot]) {
     switch_session_with_focus(&agent.session, tab, Some((agent.pane, false)));
 }
 
+/// Goes wherever the palette was pointing.
+///
+/// A session switch needs no tab position — verified live, a pane id alone lands
+/// on a pane in a background tab — which is what makes this work without the
+/// pane manifests other sessions never publish.
+pub fn go_to_target(target: &agenttij_core::jump::Target, current_session: &str) {
+    use agenttij_core::jump::Target;
+    match target {
+        Target::Pane { session, pane } if session == current_session => {
+            focus_pane_with_id(PaneId::Terminal(*pane), false, false);
+        }
+        Target::Pane { session, pane } => {
+            switch_session_with_focus(session, None, Some((*pane, false)));
+        }
+        // A resurrectable one comes back on being switched to.
+        Target::Session { name, .. } if name != current_session => {
+            switch_session_with_focus(name, None, None);
+        }
+        Target::Session { .. } => {}
+    }
+}
+
 /// Tells you an agent is blocked, when you are not looking at the sidebar.
 pub fn notify(command: &[String], agent: &Agent) {
     if command.is_empty() {
@@ -100,6 +122,27 @@ pub fn help(own_url: &str) -> Option<PaneId> {
         Some("15%".to_owned()),
         Some("70%".to_owned()),
         Some("70%".to_owned()),
+        None,
+        None,
+    );
+
+    open_plugin_pane_floating(own_url, configuration, coordinates, BTreeMap::new())
+}
+
+/// Opens the jump palette: this plugin again, floating, in jump mode.
+///
+/// Wider than the keybind list and anchored high, because it is a thing you read
+/// while typing rather than a page you consult.
+pub fn jump(own_url: &str) -> Option<PaneId> {
+    let configuration = BTreeMap::from([
+        ("jump".to_owned(), "true".to_owned()),
+        ("pane_title".to_owned(), "jump".to_owned()),
+    ]);
+    let coordinates = FloatingPaneCoordinates::new(
+        Some("20%".to_owned()),
+        Some("15%".to_owned()),
+        Some("60%".to_owned()),
+        Some("60%".to_owned()),
         None,
         None,
     );

@@ -35,6 +35,7 @@ screen — the same thing until you open a pane somewhere else.
 | `d` `d` | close the row, the pane under it, or a whole project — asks first |
 | `c` `c` | interrupt the agent, without going to it — asks first |
 | `!` | only what needs you |
+| `/` | jump: everywhere you could go, filtered by typing (`Alt t` anywhere) |
 | `p` | peek at an agent without leaving your session |
 | `q`, `Esc` | dismiss a peek |
 | `?` | show every key and what it does |
@@ -45,6 +46,11 @@ installed for you: `Alt s` focuses the sidebar, `Alt v` cycles a row's panes,
 screen, `Alt a` summons a sidebar in any session, and `Alt ]` — Zellij's own
 swap-layout key — folds the sidebar to a status rail. Full reference:
 [docs/KEYBINDS.md](docs/KEYBINDS.md).
+
+Jumping is the other half of it. `Alt t` anywhere — or `/` in the sidebar — opens
+a floating list of every agent, pane, session and resurrectable session on the
+machine; three letters and `Enter` puts you there, wherever "there" turned out to
+be.
 
 Peeking is the point. Checking on an agent shouldn't cost you a detach and a
 reattach, so `p` gives you a live view of its pane wherever it is — another

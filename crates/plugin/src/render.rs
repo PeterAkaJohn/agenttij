@@ -118,6 +118,23 @@ fn line(content: &str, row: usize, cols: usize) {
     print!("{text}{}{RESET}", " ".repeat(padding));
 }
 
+/// One plain line of a floating list, padded so the frame underneath is covered.
+pub fn line_at(content: &str, row: usize, cols: usize) {
+    line(content, row, cols);
+}
+
+/// One entry of the jump list: a mark, then the entry in its status colour.
+pub fn entry_at(content: &str, row: usize, cols: usize, selected: bool, color: &str) {
+    let mark = if selected { '›' } else { ' ' };
+    let padding = cols.saturating_sub(1 + content.chars().count());
+    at(row);
+    if selected {
+        print!("{CURSOR}");
+    }
+    print!("{mark}\u{1b}[{color}m{content}{RESET}");
+    print!("{}", " ".repeat(padding));
+}
+
 /// Draws lines into a floating pane — a peek's mirrored screen, or the keybind
 /// list — with a hint that any key closes it.
 pub fn draw_peek(lines: &[String], rows: usize, cols: usize) {

@@ -25,6 +25,7 @@ working while the sidebar has focus.
 | `d` `d` | close what the cursor is on — twice, it cannot be undone |
 | `c` `c` | interrupt what it is running — twice, same reason |
 | `!` | only what needs you |
+| `/` | jump: everywhere you could go, filtered by typing |
 | `p` | peek at a row's agent without leaving this session |
 | `q`, `Esc` | dismiss a peek |
 | `?` | this list, in a floating pane |
@@ -150,6 +151,22 @@ the row you were looking at puts the row below it on screen (the one above, if i
 was the last), rather than leaving the workspace empty. Rows in
 another session are not ours to close, so `d` does nothing on them.
 
+### Jumping
+
+`/` in the sidebar, or `Alt t` from anywhere, opens a floating list of every
+agent on the machine, every pane in this session, every live session, and every
+session Zellij can bring back. Type to narrow it — letters have to appear in
+order, and ones that arrive together or at the start of a word count for more, so
+three letters usually gets there. A project name finds its agents even when they
+are not called after it. `Enter` goes, `Esc` closes, `Up`/`Down` or `Tab` move.
+
+Going somewhere in this session is a focus. Going to another session detaches and
+reattaches, which is what jumping there means; a dead one comes back on the way.
+It is the same plugin as the sidebar in another mode, so it needs no separate
+install and no separate permissions — and `Alt t` finds the palette already open
+rather than stacking a second one, as long as its configuration matches, which is
+why the installer writes that configuration verbatim.
+
 ## From anywhere in Zellij
 
 Installed by `scripts/install.sh` into your Zellij config, as a
@@ -170,6 +187,7 @@ is why the bindings go in there.
 | `Alt g` | new row — a new agent pane |
 | `Alt m` | add a pane to the row on screen |
 | `Alt a` | summon a sidebar in whatever session you are in, floating |
+| `Alt t` | jump, from anywhere — no sidebar needed |
 | `Alt ]` | fold the sidebar to a status rail, and back — Zellij's own key |
 
 `Alt g` and `Alt m` are `n` and `a` without going through the sidebar first —

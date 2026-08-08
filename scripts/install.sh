@@ -29,6 +29,9 @@ back_keybind="${AGENTTIJ_BACK_KEYBIND:-Alt b}"
 focus_keybind="${AGENTTIJ_FOCUS_KEYBIND:-Alt s}"
 new_keybind="${AGENTTIJ_NEW_KEYBIND:-Alt g}"
 add_keybind="${AGENTTIJ_ADD_KEYBIND:-Alt m}"
+# Alt t because Zellij's defaults already claim j, k, l, n, p and the rest of
+# the obvious ones — see docs/KEYBINDS.md.
+jump_keybind="${AGENTTIJ_JUMP_KEYBIND:-Alt t}"
 
 want_keybind=1
 want_grant=1
@@ -78,11 +81,11 @@ add_keybind() {
     cp "$zellij_config" "$zellij_config.agenttij.bak"
     python3 "$repo/scripts/zellij-keybinds.py" install "$zellij_config" \
         "$plugin_url" "$keybind" "$cycle_keybind" "$back_keybind" "$focus_keybind" \
-        "$new_keybind" "$add_keybind"
+        "$new_keybind" "$add_keybind" "$jump_keybind"
 
     if zellij --config "$zellij_config" setup --check >/dev/null 2>&1; then
         echo "  bound $keybind, $focus_keybind, $cycle_keybind, $back_keybind,"
-        echo "  $new_keybind, $add_keybind"
+        echo "  $new_keybind, $add_keybind, $jump_keybind"
         echo "  (backup: $zellij_config.agenttij.bak)"
     else
         mv "$zellij_config.agenttij.bak" "$zellij_config"
@@ -95,7 +98,7 @@ remove_keybind() {
     grep -q "agenttij:begin" "$zellij_config" || return 0
     need_python "keybind removal" || return 0
     cp "$zellij_config" "$zellij_config.agenttij.bak"
-    python3 "$repo/scripts/zellij-keybinds.py" uninstall "$zellij_config" "" "" "" "" "" "" ""
+    python3 "$repo/scripts/zellij-keybinds.py" uninstall "$zellij_config" "" "" "" "" "" "" "" ""
     echo "  keybinds removed (backup: $zellij_config.agenttij.bak)"
 }
 

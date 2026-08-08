@@ -8,7 +8,11 @@ use agenttij_core::{
 };
 use zellij_tile::prelude::*;
 
-use crate::{actions, render, snapshot};
+use crate::{
+    actions,
+    jump::{Act, Jump},
+    render, snapshot,
+};
 
 /// End of text: the byte a terminal sends for Ctrl-C, and the only thing this
 /// plugin ever writes into a pane.
@@ -120,6 +124,14 @@ pub struct Sidebar {
     peek: Option<PaneId>,
     /// Lines of the pane this instance is peeking at, when it is a peek.
     peeked: Vec<String>,
+    /// The palette, when this instance is one.
+    palette: Jump,
+    /// Sessions Zellij can bring back, for the palette to offer.
+    dead_sessions: Vec<String>,
+    /// The palette has jumped and is waiting to disappear. Closing a focused
+    /// floating pane hands focus back to whatever had it before, which undoes
+    /// the jump — so the close waits for the tick after it.
+    leaving: bool,
     /// Our own plugin url, for launching a peek instance of ourselves.
     own_url: Option<String>,
     /// Whether the pane has been named yet.
@@ -159,7 +171,10 @@ impl ZellijPlugin for Sidebar {
             EventType::PermissionRequestResult,
         ]);
 
-        // The sidebar is a pane you navigate to like any other.
+        // The sidebar is a pane you navigate to like any other — and so is the
+        // palette, which has to hold focus to be typed into at all. Unselectable
+        // meant focus bounced straight back to the sidebar, whose next keystroke
+        // closes whatever floating instance it opened.
         set_selectable(true);
         // The keybind list never changes, so it has nothing to wake up for.
         if !self.config.help {
@@ -246,6 +261,10 @@ impl ZellijPlugin for Sidebar {
             render::draw_peek(&self.peeked, rows, cols);
             return;
         }
+        if self.config.jump {
+            self.palette.draw(rows, cols, &self.config.colors);
+            return;
+        }
 
         let prompt = self.prompt();
         let on_screen = self.slot();
@@ -270,6 +289,12 @@ impl ZellijPlugin for Sidebar {
 impl Sidebar {
     /// Re-arms the timer first, so a failed scan never stops the clock.
     fn tick(&mut self) {
+        // The jump has landed by now, so this pane can go without taking the
+        // focus with it.
+        if self.leaving {
+            close_self();
+            return;
+        }
         set_timeout(TICK_SECONDS);
 
         // One pane per tick rather than everything at once: the answers go stale
@@ -326,6 +351,15 @@ impl Sidebar {
                     .iter()
                     .map(|session| session.name.clone())
                     .collect();
+                // Only the palette offers these, and only it pays for keeping
+                // them: a dead session is not something to watch.
+                if self.config.jump {
+                    self.dead_sessions = sessions
+                        .resurrectable_sessions
+                        .iter()
+                        .map(|(name, _)| name.clone())
+                        .collect();
+                }
             }
         }
         self.sessions_in = self.sessions_in.saturating_sub(1);
@@ -371,6 +405,24 @@ impl Sidebar {
         self.now = result.now;
 
         let before = std::mem::replace(&mut self.reported, result.agents);
+        if self.config.jump {
+            // Panes nothing reports on are places you go to as much as agents
+            // are — a shell you left `cd`ed somewhere is exactly the thing you
+            // cannot otherwise find.
+            let mut everything = self.reported.clone();
+            everything.extend(panes::list_panes(
+                &self.panes,
+                &everything,
+                &self.current_session,
+            ));
+            self.palette.refresh(agenttij_core::jump::entries(
+                &everything,
+                &self.live_sessions,
+                &self.dead_sessions,
+                &self.current_session,
+            ));
+            return true;
+        }
         self.rebuild();
 
         // Only agents that *became* blocked, so a waiting agent is announced
@@ -472,6 +524,23 @@ impl Sidebar {
             other => other,
         };
 
+        // The palette reads everything: a q is a letter here.
+        if self.config.jump {
+            return match self.palette.key(bare_key) {
+                Act::Stay => true,
+                Act::Close => {
+                    close_self();
+                    false
+                }
+                Act::Go(target) => {
+                    actions::go_to_target(&target, &self.current_session);
+                    self.leaving = true;
+                    set_timeout(0.1);
+                    false
+                }
+            };
+        }
+
         // A peek is a still picture of someone else's pane: there is nothing to
         // type into it, so any key dismisses it. This is why a peek is a plugin
         // pane and not a command pane — a command pane cannot read a key at all,
@@ -528,6 +597,14 @@ impl Sidebar {
                     self.switch_to_row(agent.pane);
                 } else {
                     actions::go_to(&agent, &self.current_session, &self.panes);
+                }
+                false
+            }
+            // Everywhere you could go, filtered by typing.
+            BareKey::Char('/') => {
+                self.close_peek();
+                if let Some(url) = self.own_url.clone() {
+                    self.peek = actions::jump(&url);
                 }
                 false
             }

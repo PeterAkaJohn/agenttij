@@ -7,6 +7,7 @@
 //! `set_timeout` → `Timer`). Every method here must return promptly.
 
 mod actions;
+mod jump;
 mod render;
 mod sidebar;
 mod snapshot;

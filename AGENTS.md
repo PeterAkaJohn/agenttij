@@ -102,6 +102,14 @@ Each of these cost a debugging round already:
   Adding one to `request_permission` means adding it to
   `scripts/grant-permissions.py` too, or users get a prompt they cannot see in a
   narrow pane.
+- **A denied permission is remembered as an empty grant, and everything then
+  fails silently.** Zellij's prompt is answered with `y`/`n` — so a `press-keys`
+  run that types `n` into a session whose plugin is *waiting* on that prompt
+  answers "deny", and `~/.cache/zellij/permissions.kdl` keeps the plugin with an
+  empty `{}` block forever after. The symptom is a sidebar that draws but does
+  nothing: no new panes, no floating panes, no scan. Check that file first when a
+  plugin stops acting, and re-grant before testing anything that adds a
+  permission.
 - **Permission grants are keyed by the plugin's path with no `file:` prefix.**
   Zellij writes `~/.cache/zellij/permissions.kdl` as bare paths, so an entry
   written as `"file:/path/x.wasm"` is never matched: the plugin loads, asks, and
