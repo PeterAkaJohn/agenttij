@@ -55,6 +55,13 @@ pub fn reconcile(
     agents
         .into_iter()
         .filter(|agent| {
+            // Whether a session on another machine is alive is that machine's
+            // business, and its answer arrived with the agent: a host that stops
+            // answering stops sending rows at all.
+            if !agent.host.is_empty() {
+                return true;
+            }
+
             let session_is_dead = !live_sessions.is_empty()
                 && !live_sessions.iter().any(|live| live == &agent.session);
             if session_is_dead {

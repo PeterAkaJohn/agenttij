@@ -56,10 +56,14 @@ pub fn row_parts(agent: &Agent, now: u64, width: usize, current_session: &str) -
     } else {
         age(now, agent.reported_at)
     };
-    let elsewhere = if project || agent.session == current_session {
+    // Another session is a detach away; another machine is an ssh away. They are
+    // different distances and get different marks.
+    let elsewhere = if project || (agent.host.is_empty() && agent.session == current_session) {
         ""
-    } else {
+    } else if agent.host.is_empty() {
         "⇢"
+    } else {
+        "⇥"
     };
     // A row that owns more than one pane says so; one that does not stays quiet.
     // A project always says, because the number is the point of the line.

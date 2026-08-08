@@ -81,7 +81,7 @@ move one. What is actually available, in order of how much it helps:
    also exposes a live terminal over HTTP, so: off by default, explicit, and
    loudly visible in the sidebar while it is on.
 
-### SSH — yes, and it fits the existing shape
+### SSH — done, and it fitted the existing shape
 
 The state files are the whole protocol, so a remote host is a `cat` away:
 
@@ -155,5 +155,6 @@ together they cost one tick, not four.
   permission, and reading a pane to work out an agent's state *without* a hook
   would be exactly that.
 - **Then the sidebar people actually asked for**: projects, `!`, `c`.
-- **Then reach**: ssh hosts, handoff, flip-back, graveyard.
+- **Then reach**: ssh hosts ✅, and the graveyard arrived with the palette, which
+  lists resurrectable sessions. Handoff and flip-back are still open.
 - **Then the suite**: jump first — it is the one that changes a working day.

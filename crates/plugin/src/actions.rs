@@ -31,6 +31,7 @@ pub fn go_to(agent: &Agent, current_session: &str, all_panes: &[PaneSnapshot]) {
 pub fn go_to_target(target: &agenttij_core::jump::Target, current_session: &str) {
     use agenttij_core::jump::Target;
     match target {
+        Target::Remote { host, session } => attach(host, session),
         Target::Pane { session, pane } if session == current_session => {
             focus_pane_with_id(PaneId::Terminal(*pane), false, false);
         }
@@ -129,6 +130,20 @@ pub fn help(own_url: &str) -> Option<PaneId> {
     open_plugin_pane_floating(own_url, configuration, coordinates, BTreeMap::new())
 }
 
+/// Attaches to a session on another machine, in a pane here.
+///
+/// The closest thing to jumping that exists: Zellij cannot show a pane it does
+/// not own, and it does not own anything on that host.
+pub fn attach(host: &str, session: &str) {
+    let command = agenttij_core::scan::attach_command(host, session);
+    let run = CommandToRun {
+        path: PathBuf::from(&command[0]),
+        args: command[1..].to_vec(),
+        cwd: None,
+    };
+    open_command_pane(run, BTreeMap::new());
+}
+
 /// Opens the jump palette: this plugin again, floating, in jump mode.
 ///
 /// Wider than the keybind list and anchored high, because it is a thing you read
@@ -164,6 +179,8 @@ pub fn preview(agent: &Agent, own_url: &str, config: &Config) -> Option<PaneId> 
             "peek".to_owned(),
             format!("{}:{}", agent.session, agent.pane),
         ),
+        // Empty for a pane on this machine, which is the usual case.
+        ("peek_host".to_owned(), agent.host.clone()),
         ("pane_title".to_owned(), format!("peek {}", agent.label())),
     ]);
     // Colours are the user's, and a peek is an instance of the same plugin, so

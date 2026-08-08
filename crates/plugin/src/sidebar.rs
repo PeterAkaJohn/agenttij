@@ -18,6 +18,12 @@ use crate::{
 /// plugin ever writes into a pane.
 const INTERRUPT: u8 = 0x03;
 
+/// How many ticks between asking a host what it has. Slower than the local scan
+/// because every one is an ssh, and much slower after one fails: a machine that
+/// is asleep should cost a connection attempt a minute, not one a second.
+const HOST_TICKS: u8 = 5;
+const HOST_BACKOFF: u8 = 60;
+
 /// How many ticks between session lists. Sessions come and go far more slowly
 /// than agent state, and asking is a round-trip that walks the socket directory.
 const SESSION_TICKS: u8 = 5;
@@ -128,6 +134,9 @@ pub struct Sidebar {
     palette: Jump,
     /// Sessions Zellij can bring back, for the palette to offer.
     dead_sessions: Vec<String>,
+    /// What each watched machine last told us, and when to ask it again.
+    remote: BTreeMap<String, Vec<Agent>>,
+    hosts_in: BTreeMap<String, u8>,
     /// The palette has jumped and is waiting to disappear. Closing a focused
     /// floating pane hands focus back to whatever had it before, which undoes
     /// the jump — so the close waits for the tick after it.
@@ -188,7 +197,13 @@ impl ZellijPlugin for Sidebar {
                 self.tick();
                 false
             }
-            Event::RunCommandResult(_, stdout, _, context) => self.absorb_scan(&stdout, &context),
+            Event::RunCommandResult(exit, stdout, _, context) => {
+                if context.get(scan::CONTEXT_KEY).map(String::as_str) == Some(scan::CONTEXT_HOST) {
+                    let host = context.get(scan::CONTEXT_PANE).cloned().unwrap_or_default();
+                    return self.absorb_host(&host, exit, &stdout);
+                }
+                self.absorb_scan(&stdout, &context)
+            }
             Event::SessionUpdate(sessions, _) => {
                 // Zellij sends this every second whether or not anything moved.
                 // An identical pane list means there is nothing to reconcile and
@@ -330,7 +345,7 @@ impl Sidebar {
         }
 
         if let Some((session, pane)) = self.config.peek.clone() {
-            let command = scan::dump_command(&session, pane);
+            let command = scan::dump_command(&self.config.peek_host, &session, pane);
             let words: Vec<&str> = command.iter().map(String::as_str).collect();
             let context =
                 BTreeMap::from([(scan::CONTEXT_KEY.to_owned(), scan::CONTEXT_PEEK.to_owned())]);
@@ -364,9 +379,58 @@ impl Sidebar {
         }
         self.sessions_in = self.sessions_in.saturating_sub(1);
 
+        for host in self.config.hosts.clone() {
+            let due = self.hosts_in.entry(host.clone()).or_default();
+            if *due > 0 {
+                *due -= 1;
+                continue;
+            }
+            *due = HOST_TICKS;
+
+            let command = scan::host_command(&host);
+            let words: Vec<&str> = command.iter().map(String::as_str).collect();
+            run_command(
+                &words,
+                BTreeMap::from([
+                    (scan::CONTEXT_KEY.to_owned(), scan::CONTEXT_HOST.to_owned()),
+                    (scan::CONTEXT_PANE.to_owned(), host),
+                ]),
+            );
+        }
+
         let context =
             BTreeMap::from([(scan::CONTEXT_KEY.to_owned(), scan::CONTEXT_SCAN.to_owned())]);
         run_command(&scan::command(), context);
+    }
+
+    /// What a machine answered, or that it did not.
+    ///
+    /// A host that fails is asked again much later rather than dropped: a laptop
+    /// closing its lid should not delete the agents it had, it should stop
+    /// mentioning them — which is what happens, since its rows go with its answer.
+    fn absorb_host(&mut self, host: &str, exit: Option<i32>, stdout: &[u8]) -> bool {
+        if exit != Some(0) {
+            self.remote.remove(host);
+            self.hosts_in.insert(host.to_owned(), HOST_BACKOFF);
+            self.rebuild();
+            return true;
+        }
+
+        let text = String::from_utf8_lossy(stdout);
+        // The host is stamped on as it is read: the file on that machine has no
+        // idea it is being looked at from here.
+        let tagged: String = text
+            .lines()
+            .filter(|line| !line.trim().is_empty())
+            .map(|line| format!("{line}\t{host}\n"))
+            .collect();
+
+        let agents = scan::parse(&format!("0\n{tagged}").into_bytes())
+            .map(|scan| scan.agents)
+            .unwrap_or_default();
+        self.remote.insert(host.to_owned(), agents);
+        self.rebuild();
+        true
     }
 
     fn absorb_scan(&mut self, stdout: &[u8], context: &BTreeMap<String, String>) -> bool {
@@ -410,6 +474,9 @@ impl Sidebar {
             // are — a shell you left `cd`ed somewhere is exactly the thing you
             // cannot otherwise find.
             let mut everything = self.reported.clone();
+            for agents in self.remote.values() {
+                everything.extend(agents.iter().cloned());
+            }
             everything.extend(panes::list_panes(
                 &self.panes,
                 &everything,
@@ -439,7 +506,11 @@ impl Sidebar {
     /// agents whose pane is gone, discovery adds agent panes that are not
     /// reporting, and the sort puts whatever needs attention on top.
     fn rebuild(&mut self) {
-        let mut agents = panes::reconcile(self.reported.clone(), &self.panes, &self.live_sessions);
+        let mut reported = self.reported.clone();
+        for agents in self.remote.values() {
+            reported.extend(agents.iter().cloned());
+        }
+        let mut agents = panes::reconcile(reported, &self.panes, &self.live_sessions);
         let discovered = panes::discover(&self.panes, &agents, &self.config.agents);
         agents.extend(discovered);
 
@@ -587,6 +658,13 @@ impl Sidebar {
                     if let Some(row) = self.rows_of(&project).first().copied() {
                         self.switch_to_row(row);
                     }
+                    return false;
+                }
+
+                // A session belongs to the machine running it, so there is
+                // nothing to switch to: open a pane that is attached to it.
+                if !agent.host.is_empty() {
+                    actions::attach(&agent.host, &agent.session);
                     return false;
                 }
 

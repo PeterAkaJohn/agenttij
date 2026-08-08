@@ -56,6 +56,37 @@ Peeking is the point. Checking on an agent shouldn't cost you a detach and a
 reattach, so `p` gives you a live view of its pane wherever it is — another
 session, a background tab, a session nobody is attached to.
 
+## Another machine
+
+Agents on a dev box show up in the sidebar next to the local ones, marked `⇥`
+with the host they are on:
+
+```kdl
+plugin location="file:~/.config/zellij/plugins/agenttij.wasm" {
+    hosts "dev1,build2"
+}
+```
+
+The state files are the whole protocol, so watching a machine is reading them
+over ssh — install agenttij there too (the hook is what writes them), and give
+each host key-based login. `Enter` on a remote row opens a pane here attached to
+that session, because Zellij cannot show a pane it does not own; `p` peeks at it
+without leaving.
+
+Set up connection sharing for those hosts or every scan pays for a handshake:
+
+```
+Host dev1 build2
+    ControlMaster auto
+    ControlPath ~/.ssh/control-%r@%h:%p
+    ControlPersist 10m
+```
+
+Hosts are asked every five seconds, and a host that fails is left alone for a
+minute — a closed laptop should cost one connection attempt a minute, not one a
+second. Its rows disappear while it is away rather than being marked stale,
+because "what is running over there" is a question only it can answer.
+
 ## Install
 
 Needs the `wasm32-wasip1` target and Zellij 0.44+.

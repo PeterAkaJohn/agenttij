@@ -31,19 +31,67 @@ pub const STATE_DIR: &str = "/tmp/agenttij";
 /// write, and a `mkdir` per tick is a fork per tick for nothing.
 const SCAN_SCRIPT: &str = "date +%s; cat /tmp/agenttij/*.state 2>/dev/null; true";
 
+/// Reads another machine's state files.
+///
+/// `ssh` is run directly rather than through a shell, so nothing here has to be
+/// quoted twice. `BatchMode` makes a host that wants a password fail instead of
+/// hanging, and the timeouts bound how long a machine that has gone away can
+/// cost — which matters because this is on the same tick as everything else.
+///
+/// Set `ControlMaster auto` and `ControlPersist` for these hosts. With a shared
+/// connection this is a few milliseconds; without one it is a TCP handshake and
+/// a key exchange, every time.
+pub fn host_command(host: &str) -> [String; 8] {
+    [
+        "ssh".to_owned(),
+        "-o".to_owned(),
+        "BatchMode=yes".to_owned(),
+        "-o".to_owned(),
+        "ConnectTimeout=3".to_owned(),
+        "-T".to_owned(),
+        host.to_owned(),
+        format!("cat {STATE_DIR}/*.state 2>/dev/null; true"),
+    ]
+}
+
 /// Dumps a pane's screen, for a peek to render.
 ///
 /// Plain text rather than `--ansi`: a peek pane is usually narrower than what it
 /// mirrors, and truncating a line through an escape sequence corrupts the rest
 /// of the frame.
-pub fn dump_command(session: &str, pane: u32) -> [String; 6] {
-    [
+pub fn dump_command(host: &str, session: &str, pane: u32) -> Vec<String> {
+    let mut command = Vec::new();
+    if !host.is_empty() {
+        // Another machine's pane is read the same way, one ssh further out.
+        command.extend([
+            "ssh".to_owned(),
+            "-o".to_owned(),
+            "BatchMode=yes".to_owned(),
+            "-T".to_owned(),
+            host.to_owned(),
+        ]);
+    }
+    command.extend([
         "zellij".to_owned(),
         "--session".to_owned(),
         session.to_owned(),
         "action".to_owned(),
         "dump-screen".to_owned(),
         format!("--pane-id=terminal_{pane}"),
+    ]);
+    command
+}
+
+/// Opens a session on another machine: an ssh with a terminal, attaching. There
+/// is no switching to it — a session belongs to the machine running it — so the
+/// honest equivalent is a pane here that is sitting inside it.
+pub fn attach_command(host: &str, session: &str) -> [String; 5] {
+    [
+        "ssh".to_owned(),
+        "-t".to_owned(),
+        host.to_owned(),
+        "zellij".to_owned(),
+        format!("attach {session}"),
     ]
 }
 
@@ -51,6 +99,7 @@ pub fn dump_command(session: &str, pane: u32) -> [String; 6] {
 pub const CONTEXT_KEY: &str = "agenttij";
 pub const CONTEXT_ORDER: &str = "order";
 pub const CONTEXT_PROJECT: &str = "project";
+pub const CONTEXT_HOST: &str = "host";
 /// Which pane a project answer is about.
 pub const CONTEXT_PANE: &str = "pane";
 /// Names the project a directory belongs to. Kept in step with
@@ -218,9 +267,19 @@ mod tests {
 
     #[test]
     fn the_dump_command_names_the_pane() {
-        let command = dump_command("main", 7);
+        let command = dump_command("", "main", 7);
         assert_eq!(command[2], "main");
         assert!(command.last().unwrap().ends_with("terminal_7"));
+    }
+
+    #[test]
+    fn a_pane_on_another_machine_is_read_one_ssh_further_out() {
+        let command = dump_command("dev1", "main", 7);
+        assert_eq!(command[0], "ssh");
+        assert!(command.contains(&"dev1".to_owned()));
+        assert!(command.last().unwrap().ends_with("terminal_7"));
+
+        assert!(host_command("dev1").last().unwrap().contains(STATE_DIR));
     }
 
     #[test]

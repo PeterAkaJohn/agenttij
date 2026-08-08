@@ -43,6 +43,13 @@ worst status inside it, so folding a project away never hides an agent that is
 waiting for you. `Tab` folds and unfolds, `[` and `]` step between projects, and
 `Enter` opens a folded one.
 
+### Rows somewhere else
+
+`⇢` marks a row in another session on this machine: `Enter` there detaches and
+reattaches, which is what going there costs. `⇥` marks one on another machine
+(see `hosts` in the README): `Enter` opens a pane here attached to that session,
+since Zellij can only show panes it owns. `p` peeks at either without moving.
+
 ### What the first column means
 
 `›` is the cursor — where the next key lands. `▪` is the row that is actually on

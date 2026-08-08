@@ -43,6 +43,11 @@ pub struct Config {
     /// Set on a help instance: this sidebar is the keybind list, and closes on
     /// any key.
     pub help: bool,
+    /// Machines to watch besides this one, by ssh host. Their agents appear in
+    /// the list marked with the host they are on.
+    pub hosts: Vec<String>,
+    /// Set on a peek instance whose pane lives on another machine.
+    pub peek_host: String,
     /// Set on a jump instance: this one is the palette — everywhere you could
     /// go, filtered by typing.
     pub jump: bool,
@@ -63,6 +68,8 @@ impl Default for Config {
             colors: Colors::default(),
             colors_raw: String::new(),
             notify: Vec::new(),
+            hosts: Vec::new(),
+            peek_host: String::new(),
             peek: None,
             help: false,
             jump: false,
@@ -112,6 +119,20 @@ impl Config {
             .map(|raw| raw.split_whitespace().map(str::to_owned).collect())
             .unwrap_or_default();
 
+        let hosts: Vec<String> = configuration
+            .get("hosts")
+            .map(|raw| {
+                raw.split(',')
+                    .map(|host| host.trim().to_owned())
+                    .filter(|host| !host.is_empty())
+                    .collect()
+            })
+            .unwrap_or_default();
+        let peek_host = configuration
+            .get("peek_host")
+            .map(|raw| raw.trim().to_owned())
+            .unwrap_or_default();
+
         let colors_raw = configuration.get("colors").cloned().unwrap_or_default();
         let colors = if colors_raw.is_empty() {
             Colors::default()
@@ -136,6 +157,8 @@ impl Config {
             colors,
             colors_raw,
             notify,
+            hosts,
+            peek_host,
             peek,
             help,
             jump,
@@ -257,6 +280,15 @@ mod tests {
     fn the_jump_palette_is_a_mode_like_the_others() {
         assert!(!Config::from_map(&map(&[])).jump);
         assert!(Config::from_map(&map(&[("jump", "true")])).jump);
+    }
+
+    #[test]
+    fn hosts_are_a_list_and_default_to_this_machine_only() {
+        assert!(Config::from_map(&map(&[])).hosts.is_empty());
+        assert_eq!(
+            Config::from_map(&map(&[("hosts", " dev1, build2 ,")])).hosts,
+            vec!["dev1", "build2"]
+        );
     }
 
     #[test]

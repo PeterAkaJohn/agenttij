@@ -16,6 +16,9 @@ pub enum Target {
     /// A whole session. `dead` ones are Zellij's resurrectable sessions: the
     /// panes are gone but the layout comes back.
     Session { name: String, dead: bool },
+    /// A session on another machine. Nothing to switch to — Zellij cannot show a
+    /// pane it does not own — so going there means a pane here attached to it.
+    Remote { host: String, session: String },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -54,19 +57,28 @@ pub fn entries(
             } else {
                 &agent.root
             });
-            let elsewhere = if agent.session == current_session {
-                ""
+            let (elsewhere, where_) = if !agent.host.is_empty() {
+                ("⇥", format!("{}:{}", agent.host, agent.session))
+            } else if agent.session == current_session {
+                ("", agent.session.clone())
             } else {
-                "⇢"
+                ("⇢", agent.session.clone())
             };
             Entry {
                 glyph: agent.status.glyph(),
                 label: agent.label().to_owned(),
-                context: format!("{elsewhere}{}", agent.session),
-                search: format!("{} {project} {}", agent.label(), agent.session),
-                target: Target::Pane {
-                    session: agent.session.clone(),
-                    pane: agent.pane,
+                context: format!("{elsewhere}{where_}"),
+                search: format!("{} {project} {where_}", agent.label()),
+                target: if agent.host.is_empty() {
+                    Target::Pane {
+                        session: agent.session.clone(),
+                        pane: agent.pane,
+                    }
+                } else {
+                    Target::Remote {
+                        host: agent.host.clone(),
+                        session: agent.session.clone(),
+                    }
                 },
             }
         })
@@ -226,6 +238,23 @@ mod tests {
         assert_eq!(found, vec![0], "the project is searchable, not just shown");
         assert_eq!(entries[0].label, "queue");
         assert_eq!(entries[0].context, "⇢other", "and it says where it is");
+    }
+
+    #[test]
+    fn an_agent_on_another_machine_is_reached_by_attaching() {
+        let mut remote = agent("their-main", 4, "/srv/api", Status::Running);
+        remote.host = "dev1".into();
+        let entries = entries(&[remote], &[], &[], "mine");
+
+        assert_eq!(
+            entries[0].target,
+            Target::Remote {
+                host: "dev1".to_owned(),
+                session: "their-main".to_owned()
+            }
+        );
+        assert_eq!(entries[0].context, "⇥dev1:their-main");
+        assert_eq!(rank(&entries, "dev1"), vec![0], "the machine is searchable");
     }
 
     #[test]
