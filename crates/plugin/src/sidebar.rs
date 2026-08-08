@@ -3,7 +3,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use agenttij_core::{
-    agent, config::Scope, format, panes, scan, Agent, Config, Groups, PaneSnapshot, Status,
+    agent, config::Scope, format, panes, project, scan, Agent, Config, Groups, Kind, PaneSnapshot,
+    Status,
 };
 use zellij_tile::prelude::*;
 
@@ -25,6 +26,26 @@ enum Permissions {
     Denied,
 }
 
+/// What the cursor is on. A project is addressed by its root rather than by a
+/// pane, because it is not one — it stands for every row that shares that root.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum Selection {
+    Row { session: String, pane: u32 },
+    Project(String),
+}
+
+impl Selection {
+    fn of(agent: &Agent) -> Self {
+        match agent.kind {
+            Kind::Project { .. } => Self::Project(project::key(agent).to_owned()),
+            _ => Self::Row {
+                session: agent.session.clone(),
+                pane: agent.pane,
+            },
+        }
+    }
+}
+
 #[derive(Default)]
 pub struct Sidebar {
     config: Config,
@@ -41,9 +62,14 @@ pub struct Sidebar {
     previous_row: Option<u32>,
     /// What a second `d` would close. Closing panes is the only thing here that
     /// cannot be undone, so it takes two presses and says what it will take.
-    pending_delete: Option<(String, u32)>,
+    pending_delete: Option<Selection>,
     /// Rows showing their panes underneath them, by primary.
     expanded: BTreeSet<u32>,
+    /// Projects folded down to their header line, by root.
+    folded: BTreeSet<String>,
+    /// The rows each project holds in this session, kept from before folding
+    /// dropped them — a folded project still has to be openable and closable.
+    projects: BTreeMap<String, Vec<u32>>,
     /// The position label each pane currently carries, so a pane is only renamed
     /// when what it should say has actually changed.
     positions: BTreeMap<u32, String>,
@@ -82,7 +108,7 @@ pub struct Sidebar {
     now: u64,
     /// The highlighted agent, tracked by pane rather than by index so the
     /// cursor sticks to an agent while the list re-sorts underneath it.
-    selected: Option<(String, u32)>,
+    selected: Option<Selection>,
     permissions: Permissions,
 }
 
@@ -317,6 +343,20 @@ impl Sidebar {
             agents = self.with_expanded_panes(agents);
         }
 
+        // Before folding, which drops rows the sidebar still has to be able to
+        // act on.
+        self.projects.clear();
+        for row in agents
+            .iter()
+            .filter(|row| row.kind == Kind::Row && row.session == self.current_session)
+        {
+            self.projects
+                .entry(project::key(row).to_owned())
+                .or_default()
+                .push(row.pane);
+        }
+        let agents = project::group(agents, &self.folded);
+
         self.agents = agents;
         self.resync_selection();
         self.label_positions();
@@ -327,13 +367,10 @@ impl Sidebar {
         let still_there = self
             .selected
             .as_ref()
-            .is_some_and(|(session, pane)| self.find(session, *pane).is_some());
+            .is_some_and(|selection| self.find(selection).is_some());
 
         if !still_there {
-            self.selected = self
-                .agents
-                .first()
-                .map(|agent| (agent.session.clone(), agent.pane));
+            self.selected = self.agents.first().map(Selection::of);
         }
     }
 
@@ -367,15 +404,31 @@ impl Sidebar {
             BareKey::Down | BareKey::Char('j') => self.move_cursor(1),
             BareKey::Up | BareKey::Char('k') => self.move_cursor(-1),
             BareKey::Enter => {
-                if let Some(agent) = self.selected_agent().cloned() {
-                    let here = agent.session == self.current_session;
-                    if self.config.solo && here && agent.depth > 0 {
-                        self.show_pane(agent.pane);
-                    } else if self.config.solo && here {
-                        self.switch_to_row(agent.pane);
-                    } else {
-                        actions::go_to(&agent, &self.current_session, &self.panes);
+                let Some(agent) = self.selected_agent().cloned() else {
+                    return false;
+                };
+                // A folded project has nothing to go to until it is open, so
+                // Enter opens it; an open one goes to the first row inside.
+                if let Kind::Project { folded } = agent.kind {
+                    let project = project::key(&agent).to_owned();
+                    if folded {
+                        self.folded.remove(&project);
+                        self.rebuild();
+                        return true;
                     }
+                    if let Some(row) = self.rows_of(&project).first().copied() {
+                        self.switch_to_row(row);
+                    }
+                    return false;
+                }
+
+                let here = agent.session == self.current_session;
+                if self.config.solo && here && agent.kind == Kind::Pane {
+                    self.show_pane(agent.pane);
+                } else if self.config.solo && here {
+                    self.switch_to_row(agent.pane);
+                } else {
+                    actions::go_to(&agent, &self.current_session, &self.panes);
                 }
                 false
             }
@@ -390,7 +443,17 @@ impl Sidebar {
             // Show or hide a row's other panes, so you can go straight to one.
             BareKey::Tab => {
                 if let Some(agent) = self.selected_agent().cloned() {
-                    let row = if agent.depth > 0 {
+                    if let Kind::Project { folded } = agent.kind {
+                        let project = project::key(&agent).to_owned();
+                        if folded {
+                            self.folded.remove(&project);
+                        } else {
+                            self.folded.insert(project);
+                        }
+                        self.rebuild();
+                        return true;
+                    }
+                    let row = if agent.kind == Kind::Pane {
                         self.groups
                             .group_of(agent.pane)
                             .map(|group| group.primary())
@@ -406,6 +469,10 @@ impl Sidebar {
                 }
                 true
             }
+            // Project to project, wrapping, so a long list is a couple of keys
+            // rather than a scroll.
+            BareKey::Char(']') => self.jump_project(1),
+            BareKey::Char('[') => self.jump_project(-1),
             // Cycle to the next pane in the row on screen. The same thing is a
             // keybind away when the agent itself has focus, which is the point.
             BareKey::Char('v') => {
@@ -434,10 +501,12 @@ impl Sidebar {
             // session are not ours to close, so `d` does not arm on them.
             BareKey::Char('d') => {
                 if let Some(agent) = self.selected_agent().cloned() {
-                    let target = (agent.session.clone(), agent.pane);
+                    let target = Selection::of(&agent);
+                    let ours = agent.session == self.current_session
+                        || matches!(agent.kind, Kind::Project { .. });
                     if armed.as_ref() == Some(&target) {
                         self.delete(&agent);
-                    } else if agent.session == self.current_session {
+                    } else if ours {
                         self.pending_delete = Some(target);
                     }
                 }
@@ -462,30 +531,32 @@ impl Sidebar {
 
         let last = self.agents.len() - 1;
         let next = self.cursor().saturating_add_signed(delta).min(last);
-        self.selected = Some((self.agents[next].session.clone(), self.agents[next].pane));
+        self.selected = Some(Selection::of(&self.agents[next]));
         true
     }
 
     /// Closes the selection, and puts something back on screen if it was what
     /// you were looking at.
     fn delete(&mut self, agent: &Agent) {
-        let whole_row = agent.depth == 0;
-        let closing = self.groups.closing(agent.pane, whole_row);
+        let closing: Vec<u32> = match agent.kind {
+            // A project takes every row in it, and every row takes its panes.
+            Kind::Project { .. } => self
+                .rows_of(project::key(agent))
+                .iter()
+                .flat_map(|row| self.groups.closing(*row, true))
+                .collect(),
+            Kind::Row => self.groups.closing(agent.pane, true),
+            Kind::Pane => vec![agent.pane],
+        };
+        if closing.is_empty() {
+            return;
+        }
         let slot = self.slot();
 
-        // What takes the slot afterwards, worked out now while the row is still
-        // in the list: the row below a closed row, another pane of the row when
-        // one pane went. Groups hear about the closure on the next pane update,
-        // so the answer cannot be asked of them afterwards.
-        let successor = if whole_row {
-            agent::row_after(&self.agents, &self.current_session, agent.pane)
-                .map(|row| self.groups.current_of(row.pane).unwrap_or(row.pane))
-        } else {
-            self.groups
-                .group_of(agent.pane)
-                .and_then(|group| group.members.iter().find(|member| **member != agent.pane))
-                .copied()
-        };
+        // What takes the slot afterwards, worked out now while what is closing is
+        // still in the list: groups hear about the closure on the next pane
+        // update, so they cannot be asked once it has happened.
+        let successor = self.successor(agent, &closing);
 
         for pane in &closing {
             // Show it first, even when it is already on screen. Zellij reads a
@@ -499,8 +570,11 @@ impl Sidebar {
             show_pane_with_id(PaneId::Terminal(*pane), false, false);
             close_pane_with_id(PaneId::Terminal(*pane));
         }
-        if whole_row {
+        if agent.kind == Kind::Row {
             self.expanded.remove(&agent.pane);
+        }
+        if let Kind::Project { .. } = agent.kind {
+            self.folded.remove(project::key(agent));
         }
         if self.previous_row.is_some_and(|row| closing.contains(&row)) {
             self.previous_row = None;
@@ -508,8 +582,11 @@ impl Sidebar {
         // The cursor follows the slot rather than jumping to the top; the next
         // rebuild repairs it if what it lands on is gone too.
         self.selected = successor
-            .filter(|_| whole_row)
-            .map(|pane| (self.current_session.clone(), pane));
+            .filter(|_| agent.kind != Kind::Pane)
+            .map(|pane| Selection::Row {
+                session: self.current_session.clone(),
+                pane,
+            });
 
         // Closing what was on screen leaves the workspace empty, and a parked
         // pane does not come back on its own — so show whatever follows it.
@@ -520,18 +597,73 @@ impl Sidebar {
         }
     }
 
-    /// What an armed `d` would take, so the second press is never a surprise.
-    fn delete_prompt(&self) -> Option<String> {
-        let (session, pane) = self.pending_delete.as_ref()?;
-        let agent = self
+    /// What should take the slot when these panes are gone: the row below a
+    /// closed row, another pane of the row when one pane went, and for a project
+    /// the first row that is not going with it.
+    fn successor(&self, agent: &Agent, closing: &[u32]) -> Option<u32> {
+        let row = match agent.kind {
+            Kind::Pane => {
+                return self
+                    .groups
+                    .group_of(agent.pane)
+                    .and_then(|group| group.members.iter().find(|member| **member != agent.pane))
+                    .copied()
+            }
+            Kind::Row => agent::row_after(&self.agents, &self.current_session, agent.pane)
+                .map(|row| row.pane),
+            Kind::Project { .. } => self
+                .agents
+                .iter()
+                .find(|other| {
+                    other.kind == Kind::Row
+                        && other.session == self.current_session
+                        && !closing.contains(&other.pane)
+                })
+                .map(|other| other.pane),
+        };
+        row.map(|row| self.groups.current_of(row).unwrap_or(row))
+    }
+
+    /// Moves the cursor to the next project header, wrapping at the ends.
+    fn jump_project(&mut self, delta: isize) -> bool {
+        let headers: Vec<usize> = self
             .agents
             .iter()
-            .find(|agent| agent.key() == (session.as_str(), *pane))?;
+            .enumerate()
+            .filter(|(_, agent)| matches!(agent.kind, Kind::Project { .. }))
+            .map(|(at, _)| at)
+            .collect();
+        let here = self.cursor();
 
-        let panes = if agent.depth == 0 {
-            self.groups.closing(*pane, true).len()
+        let target = if delta > 0 {
+            headers.iter().find(|at| **at > here).or(headers.first())
         } else {
-            1
+            headers
+                .iter()
+                .rev()
+                .find(|at| **at < here)
+                .or(headers.last())
+        };
+        let Some(target) = target.and_then(|at| self.agents.get(*at)) else {
+            return false;
+        };
+        self.selected = Some(Selection::of(target));
+        true
+    }
+
+    /// What an armed `d` would take, so the second press is never a surprise.
+    fn delete_prompt(&self) -> Option<String> {
+        let selection = self.pending_delete.as_ref()?;
+        let agent = self.agents.get(self.find(selection)?)?;
+
+        let panes = match agent.kind {
+            Kind::Project { .. } => self
+                .rows_of(project::key(agent))
+                .iter()
+                .map(|row| self.groups.closing(*row, true).len())
+                .sum(),
+            Kind::Row => self.groups.closing(agent.pane, true).len(),
+            Kind::Pane => 1,
         };
         Some(match panes {
             0 | 1 => format!("close {}? d", agent.label()),
@@ -609,6 +741,11 @@ impl Sidebar {
                 }
             };
             row.cwd = cwd;
+        }
+        // Nothing resolved a git root for these — a plain pane never reported —
+        // so the directory is the project. Rows from the hook already have one.
+        for row in rows.iter_mut().filter(|row| row.root.is_empty()) {
+            row.root = row.cwd.clone();
         }
 
         rows.extend(remote);
@@ -744,7 +881,10 @@ impl Sidebar {
 
         let target = self.groups.current_of(primary).unwrap_or(primary);
         self.groups.show(target);
-        self.selected = Some((self.current_session.clone(), primary));
+        self.selected = Some(Selection::Row {
+            session: self.current_session.clone(),
+            pane: primary,
+        });
         actions::show_in_slot(target, slot);
     }
 
@@ -791,7 +931,7 @@ impl Sidebar {
     fn cursor(&self) -> usize {
         self.selected
             .as_ref()
-            .and_then(|(session, pane)| self.find(session, *pane))
+            .and_then(|selection| self.find(selection))
             .unwrap_or(0)
     }
 
@@ -799,10 +939,15 @@ impl Sidebar {
         self.agents.get(self.cursor())
     }
 
-    fn find(&self, session: &str, pane: u32) -> Option<usize> {
+    fn find(&self, selection: &Selection) -> Option<usize> {
         self.agents
             .iter()
-            .position(|agent| agent.key() == (session, pane))
+            .position(|agent| Selection::of(agent) == *selection)
+    }
+
+    /// The rows a project holds, whether or not it is folded open.
+    fn rows_of(&self, project: &str) -> Vec<u32> {
+        self.projects.get(project).cloned().unwrap_or_default()
     }
 
     fn notice(&self) -> Option<&'static str> {

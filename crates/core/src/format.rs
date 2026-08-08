@@ -1,6 +1,6 @@
 //! Fitting agent rows into a narrow sidebar.
 
-use crate::agent::Agent;
+use crate::agent::{Agent, Kind};
 
 /// Below this width a row shows only its status glyph — a label and an age do
 /// not fit, and half a word is worse than none.
@@ -24,12 +24,15 @@ pub fn row(agent: &Agent, now: u64, width: usize, current_session: &str) -> Stri
 /// this is split at all — the glyph carries the status colour and the label must
 /// not.
 pub fn row_parts(agent: &Agent, now: u64, width: usize, current_session: &str) -> (String, String) {
-    // A pane listed under its row carries no status of its own — the indent
-    // already says what it is, and a glyph there just adds noise.
-    let glyph = if agent.depth > 0 {
-        ' '
-    } else {
-        agent.status.glyph()
+    let glyph = match agent.kind {
+        // A project says whether it is open, in the status colour of the worst
+        // thing inside it — folding a blocked agent away must still show yellow.
+        Kind::Project { folded: true } => '▸',
+        Kind::Project { folded: false } => '▾',
+        // A pane listed under its row carries no status of its own — the indent
+        // already says what it is, and a glyph there just adds noise.
+        Kind::Pane => ' ',
+        Kind::Row => agent.status.glyph(),
     };
 
     // On a rail there is room for the status and nothing else, so centre it
@@ -45,15 +48,23 @@ pub fn row_parts(agent: &Agent, now: u64, width: usize, current_session: &str) -
         );
     }
 
-    let age = age(now, agent.reported_at);
-    let elsewhere = if agent.session == current_session {
+    let project = matches!(agent.kind, Kind::Project { .. });
+    // A project has no age of its own and is nowhere in particular, so it spends
+    // both columns on the count of what it holds.
+    let age = if project {
+        String::new()
+    } else {
+        age(now, agent.reported_at)
+    };
+    let elsewhere = if project || agent.session == current_session {
         ""
     } else {
         "⇢"
     };
     // A row that owns more than one pane says so; one that does not stays quiet.
-    let owned = if agent.panes > 1 {
-        format!("{} ", agent.panes)
+    // A project always says, because the number is the point of the line.
+    let owned = if project || agent.panes > 1 {
+        format!("{}", agent.panes)
     } else {
         String::new()
     };
@@ -66,6 +77,7 @@ pub fn row_parts(agent: &Agent, now: u64, width: usize, current_session: &str) -
     let reserved = 3
         + elsewhere.chars().count()
         + owned.chars().count()
+        + usize::from(!owned.is_empty() && !age.is_empty())
         + age.chars().count()
         + indent.chars().count();
     if width <= reserved {
@@ -77,9 +89,14 @@ pub fn row_parts(agent: &Agent, now: u64, width: usize, current_session: &str) -
     let label = truncate(agent.label(), label_width);
     let gap = " ".repeat(label_width - label.chars().count());
 
+    let between = if owned.is_empty() || age.is_empty() {
+        ""
+    } else {
+        " "
+    };
     (
         glyph.to_string(),
-        format!(" {indent}{elsewhere}{label}{gap} {owned}{age}"),
+        format!(" {indent}{elsewhere}{label}{gap} {owned}{between}{age}"),
     )
 }
 
@@ -157,6 +174,7 @@ mod tests {
         let mut child = agent(Status::Pane, 0, "");
         child.title = "nvim".into();
         child.depth = 1;
+        child.kind = Kind::Pane;
 
         let row = row(&child, 1_020, 20, "sess");
         assert_eq!(row, "   nvim            -", "no glyph, just the indent");

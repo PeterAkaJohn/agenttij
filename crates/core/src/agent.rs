@@ -57,6 +57,20 @@ impl Status {
     }
 }
 
+/// What a line in the sidebar stands for. Indentation is `depth`; this is what
+/// a key press means when the cursor is on it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Kind {
+    /// Every row sharing a project, on one line. Not an agent at all — it stands
+    /// for the rows underneath it, and carries the worst status among them.
+    Project { folded: bool },
+    /// An agent, or a pane standing in for one until something reports.
+    #[default]
+    Row,
+    /// One pane of a row, listed underneath it while the row is open.
+    Pane,
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Agent {
     pub session: String,
@@ -80,9 +94,10 @@ pub struct Agent {
     /// How many panes this row owns, counting the agent. Shown when it is more
     /// than one, so a row with an editor behind it does not look bare.
     pub panes: usize,
-    /// 0 for a row, 1 for one of its panes shown underneath it while the row is
-    /// expanded. Only affects indentation and what `Enter` targets.
+    /// Indentation only. What a line *is* — and so what a key does to it — is
+    /// `kind`; depth just says how far in to draw it.
     pub depth: usize,
+    pub kind: Kind,
 }
 
 impl Agent {
@@ -154,8 +169,9 @@ pub fn row_after<'a>(agents: &'a [Agent], current_session: &str, pane: u32) -> O
     let at = agents
         .iter()
         .position(|agent| agent.session == current_session && agent.pane == pane)?;
-    let is_row =
-        |agent: &&Agent| agent.depth == 0 && agent.session == current_session && agent.pane != pane;
+    let is_row = |agent: &&Agent| {
+        agent.kind == Kind::Row && agent.session == current_session && agent.pane != pane
+    };
 
     agents[at + 1..]
         .iter()
@@ -179,11 +195,11 @@ mod tests {
         }
     }
 
-    fn row(session: &str, pane: u32, depth: usize) -> Agent {
+    fn row(session: &str, pane: u32, kind: Kind) -> Agent {
         Agent {
             session: session.into(),
             pane,
-            depth,
+            kind,
             ..agent(Status::Idle, 0, "/x")
         }
     }
@@ -191,11 +207,11 @@ mod tests {
     #[test]
     fn a_closed_row_hands_the_slot_to_the_one_below_it() {
         let rows = [
-            row("here", 1, 0),
-            row("here", 2, 0),
-            row("here", 7, 1), // a pane of row 2, not a row of its own
-            row("here", 3, 0),
-            row("other", 4, 0), // another session cannot take our slot
+            row("here", 1, Kind::Row),
+            row("here", 2, Kind::Row),
+            row("here", 7, Kind::Pane), // a pane of row 2, not a row of its own
+            row("here", 3, Kind::Row),
+            row("other", 4, Kind::Row), // another session cannot take our slot
         ];
 
         assert_eq!(row_after(&rows, "here", 1).map(|row| row.pane), Some(2));

@@ -12,9 +12,10 @@ pub mod format;
 pub mod group;
 pub mod help;
 pub mod panes;
+pub mod project;
 pub mod scan;
 
-pub use agent::{Agent, Status};
+pub use agent::{Agent, Kind, Status};
 pub use color::Colors;
 pub use config::Config;
 pub use group::{Group, Groups};

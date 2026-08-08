@@ -104,9 +104,8 @@ fn parse_agent(line: &str) -> Option<Agent> {
         cwd: cwd.to_owned(),
         root: if root.is_empty() { cwd } else { root }.to_owned(),
         host: host.to_owned(),
-        title: String::new(),
         panes: 1,
-        depth: 0,
+        ..Agent::default()
     })
 }
 

@@ -89,13 +89,9 @@ pub fn discover(panes: &[PaneSnapshot], reported: &[Agent], names: &[String]) ->
             session: pane.session.clone(),
             pane: pane.pane,
             status: Status::Unknown,
-            reported_at: 0,
-            cwd: String::new(),
-            root: String::new(),
-            host: String::new(),
             title: short_title(&pane.title),
             panes: 1,
-            depth: 0,
+            ..Agent::default()
         })
         .collect()
 }
@@ -125,13 +121,9 @@ pub fn list_panes(panes: &[PaneSnapshot], listed: &[Agent], session: &str) -> Ve
             session: pane.session.clone(),
             pane: pane.pane,
             status: Status::Pane,
-            reported_at: 0,
-            cwd: String::new(),
-            root: String::new(),
-            host: String::new(),
             title: short_title(&pane.title),
             panes: 1,
-            depth: 0,
+            ..Agent::default()
         })
         .collect()
 }
