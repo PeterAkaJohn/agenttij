@@ -138,6 +138,10 @@ Each of these cost a debugging round already:
 - **Suppressed panes forget their geometry.** Unsuppressing puts the pane
   wherever Zellij likes, so hide/show is not a reversible collapse — that is
   what swap layouts are for.
+- **Host calls are round-trips; do not make them per row per render.** Asking
+  `get_pane_cwd` / `get_pane_running_command` for every row on every rebuild made
+  navigation lag, because rebuilds burst exactly when you are moving around.
+  Cache per pane and refresh on a slow tick.
 - **`PaneManifest.panes` is a `HashMap`.** Sort anything derived from it, or rows
   shuffle between updates.
 - **Resizing from a plugin is coarse and asynchronous.** Stepping towards a

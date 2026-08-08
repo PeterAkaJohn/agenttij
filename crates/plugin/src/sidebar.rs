@@ -13,6 +13,9 @@ use crate::{actions, render, snapshot};
 /// see `agenttij_core::scan` for why we shell out at all.
 const TICK_SECONDS: f64 = 1.0;
 
+/// How many ticks a cached cwd or running command is trusted for.
+const CACHE_TICKS: u8 = 5;
+
 #[derive(Default, PartialEq, Eq)]
 enum Permissions {
     #[default]
@@ -40,6 +43,16 @@ pub struct Sidebar {
     /// The position label each pane currently carries, so a pane is only renamed
     /// when what it should say has actually changed.
     positions: BTreeMap<u32, String>,
+    /// Cached answers to "where is this pane" and "what is running in it".
+    ///
+    /// Both are host round-trips, and asking per row on every rebuild made the
+    /// sidebar lag under the burst of updates that arrives exactly when you are
+    /// moving around in it. Asked once per pane and refreshed on a slow tick, so
+    /// a `cd` still shows up.
+    cwds: BTreeMap<u32, String>,
+    programs: BTreeMap<u32, String>,
+    /// Ticks until the caches are thrown away.
+    stale_in: u8,
     /// The open peek pane, so `q` can close it and `p` never stacks two.
     peek: Option<PaneId>,
     /// Lines of the pane this instance is peeking at, when it is a peek.
@@ -171,6 +184,14 @@ impl Sidebar {
     /// Re-arms the timer first, so a failed scan never stops the clock.
     fn tick(&mut self) {
         set_timeout(TICK_SECONDS);
+
+        // Cheap enough to redo every few seconds, far too expensive per render.
+        self.stale_in = self.stale_in.saturating_sub(1);
+        if self.stale_in == 0 {
+            self.stale_in = CACHE_TICKS;
+            self.cwds.clear();
+            self.programs.clear();
+        }
 
         if self.permissions == Permissions::Denied || self.config.help {
             return;
@@ -414,19 +435,38 @@ impl Sidebar {
                     .or_else(|| plain.iter().find(|entry| entry.pane == primary))
                     .cloned()
             })
-            .map(|mut row| {
-                // A row is named after the project it is in. An agent reports its
-                // own cwd through the hook; a plain pane has to be asked, because
-                // its title is a shell prompt and says whatever the user's prompt
-                // says.
-                if row.cwd.is_empty() {
-                    if let Ok(cwd) = get_pane_cwd(PaneId::Terminal(row.pane)) {
-                        row.cwd = cwd.to_string_lossy().into_owned();
-                    }
-                }
-                row
-            })
             .collect();
+
+        // What is running in each pane of an expanded row, asked once per pane.
+        let expanded: Vec<u32> = self
+            .expanded
+            .iter()
+            .flat_map(|primary| self.groups.members_of(*primary).to_vec())
+            .filter(|member| !self.programs.contains_key(member))
+            .collect();
+        for member in expanded {
+            let command = get_pane_running_command(PaneId::Terminal(member)).unwrap_or_default();
+            // The fallback is filled in at render time, where the row is known.
+            self.programs
+                .insert(member, panes::program_name(&command, ""));
+        }
+
+        // A row is named after the project it is in. An agent reports its own cwd
+        // through the hook; a plain pane has to be asked, because its title is a
+        // shell prompt and says whatever the user's prompt says.
+        for row in rows.iter_mut().filter(|row| row.cwd.is_empty()) {
+            let cwd = match self.cwds.get(&row.pane) {
+                Some(cwd) => cwd.clone(),
+                None => {
+                    let cwd = get_pane_cwd(PaneId::Terminal(row.pane))
+                        .map(|cwd| cwd.to_string_lossy().into_owned())
+                        .unwrap_or_default();
+                    self.cwds.insert(row.pane, cwd.clone());
+                    cwd
+                }
+            };
+            row.cwd = cwd;
+        }
 
         rows.extend(remote);
         rows
