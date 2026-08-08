@@ -79,12 +79,9 @@ pub struct Sidebar {
     only_blocked: bool,
     /// Rows showing their panes underneath them, by primary.
     expanded: BTreeSet<u32>,
-    /// Projects folded down to their header line, by root.
-    folded: BTreeSet<String>,
-    /// The order you put the projects in, once you have put them in one.
-    project_order: Vec<String>,
-    /// The order you put a project's rows in, by project root.
-    row_order: BTreeMap<String, Vec<(String, u32)>>,
+    /// How you left the sidebar: the order you put things in, and what you
+    /// folded away. Written when it changes and read back when one starts.
+    arrangement: order::Arrangement,
     /// Whether the remembered arrangement has been asked for yet.
     order_read: bool,
     /// The rows each project holds in this session, kept from before folding
@@ -325,9 +322,7 @@ impl Sidebar {
 
     fn absorb_scan(&mut self, stdout: &[u8], context: &BTreeMap<String, String>) -> bool {
         if context.get(scan::CONTEXT_KEY).map(String::as_str) == Some(scan::CONTEXT_ORDER) {
-            let (projects, rows) = order::decode(&String::from_utf8_lossy(stdout));
-            self.project_order = projects;
-            self.row_order = rows;
+            self.arrangement = order::decode(&String::from_utf8_lossy(stdout));
             self.rebuild();
             return true;
         }
@@ -401,7 +396,7 @@ impl Sidebar {
                 .or_default()
                 .push(row.pane);
         }
-        let agents = project::group(agents, &self.folded);
+        let agents = project::group(agents, &self.arrangement.folded);
 
         self.agents = agents;
         self.resync_selection();
@@ -466,7 +461,8 @@ impl Sidebar {
                 if let Kind::Project { folded } = agent.kind {
                     let project = project::key(&agent).to_owned();
                     if folded {
-                        self.folded.remove(&project);
+                        self.arrangement.folded.remove(&project);
+                        self.save_order();
                         self.rebuild();
                         return true;
                     }
@@ -500,10 +496,11 @@ impl Sidebar {
                     if let Kind::Project { folded } = agent.kind {
                         let project = project::key(&agent).to_owned();
                         if folded {
-                            self.folded.remove(&project);
+                            self.arrangement.folded.remove(&project);
                         } else {
-                            self.folded.insert(project);
+                            self.arrangement.folded.insert(project);
                         }
+                        self.save_order();
                         self.rebuild();
                         return true;
                     }
@@ -630,7 +627,8 @@ impl Sidebar {
             self.expanded.remove(&agent.pane);
         }
         if let Kind::Project { .. } = agent.kind {
-            self.folded.remove(project::key(agent));
+            self.arrangement.folded.remove(project::key(agent));
+            self.save_order();
         }
         if self.previous_row.is_some_and(|row| closing.contains(&row)) {
             self.previous_row = None;
@@ -744,7 +742,7 @@ impl Sidebar {
                     .map(|other| project::key(other).to_owned())
                     .collect();
                 let key = project::key(&agent).to_owned();
-                order::shift(&mut self.project_order, &natural, &key, down);
+                order::shift(&mut self.arrangement.projects, &natural, &key, down);
             }
             Kind::Row => {
                 let project = project::key(&agent).to_owned();
@@ -755,7 +753,7 @@ impl Sidebar {
                     .map(|other| (other.session.clone(), other.pane))
                     .collect();
                 let key = (agent.session.clone(), agent.pane);
-                let remembered = self.row_order.entry(project).or_default();
+                let remembered = self.arrangement.rows.entry(project).or_default();
                 order::shift(remembered, &natural, &key, down);
             }
             // A pane's place in its row is the order it joined in, which is the
@@ -772,7 +770,7 @@ impl Sidebar {
     /// which is rare — and last writer wins, which is the right answer when two
     /// sidebars disagree about where a project belongs.
     fn save_order(&self) {
-        let text = order::encode(&self.project_order, &self.row_order);
+        let text = order::encode(&self.arrangement);
         let command = scan::write_order_command(&text);
         let words: Vec<&str> = command.iter().map(String::as_str).collect();
         run_command(&words, BTreeMap::new());
@@ -785,7 +783,7 @@ impl Sidebar {
     /// grouping keeps the relative order it is given, so arranging the rows here
     /// arranges the projects too.
     fn arranged(&self, rows: Vec<Agent>) -> Vec<Agent> {
-        if self.project_order.is_empty() && self.row_order.is_empty() {
+        if self.arrangement.projects.is_empty() && self.arrangement.rows.is_empty() {
             return rows;
         }
 
@@ -796,7 +794,7 @@ impl Sidebar {
                 projects.push(key);
             }
         }
-        let projects = order::arrange(projects, &self.project_order, String::clone);
+        let projects = order::arrange(projects, &self.arrangement.projects, String::clone);
 
         let mut wanted: Vec<(String, u32)> = Vec::new();
         for project in &projects {
@@ -806,7 +804,8 @@ impl Sidebar {
                 .map(|row| (row.session.clone(), row.pane))
                 .collect();
             let remembered = self
-                .row_order
+                .arrangement
+                .rows
                 .get(project)
                 .map(Vec::as_slice)
                 .unwrap_or(&[]);

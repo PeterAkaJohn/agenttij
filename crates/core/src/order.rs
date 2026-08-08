@@ -6,43 +6,63 @@
 //! at the top, and an agent that appears later still lands somewhere sensible
 //! instead of at a position nobody chose.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
-/// One remembered project, and one remembered row inside one.
+/// One remembered project, one remembered row inside one, and one project you
+/// left folded.
 const PROJECT: &str = "p";
 const ROW: &str = "r";
+const FOLDED: &str = "f";
+
+/// How you left the sidebar: what order things were in, and what was folded away.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Arrangement {
+    /// Projects in the order you put them in.
+    pub projects: Vec<String>,
+    /// Each project's rows in the order you put them in, by project root.
+    pub rows: BTreeMap<String, Vec<(String, u32)>>,
+    /// Projects folded down to their header line, by project root.
+    pub folded: BTreeSet<String>,
+}
 
 /// The order, as a file.
 ///
 /// Line based and tab separated like the state files, for the same reason: it is
 /// read by `cat` and written by `printf`, and anything that cannot be read is
 /// skipped rather than throwing the rest away.
-pub fn encode(projects: &[String], rows: &BTreeMap<String, Vec<(String, u32)>>) -> String {
+pub fn encode(arrangement: &Arrangement) -> String {
     let mut out = String::new();
-    for project in projects {
+    for project in &arrangement.projects {
         out.push_str(&format!("{PROJECT}\t{project}\n"));
     }
-    for (project, rows) in rows {
+    for (project, rows) in &arrangement.rows {
         for (session, pane) in rows {
             out.push_str(&format!("{ROW}\t{project}\t{session}\t{pane}\n"));
         }
+    }
+    for project in &arrangement.folded {
+        out.push_str(&format!("{FOLDED}\t{project}\n"));
     }
     out
 }
 
 /// Reads back what [`encode`] wrote. A line that makes no sense is dropped: a
 /// half-written file should cost you an arrangement, not a working sidebar.
-#[allow(clippy::type_complexity)]
-pub fn decode(text: &str) -> (Vec<String>, BTreeMap<String, Vec<(String, u32)>>) {
-    let mut projects = Vec::new();
-    let mut rows: BTreeMap<String, Vec<(String, u32)>> = BTreeMap::new();
+pub fn decode(text: &str) -> Arrangement {
+    let mut out = Arrangement::default();
 
     for line in text.lines() {
         let mut fields = line.split('\t');
-        match fields.next() {
-            Some(PROJECT) => {
-                if let Some(project) = fields.next().filter(|project| !project.is_empty()) {
-                    projects.push(project.to_owned());
+        let kind = fields.next();
+        match kind {
+            Some(PROJECT) | Some(FOLDED) => {
+                let Some(project) = fields.next().filter(|project| !project.is_empty()) else {
+                    continue;
+                };
+                if kind == Some(FOLDED) {
+                    out.folded.insert(project.to_owned());
+                } else {
+                    out.projects.push(project.to_owned());
                 }
             }
             Some(ROW) => {
@@ -52,7 +72,8 @@ pub fn decode(text: &str) -> (Vec<String>, BTreeMap<String, Vec<(String, u32)>>)
                     continue;
                 };
                 if let Ok(pane) = pane.trim().parse() {
-                    rows.entry(project.to_owned())
+                    out.rows
+                        .entry(project.to_owned())
                         .or_default()
                         .push((session.to_owned(), pane));
                 }
@@ -60,7 +81,7 @@ pub fn decode(text: &str) -> (Vec<String>, BTreeMap<String, Vec<(String, u32)>>)
             _ => {}
         }
     }
-    (projects, rows)
+    out
 }
 
 /// Puts `items` in the remembered order, with anything unremembered kept in the
@@ -119,25 +140,33 @@ mod tests {
 
     #[test]
     fn an_arrangement_survives_the_round_trip() {
-        let projects = keys(&["/home/pp/api", "/home/pp/dotfiles"]);
-        let rows = BTreeMap::from([(
-            "/home/pp/api".to_owned(),
-            vec![("main".to_owned(), 3), ("other".to_owned(), 7)],
-        )]);
+        let arrangement = Arrangement {
+            projects: keys(&["/home/pp/api", "/home/pp/dotfiles"]),
+            rows: BTreeMap::from([(
+                "/home/pp/api".to_owned(),
+                vec![("main".to_owned(), 3), ("other".to_owned(), 7)],
+            )]),
+            folded: BTreeSet::from(["/home/pp/dotfiles".to_owned()]),
+        };
 
-        let (read_projects, read_rows) = decode(&encode(&projects, &rows));
-        assert_eq!(read_projects, projects);
-        assert_eq!(read_rows, rows);
+        assert_eq!(decode(&encode(&arrangement)), arrangement);
     }
 
     #[test]
     fn a_file_that_is_half_written_costs_only_what_it_lost() {
         let text = "p\t/home/pp/api\nnonsense\nr\t/home/pp/api\tmain\tnot-a-pane\n\
-                    r\t/home/pp/api\tmain\t4\n";
-        let (projects, rows) = decode(text);
+                    f\t\nr\t/home/pp/api\tmain\t4\nf\t/home/pp/api\n";
+        let arrangement = decode(text);
 
-        assert_eq!(projects, keys(&["/home/pp/api"]));
-        assert_eq!(rows["/home/pp/api"], vec![("main".to_owned(), 4)]);
+        assert_eq!(arrangement.projects, keys(&["/home/pp/api"]));
+        assert_eq!(
+            arrangement.rows["/home/pp/api"],
+            vec![("main".to_owned(), 4)]
+        );
+        assert_eq!(
+            arrangement.folded,
+            BTreeSet::from(["/home/pp/api".to_owned()])
+        );
     }
 
     #[test]
