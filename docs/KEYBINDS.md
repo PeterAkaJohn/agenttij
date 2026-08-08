@@ -69,7 +69,9 @@ are the two that only dismiss.
 `d` on a row closes the row: the pane you can see and every pane parked behind
 it, agents included. `d` on a pane listed under an opened row closes only that
 pane. Either way the first press only arms it — the bottom line names what is
-about to go and how many panes go with it — and *any* other key cancels. Rows in
+about to go and how many panes go with it — and *any* other key cancels. Closing
+the row you were looking at puts the row below it on screen (the one above, if it
+was the last), rather than leaving the workspace empty. Rows in
 another session are not ours to close, so `d` does nothing on them.
 
 ## From anywhere in Zellij

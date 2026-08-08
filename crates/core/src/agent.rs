@@ -136,6 +136,25 @@ pub fn sort_for_display(agents: &mut [Agent], current_session: &str) {
     });
 }
 
+/// The row that should take the slot when a row closes: the next one down, or
+/// the last one above it if the closed row was at the bottom.
+///
+/// Rows only, and only in this session — a pane listed underneath an opened row
+/// is not somewhere to land, and a row in another session cannot take a slot
+/// here, since its panes belong to that session.
+pub fn row_after<'a>(agents: &'a [Agent], current_session: &str, pane: u32) -> Option<&'a Agent> {
+    let at = agents
+        .iter()
+        .position(|agent| agent.session == current_session && agent.pane == pane)?;
+    let is_row =
+        |agent: &&Agent| agent.depth == 0 && agent.session == current_session && agent.pane != pane;
+
+    agents[at + 1..]
+        .iter()
+        .find(is_row)
+        .or_else(|| agents[..at].iter().rev().find(is_row))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -151,6 +170,37 @@ mod tests {
             panes: 1,
             depth: 0,
         }
+    }
+
+    fn row(session: &str, pane: u32, depth: usize) -> Agent {
+        Agent {
+            session: session.into(),
+            pane,
+            depth,
+            ..agent(Status::Idle, 0, "/x")
+        }
+    }
+
+    #[test]
+    fn a_closed_row_hands_the_slot_to_the_one_below_it() {
+        let rows = [
+            row("here", 1, 0),
+            row("here", 2, 0),
+            row("here", 7, 1), // a pane of row 2, not a row of its own
+            row("here", 3, 0),
+            row("other", 4, 0), // another session cannot take our slot
+        ];
+
+        assert_eq!(row_after(&rows, "here", 1).map(|row| row.pane), Some(2));
+        assert_eq!(
+            row_after(&rows, "here", 2).map(|row| row.pane),
+            Some(3),
+            "the pane listed under it is skipped"
+        );
+        // The bottom row falls back up rather than nowhere.
+        assert_eq!(row_after(&rows, "here", 3).map(|row| row.pane), Some(2));
+        assert_eq!(row_after(&rows[..1], "here", 1), None, "nothing left");
+        assert_eq!(row_after(&rows, "here", 99), None);
     }
 
     #[test]

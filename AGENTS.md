@@ -149,10 +149,14 @@ Each of these cost a debugging round already:
   so there is no way to ask for the other behaviour. Show the pane first, then
   close it; `delete` in the sidebar shows even panes it believes are visible,
   because a pane list one second stale is exactly how you hit the bad path.
-- **`dump-layout` prints an empty tab when only plugin panes are left**, so it
-  cannot tell you whether the sidebar survived something — `list-panes` can. And
-  neither sees suppressed panes: to prove a *hidden* pane was closed rather than
-  merely hidden, count the processes the session's server owns
+- **`list-panes` counts suppressed panes; `dump-layout` does not.** So a pane
+  count from `list-panes` says nothing about what is on screen — in solo mode it
+  reads exactly like a pane that refused to park, which cost a long chase after a
+  bug that was not there. Use `dump-layout` for what is visible. It has the
+  opposite blind spot: it prints an empty tab when only plugin panes are left, so
+  it cannot tell you the sidebar survived something — `list-panes` can. Neither
+  proves a *hidden* pane was closed rather than merely parked; for that count the
+  processes the session's server owns
   (`ps --ppid "$(pgrep -f "^[^ ]*zellij --server .*/<session>$")"`).
 - **Replacing a pane that is itself a replacement destroys the pane in the
   middle.** Zellij stacks suppressed panes behind a replacement, and

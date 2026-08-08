@@ -462,6 +462,20 @@ impl Sidebar {
         let closing = self.groups.closing(agent.pane, whole_row);
         let slot = self.slot();
 
+        // What takes the slot afterwards, worked out now while the row is still
+        // in the list: the row below a closed row, another pane of the row when
+        // one pane went. Groups hear about the closure on the next pane update,
+        // so the answer cannot be asked of them afterwards.
+        let successor = if whole_row {
+            agent::row_after(&self.agents, &self.current_session, agent.pane)
+                .map(|row| self.groups.current_of(row.pane).unwrap_or(row.pane))
+        } else {
+            self.groups
+                .group_of(agent.pane)
+                .and_then(|group| group.members.iter().find(|member| **member != agent.pane))
+                .copied()
+        };
+
         for pane in &closing {
             // Show it first, even when it is already on screen. Zellij reads a
             // close for a *suppressed* pane as "put it back": `close_pane`
@@ -480,20 +494,18 @@ impl Sidebar {
         if self.previous_row.is_some_and(|row| closing.contains(&row)) {
             self.previous_row = None;
         }
-        // The cursor cannot stay on something that no longer exists; the next
-        // rebuild puts it on whatever is still there.
-        self.selected = None;
+        // The cursor follows the slot rather than jumping to the top; the next
+        // rebuild repairs it if what it lands on is gone too.
+        self.selected = successor
+            .filter(|_| whole_row)
+            .map(|pane| (self.current_session.clone(), pane));
 
         // Closing what was on screen leaves the workspace empty, and a parked
-        // pane does not come back on its own — so put the row we were on before
-        // in the slot, if it is still there to put.
+        // pane does not come back on its own — so show whatever follows it.
         let emptied = slot.is_some_and(|slot| closing.contains(&slot));
-        if let Some(previous) = self
-            .previous_row
-            .filter(|_| emptied)
-            .and_then(|row| self.groups.current_of(row))
-        {
-            actions::show_in_slot(previous, None);
+        if let Some(target) = successor.filter(|_| emptied) {
+            self.groups.show(target);
+            actions::show_in_slot(target, None);
         }
     }
 
