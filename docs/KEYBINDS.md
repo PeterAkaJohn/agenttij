@@ -14,15 +14,31 @@ working while the sidebar has focus.
 | `j`, `↓` | next row |
 | `k`, `↑` | previous row |
 | `Enter` | show the selected row, or the pane under it |
-| `Tab` | show a row's other panes underneath it, indented |
+| `Tab` | open a row: its panes underneath it — or fold a project |
+| `[`, `]` | previous / next project |
 | `b` | flip back to the row you were on before |
 | `v` | cycle to the next pane *within* the row on screen |
 | `a` | add a pane to the row on screen |
 | `n` | new agent pane — a new row |
 | `d` `d` | close what the cursor is on — twice, it cannot be undone |
+| `c` `c` | interrupt what it is running — twice, same reason |
+| `!` | only what needs you |
 | `p` | peek at a row's agent without leaving this session |
 | `q`, `Esc` | dismiss a peek |
 | `?` | this list, in a floating pane |
+
+### Projects
+
+A row is a group of panes; a project is a group of rows — everything working on
+one codebase. Rows gather under the git root the hook records, so an agent
+started in `crates/core` sits under the same project as one started at the top of
+the repository.
+
+Headers only appear once there is more than one project to tell apart: with one,
+the header is a line taken from a list twenty columns wide. A header carries the
+worst status inside it, so folding a project away never hides an agent that is
+waiting for you. `Tab` folds and unfolds, `[` and `]` step between projects, and
+`Enter` opens a folded one.
 
 ### Rows, not panes
 
@@ -66,9 +82,18 @@ cannot read a key, so a command-pane peek was either invisible or impossible to
 dismiss. Any key dismisses a peek and then still does its own job; `q` and `Esc`
 are the two that only dismiss.
 
+`!` shows only agents that need you — every project, every session, nothing else
+— and the bottom line says so while it is on. Press it again for the whole list.
+
+`c` interrupts: the byte Ctrl-C would send, so whatever the agent is running
+stops and the pane stays. On a project it interrupts every agent in it. Like `d`
+it asks first, and for the same reason. (Zellij's own "send SIGINT to pane" call
+signals the pane's *shell*, which ignores it — measured; this is why the plugin
+asks for `WriteToStdin`, and that one byte is the only thing it ever writes.)
+
 `d` on a row closes the row: the pane you can see and every pane parked behind
 it, agents included. `d` on a pane listed under an opened row closes only that
-pane. Either way the first press only arms it — the bottom line names what is
+pane, and `d` on a project closes everything in it. Either way the first press only arms it — the bottom line names what is
 about to go and how many panes go with it — and *any* other key cancels. Closing
 the row you were looking at puts the row below it on screen (the one above, if it
 was the last), rather than leaving the workspace empty. Rows in

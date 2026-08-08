@@ -23,12 +23,15 @@ The sidebar is an ordinary pane: focus it with your usual pane navigation (or
 |---|---|
 | `j` / `k`, `↓` / `↑` | move |
 | `Enter` | show that row — switches session if the agent is elsewhere |
-| `Tab` | open a row up: its panes listed underneath, `Enter` goes to one |
+| `Tab` | open a row up: its panes listed underneath — or fold a project |
+| `[`, `]` | jump between projects |
 | `b` | flip back to the previous row (`Alt b` anywhere) |
 | `v` | cycle the panes *within* this row (`Alt v` anywhere) |
 | `a` | add a pane to this row: an editor, a log, whatever (`Alt m`) |
 | `n` | new agent pane — a new row (`Alt g`) |
-| `d` `d` | close the row, or the pane under it — asks first |
+| `d` `d` | close the row, the pane under it, or a whole project — asks first |
+| `c` `c` | interrupt the agent, without going to it — asks first |
+| `!` | only what needs you |
 | `p` | peek at an agent without leaving your session |
 | `q`, `Esc` | dismiss a peek |
 | `?` | show every key and what it does |
@@ -57,7 +60,9 @@ zellij --new-session-with-layout agenttij-left
 The installer builds the plugin and drops it in `~/.config/zellij/plugins`,
 installs the sidebar layouts, registers the Claude Code hook in
 `~/.claude/settings.json`, binds `Alt a` in your Zellij config, and pre-grants
-the plugin's permissions. Everything is backed up first, other tools' entries
+the plugin's permissions. Re-run it after updating: a version that asks for a
+permission the old one did not will otherwise wait on a prompt too wide to fit in
+a sidebar. Everything is backed up first, other tools' entries
 are left alone, and re-running replaces rather than duplicates. The config edit
 is checked with `zellij setup --check` and rolled back if Zellij dislikes it.
 `--no-keybind` and `--no-grant` opt out; `--uninstall` reverses all of it. The
@@ -115,6 +120,13 @@ everything parked behind it — or one pane of a row, if you opened the row with
 `Tab` — and puts the next row on screen rather than leaving it empty. Opening
 panes any other way works too: the first swap parks the extras, and anything
 ungrouped becomes a row of its own.
+
+Rows gather into **projects**: everything working on one codebase, under the git
+root the hook records, so an agent started in `crates/core` sits with one started
+at the top of the repo. A project folds to a line that still shows the worst
+status inside it, `[` and `]` step between them, and headers only appear once
+there is more than one project to tell apart. Four repositories become four
+lines you can open, instead of fifteen you have to read.
 
 In solo mode a **row is a group of panes**, not a single pane. `a` adds a pane to
 the row you are on — an editor next to the agent, a log next to that — and

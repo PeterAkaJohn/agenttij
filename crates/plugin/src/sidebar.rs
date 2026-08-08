@@ -10,6 +10,10 @@ use zellij_tile::prelude::*;
 
 use crate::{actions, render, snapshot};
 
+/// End of text: the byte a terminal sends for Ctrl-C, and the only thing this
+/// plugin ever writes into a pane.
+const INTERRUPT: u8 = 0x03;
+
 /// How many ticks between session lists. Sessions come and go far more slowly
 /// than agent state, and asking is a round-trip that walks the socket directory.
 const SESSION_TICKS: u8 = 5;
@@ -24,6 +28,13 @@ enum Permissions {
     Pending,
     Granted,
     Denied,
+}
+
+/// Something that cannot be undone, waiting for the second press that does it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Pending {
+    Close,
+    Interrupt,
 }
 
 /// What the cursor is on. A project is addressed by its root rather than by a
@@ -60,9 +71,12 @@ pub struct Sidebar {
     live_sessions: Vec<String>,
     /// The row we were on before this one, for flipping back to it.
     previous_row: Option<u32>,
-    /// What a second `d` would close. Closing panes is the only thing here that
-    /// cannot be undone, so it takes two presses and says what it will take.
-    pending_delete: Option<Selection>,
+    /// What a second press would do, and to what. Closing a pane and
+    /// interrupting an agent are the two things here that cannot be undone, so
+    /// both take two presses and say what they are about to take.
+    pending: Option<(Pending, Selection)>,
+    /// Show only what needs you, across every project and session.
+    only_blocked: bool,
     /// Rows showing their panes underneath them, by primary.
     expanded: BTreeSet<u32>,
     /// Projects folded down to their header line, by root.
@@ -122,6 +136,7 @@ impl ZellijPlugin for Sidebar {
             PermissionType::ChangeApplicationState, // focus a pane, switch session
             PermissionType::RunCommands,          // read state files, open a preview
             PermissionType::OpenTerminalsOrPlugins, // start an agent pane with `n`
+            PermissionType::WriteToStdin,         // the interrupt byte, and nothing else
         ]);
         subscribe(&[
             EventType::Timer,
@@ -219,7 +234,7 @@ impl ZellijPlugin for Sidebar {
             return;
         }
 
-        let prompt = self.delete_prompt();
+        let prompt = self.prompt();
         render::draw(&render::View {
             rows,
             cols,
@@ -335,6 +350,12 @@ impl Sidebar {
             agents = self.group_rows(agents);
         }
 
+        // Only what needs you: rows, not the panes underneath them — a pane is
+        // never the thing that is blocked.
+        if self.only_blocked {
+            agents.retain(|agent| agent.status == Status::NeedsInput);
+        }
+
         if self.config.scope == Scope::Session {
             agents.retain(|agent| agent.session == self.current_session);
         }
@@ -397,7 +418,7 @@ impl Sidebar {
         self.close_peek();
         // Any key at all disarms a pending delete, including the one that then
         // does something else entirely.
-        let armed = self.pending_delete.take();
+        let armed = self.pending.take();
 
         match key.bare_key {
             BareKey::Char('q') | BareKey::Esc => had_peek,
@@ -499,17 +520,15 @@ impl Sidebar {
             // Close what the cursor is on: a row takes its panes with it, a
             // pane inside an opened row goes on its own. Panes in another
             // session are not ours to close, so `d` does not arm on them.
-            BareKey::Char('d') => {
-                if let Some(agent) = self.selected_agent().cloned() {
-                    let target = Selection::of(&agent);
-                    let ours = agent.session == self.current_session
-                        || matches!(agent.kind, Kind::Project { .. });
-                    if armed.as_ref() == Some(&target) {
-                        self.delete(&agent);
-                    } else if ours {
-                        self.pending_delete = Some(target);
-                    }
-                }
+            BareKey::Char('d') => self.arm(Pending::Close, armed),
+            // Ctrl-C to the agent without going to it: the reason to watch a
+            // runaway is to stop it.
+            BareKey::Char('c') => self.arm(Pending::Interrupt, armed),
+            // Only what needs you. The list is a status board; this is the
+            // question it exists to answer, so it gets one key.
+            BareKey::Char('!') => {
+                self.only_blocked = !self.only_blocked;
+                self.rebuild();
                 true
             }
             BareKey::Char('p') => {
@@ -597,6 +616,51 @@ impl Sidebar {
         }
     }
 
+    /// First press arms, second press does it, and the footer says what "it" is.
+    /// Anything in another session is not ours to close or signal, so `d` and `c`
+    /// do not arm on it.
+    fn arm(&mut self, action: Pending, armed: Option<(Pending, Selection)>) -> bool {
+        let Some(agent) = self.selected_agent().cloned() else {
+            return false;
+        };
+        let target = Selection::of(&agent);
+        let ours =
+            agent.session == self.current_session || matches!(agent.kind, Kind::Project { .. });
+
+        if armed == Some((action, target.clone())) {
+            match action {
+                Pending::Close => self.delete(&agent),
+                Pending::Interrupt => self.interrupt(&agent),
+            }
+        } else if ours {
+            self.pending = Some((action, target));
+        }
+        true
+    }
+
+    /// Interrupts the agent: the byte Ctrl-C puts on the terminal, which makes
+    /// the tty signal whatever is in the foreground. The pane stays; only what it
+    /// is running stops.
+    ///
+    /// `send_sigint_to_pane_id` is the obvious call and does not work here. It
+    /// signals the pane's own child (`pty.rs`, `send_sigint_to_pane`), which is
+    /// the shell — and an interactive shell ignores SIGINT, so the agent under it
+    /// carries on. Measured: a `sleep` in the pane survived it untouched.
+    fn interrupt(&mut self, agent: &Agent) {
+        for pane in self.interrupting(agent) {
+            write_to_pane_id(vec![INTERRUPT], PaneId::Terminal(pane));
+        }
+    }
+
+    /// A row means its agent, a pane means itself, and a project means every
+    /// agent in it.
+    fn interrupting(&self, agent: &Agent) -> Vec<u32> {
+        match agent.kind {
+            Kind::Project { .. } => self.rows_of(project::key(agent)),
+            Kind::Row | Kind::Pane => vec![agent.pane],
+        }
+    }
+
     /// What should take the slot when these panes are gone: the row below a
     /// closed row, another pane of the row when one pane went, and for a project
     /// the first row that is not going with it.
@@ -651,10 +715,20 @@ impl Sidebar {
         true
     }
 
-    /// What an armed `d` would take, so the second press is never a surprise.
-    fn delete_prompt(&self) -> Option<String> {
-        let selection = self.pending_delete.as_ref()?;
+    /// What an armed key would take, so the second press is never a surprise —
+    /// and, with nothing armed, what the list is currently hiding.
+    fn prompt(&self) -> Option<String> {
+        let Some((action, selection)) = self.pending.as_ref() else {
+            return self.only_blocked.then(|| "⚠ only — ! shows all".to_owned());
+        };
         let agent = self.agents.get(self.find(selection)?)?;
+
+        if *action == Pending::Interrupt {
+            return Some(match self.interrupting(agent).len() {
+                0 | 1 => format!("interrupt {}? c", agent.label()),
+                agents => format!("interrupt {} ×{agents}? c", agent.label()),
+            });
+        }
 
         let panes = match agent.kind {
             Kind::Project { .. } => self
@@ -954,6 +1028,10 @@ impl Sidebar {
         match self.permissions {
             Permissions::Pending => Some("waiting for permissions"),
             Permissions::Denied => Some("permissions denied"),
+            // "no agents" would be a lie while a filter is on.
+            Permissions::Granted if self.only_blocked && self.agents.is_empty() => {
+                Some("nothing needs you")
+            }
             Permissions::Granted => None,
         }
     }

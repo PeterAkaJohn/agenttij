@@ -20,6 +20,7 @@ PERMISSIONS = (
     "ChangeApplicationState",  # focus a pane, switch session
     "RunCommands",  # read state files, open a preview
     "OpenTerminalsOrPlugins",  # start an agent pane with `n`
+    "WriteToStdin",  # the interrupt byte `c` sends, and nothing else
 )
 
 
