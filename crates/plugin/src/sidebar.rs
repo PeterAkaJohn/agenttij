@@ -442,23 +442,33 @@ impl Sidebar {
             return;
         }
 
-        for (primary, count) in self.groups.rows().collect::<Vec<_>>() {
-            let Some(row) = self.agents.iter().find(|agent| agent.pane == primary) else {
-                continue;
-            };
-            let label = row.label().to_owned();
+        // Only the pane on screen. A hidden pane has been lifted out of the tab
+        // and a rename does not reach it — and it does not need one, since the
+        // point is telling you where *this* pane sits while you look at it.
+        let Some(visible) = self.slot() else { return };
+        let Some(group) = self.groups.group_of(visible) else {
+            return;
+        };
+        let (members, primary) = (group.members.clone(), group.primary());
 
-            for (index, pane) in self.groups.members_of(primary).to_vec().iter().enumerate() {
-                let Some(name) = format::pane_position(&label, index, count) else {
-                    continue;
-                };
-                if self.positions.get(pane) == Some(&name) {
-                    continue;
-                }
-                rename_terminal_pane(*pane, &name);
-                self.positions.insert(*pane, name);
-            }
+        let Some(index) = members.iter().position(|member| *member == visible) else {
+            return;
+        };
+        let label = self
+            .agents
+            .iter()
+            .find(|agent| agent.pane == primary)
+            .map(|agent| agent.label().to_owned())
+            .unwrap_or_default();
+
+        let Some(name) = format::pane_position(&label, index, members.len()) else {
+            return;
+        };
+        if self.positions.get(&visible) == Some(&name) {
+            return;
         }
+        rename_terminal_pane(visible, &name);
+        self.positions.insert(visible, name);
     }
 
     /// Splices an expanded row's panes in underneath it.

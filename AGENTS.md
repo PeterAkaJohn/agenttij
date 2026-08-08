@@ -116,10 +116,13 @@ Each of these cost a debugging round already:
   sets it to the url.
 - **A pane opened from a plugin steals focus after the call returns**, so taking
   focus back has to wait for a later event, not the same handler.
-- **Suppressing onto an existing suppressed stack destroys a pane.** Known for
-  `open_*_in_place_of_pane_id`; a third pane joining a row via
-  `replace_pane_with_existing_pane` lost the middle one too (terminal_2 vanished
-  when terminal_3 arrived). Two panes swap fine; three do not. Unfixed.
+- **Never swap panes with `replace_pane_with_existing_pane`.** Zellij files
+  suppressed panes in a `HashMap` keyed by *the pane that replaced them*
+  (`tab/mod.rs`, `SuppressedPanes`), so a pane that is already someone's value is
+  orphaned the moment it becomes a key — a third pane joining a row destroyed the
+  second. `hide_pane_with_id` files a pane under its own id (`suppress_pane`,
+  same file, with a comment saying so), so hide-the-old / show-the-new chains
+  safely.
 - **Replacing a pane that is itself a replacement destroys the pane in the
   middle.** Zellij stacks suppressed panes behind a replacement, and
   `open_*_in_place_of_pane_id` on top of that stack drops the middle one

@@ -37,11 +37,9 @@ pub fn notify(command: &[String], agent: &Agent) {
 
 /// Opens a fresh terminal in the workspace slot, parking whatever is there.
 ///
-/// Two steps rather than one: open the pane normally, then swap it into the slot
-/// with the old occupant suppressed. Opening *in place of* the slot looks
-/// simpler and destroys panes — Zellij stacks suppressed panes behind a
-/// replacement, and replacing a pane that is itself a replacement drops the one
-/// in the middle. Measured: three panes went in, two came out.
+/// Two steps rather than one: open the pane normally, then hide the old
+/// occupant. Opening *in place of* the slot looks simpler and destroys panes —
+/// see `show_in_slot` for why anything built on replacement does.
 pub fn new_in_slot(all_panes: &[PaneSnapshot], session: &str, solo: bool) -> Option<PaneId> {
     let tab = get_focused_pane_info().ok().map(|(tab, _)| tab);
     let slot = tab.and_then(|tab| panes::visible_terminal(all_panes, session, tab));
@@ -55,24 +53,33 @@ pub fn new_in_slot(all_panes: &[PaneSnapshot], session: &str, solo: bool) -> Opt
         return opened;
     };
 
-    // The new pane arrives as a split; this collapses it back to one on screen.
-    show_in_slot_from(opened, slot);
+    // The new pane arrives as a split; hiding the old one collapses it back to
+    // one on screen, without the suppression chain a replacement would build.
+    hide_pane_with_id(PaneId::Terminal(slot));
     focus_pane_with_id(opened, false, false);
     Some(opened)
 }
 
 /// Brings a pane into the slot, parking whoever was there. This is the move
 /// behind picking a row, cycling within one, and adding to one.
+///
+/// Show the newcomer, then hide the incumbent — deliberately *not*
+/// `replace_pane_with_existing_pane`, which destroys panes here. Zellij keeps
+/// suppressed panes in a map keyed by the pane that replaced them, so a pane
+/// that is already someone's value gets orphaned the moment it becomes a key:
+/// a third pane joining a row made the second disappear. `hide_pane_with_id`
+/// files a pane under *its own* id (`tab/mod.rs`, `suppress_pane`), so no pane
+/// depends on another to come back.
 pub fn show_in_slot(target: u32, slot: Option<u32>) {
-    match slot {
-        Some(slot) if slot == target => focus_pane_with_id(PaneId::Terminal(target), false, false),
-        Some(slot) => show_in_slot_from(PaneId::Terminal(target), slot),
-        None => show_pane_with_id(PaneId::Terminal(target), false, true),
+    if slot == Some(target) {
+        focus_pane_with_id(PaneId::Terminal(target), false, false);
+        return;
     }
-}
 
-fn show_in_slot_from(target: PaneId, slot: u32) {
-    replace_pane_with_existing_pane(PaneId::Terminal(slot), target, true);
+    show_pane_with_id(PaneId::Terminal(target), false, true);
+    if let Some(slot) = slot {
+        hide_pane_with_id(PaneId::Terminal(slot));
+    }
 }
 
 fn own_cwd() -> PathBuf {
