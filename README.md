@@ -126,8 +126,9 @@ Rows gather into **projects**: everything working on one codebase, under the git
 root the hook records, so an agent started in `crates/core` sits with one started
 at the top of the repo. A project folds to a line that still shows the worst
 status inside it, `[` and `]` step between them, `J` and `K` put them in the
-order you want, and headers only appear once there is more than one project to
-tell apart. Four repositories become four
+order you want — remembered in `~/.cache/agenttij/order`, so a reload or a new
+day finds them where you left them — and headers only appear once there is more
+than one project to tell apart. Four repositories become four
 lines you can open, instead of fifteen you have to read.
 
 In solo mode a **row is a group of panes**, not a single pane. `a` adds a pane to

@@ -25,12 +25,13 @@ one, then `zellij -s <session> action start-or-reload-plugin "file:$HOME/.config
 ```
 crates/core    agenttij-core — zero dependencies, all the decisions, unit-tested
                agent (status, rows), group (a row is a group of panes),
-               panes (reconciliation, discovery), scan (state files),
-               color (SGR), config, format (row layout)
+               project (rows sharing a git root), order (what you rearranged,
+               and its file), panes (reconciliation, discovery),
+               scan (state files), color (SGR), config, format (row layout)
 crates/plugin  agenttij — wasm: lifecycle, rendering, navigation, peek mode
 hooks/         the shell hook agents run — tool-agnostic: `$1` is the state
 integrations/  per-tool glue that calls that hook (opencode plugin)
-layouts/       left, right, workspace (+ a `rail` swap layout in each)
+layouts/       left, right, workspace (+ `sidebar` and `rail` swap layouts)
 scripts/       installer, three helpers, and press-keys.sh
 docs/          PLAN.md (design and constraints), KEYBINDS.md (every key)
 ```

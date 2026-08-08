@@ -49,11 +49,37 @@ pub fn dump_command(session: &str, pane: u32) -> [String; 6] {
 
 /// Marks our own `RunCommandResult` events, so we ignore anyone else's.
 pub const CONTEXT_KEY: &str = "agenttij";
+pub const CONTEXT_ORDER: &str = "order";
 pub const CONTEXT_SCAN: &str = "scan";
 pub const CONTEXT_PEEK: &str = "peek";
 
 pub fn command() -> [&'static str; 3] {
     ["sh", "-c", SCAN_SCRIPT]
+}
+
+/// Where an arrangement is kept: a cache file, since it is a preference about
+/// project paths rather than anything to do with a session. `$HOME` is expanded
+/// by the shell because a plugin cannot read its own environment —
+/// `get_session_environment_variables` panics and takes the plugin with it.
+const ORDER_DIR: &str = r#"d="${XDG_CACHE_HOME:-$HOME/.cache}/agenttij""#;
+
+pub fn read_order_command() -> [String; 3] {
+    [
+        "sh".to_owned(),
+        "-c".to_owned(),
+        format!("{ORDER_DIR}; cat \"$d/order\" 2>/dev/null; true"),
+    ]
+}
+
+/// The text goes as an *argument*, never inside the script: a project is a path,
+/// and a path may contain anything a shell would rather it did not.
+pub fn write_order_command(text: &str) -> [String; 4] {
+    [
+        "sh".to_owned(),
+        "-c".to_owned(),
+        format!("{ORDER_DIR}; mkdir -p \"$d\" && printf '%s' \"$0\" > \"$d/order\""),
+        text.to_owned(),
+    ]
 }
 
 #[derive(Debug, PartialEq, Eq)]

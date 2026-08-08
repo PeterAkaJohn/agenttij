@@ -89,7 +89,12 @@ order is the order they joined in, which is what `v` cycles through.
 
 The sidebar sorts by what needs you until you have an opinion; from the first
 time you move something, what you arranged stays arranged, and anything that
-turns up later lands after it rather than in the middle of it. Shift is the only
+turns up later lands after it rather than in the middle of it. An arrangement
+outlives the plugin: it is written to `${XDG_CACHE_HOME:-~/.cache}/agenttij/order`
+when you move something and read back when a sidebar starts, so a reload — or
+tomorrow — finds the projects where you left them. Rows are remembered per
+session, since a pane id means nothing once its session is gone; projects are
+remembered by path, so they keep their order everywhere. Shift is the only
 modifier the sidebar reads — every other one still passes straight through to
 your own Zellij bindings.
 

@@ -85,6 +85,8 @@ pub struct Sidebar {
     project_order: Vec<String>,
     /// The order you put a project's rows in, by project root.
     row_order: BTreeMap<String, Vec<(String, u32)>>,
+    /// Whether the remembered arrangement has been asked for yet.
+    order_read: bool,
     /// The rows each project holds in this session, kept from before folding
     /// dropped them — a folded project still has to be openable and closable.
     projects: BTreeMap<String, Vec<u32>>,
@@ -279,6 +281,17 @@ impl Sidebar {
             return;
         }
 
+        // The arrangement, once. It outlives the plugin, so a reload — or
+        // tomorrow — finds the projects where you left them.
+        if !self.order_read {
+            self.order_read = true;
+            let command = scan::read_order_command();
+            let words: Vec<&str> = command.iter().map(String::as_str).collect();
+            let context =
+                BTreeMap::from([(scan::CONTEXT_KEY.to_owned(), scan::CONTEXT_ORDER.to_owned())]);
+            run_command(&words, context);
+        }
+
         if let Some((session, pane)) = self.config.peek.clone() {
             let command = scan::dump_command(&session, pane);
             let words: Vec<&str> = command.iter().map(String::as_str).collect();
@@ -311,6 +324,13 @@ impl Sidebar {
     }
 
     fn absorb_scan(&mut self, stdout: &[u8], context: &BTreeMap<String, String>) -> bool {
+        if context.get(scan::CONTEXT_KEY).map(String::as_str) == Some(scan::CONTEXT_ORDER) {
+            let (projects, rows) = order::decode(&String::from_utf8_lossy(stdout));
+            self.project_order = projects;
+            self.row_order = rows;
+            self.rebuild();
+            return true;
+        }
         if context.get(scan::CONTEXT_KEY).map(String::as_str) == Some(scan::CONTEXT_PEEK) {
             self.peeked = String::from_utf8_lossy(stdout)
                 .lines()
@@ -743,8 +763,19 @@ impl Sidebar {
             Kind::Pane => return false,
         }
 
+        self.save_order();
         self.rebuild();
         true
+    }
+
+    /// Writes the arrangement out, so a reload does not lose it. Only on a move,
+    /// which is rare — and last writer wins, which is the right answer when two
+    /// sidebars disagree about where a project belongs.
+    fn save_order(&self) {
+        let text = order::encode(&self.project_order, &self.row_order);
+        let command = scan::write_order_command(&text);
+        let words: Vec<&str> = command.iter().map(String::as_str).collect();
+        run_command(&words, BTreeMap::new());
     }
 
     /// The rows in the order you asked for: projects first, each project's rows
