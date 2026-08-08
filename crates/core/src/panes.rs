@@ -91,6 +91,8 @@ pub fn discover(panes: &[PaneSnapshot], reported: &[Agent], names: &[String]) ->
             status: Status::Unknown,
             reported_at: 0,
             cwd: String::new(),
+            root: String::new(),
+            host: String::new(),
             title: short_title(&pane.title),
             panes: 1,
             depth: 0,
@@ -125,6 +127,8 @@ pub fn list_panes(panes: &[PaneSnapshot], listed: &[Agent], session: &str) -> Ve
             status: Status::Pane,
             reported_at: 0,
             cwd: String::new(),
+            root: String::new(),
+            host: String::new(),
             title: short_title(&pane.title),
             panes: 1,
             depth: 0,
@@ -223,9 +227,8 @@ mod tests {
             status: Status::Running,
             reported_at: 10,
             cwd: "/x".into(),
-            title: String::new(),
             panes: 1,
-            depth: 0,
+            ..Agent::default()
         }
     }
 

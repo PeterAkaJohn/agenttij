@@ -224,7 +224,9 @@ Claude Code hook ──> /tmp/agenttij/<session>.<pane>.state
                      sh + cat, 1/tick
                           v
    SessionUpdate ──> [ sidebar plugin ] ──> Enter: switch_session_with_focus
-   (this session)                      └──> p:     dump-screen, polled
+   (this session)        ^             └──> p:     dump-screen, polled
+                         │
+              get_session_list() — which sessions are alive
 ```
 
 The hook is registered once per Claude Code event and passes its state as an

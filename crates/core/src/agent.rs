@@ -4,7 +4,7 @@
 ///
 /// The variant order is the sidebar's sort order, deliberately: whatever wants
 /// your attention belongs at the top of the list.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Status {
     /// Blocked on you — a permission prompt, or a question.
     NeedsInput,
@@ -15,6 +15,7 @@ pub enum Status {
     /// Started, but has not reported anything since.
     Idle,
     /// Found by process name, with no hook reporting on it.
+    #[default]
     Unknown,
     /// Not an agent at all — a pane in the workspace, listed so it can be
     /// switched to. A shell you just opened lives here until it reports.
@@ -56,7 +57,7 @@ impl Status {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Agent {
     pub session: String,
     pub pane: u32,
@@ -66,6 +67,13 @@ pub struct Agent {
     pub reported_at: u64,
     /// Directory the agent is working in. Empty when discovered.
     pub cwd: String,
+    /// The project `cwd` sits in: the git root above it, or `cwd` itself outside
+    /// a repository. Written by the hook, which can afford the `git` call once
+    /// when an agent reports — the sidebar cannot afford one per row per tick.
+    pub root: String,
+    /// The machine the agent runs on. Empty is this one; state read over ssh is
+    /// tagged with the host it came from as it is read.
+    pub host: String,
     /// Short name from the pane's title, for entries that have no cwd to name
     /// them — a plain pane, or an agent found by process name.
     pub title: String,
@@ -166,9 +174,8 @@ mod tests {
             status,
             reported_at,
             cwd: cwd.into(),
-            title: String::new(),
             panes: 1,
-            depth: 0,
+            ..Agent::default()
         }
     }
 

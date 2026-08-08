@@ -15,32 +15,21 @@ use crate::agent::{Agent, Status};
 /// `hooks/agenttij-state.sh` (see `scan_script_uses_the_state_dir`).
 pub const STATE_DIR: &str = "/tmp/agenttij";
 
-/// Prints the current unix time, then every live session as `session=<name>`,
-/// then one state line per tracked pane.
+/// Prints the current unix time, then one state line per tracked pane.
 ///
-/// The session list comes from `zellij list-sessions` because it is derived
-/// from IPC sockets, which exist the moment a session starts. `SessionUpdate`
-/// cannot be used for this: it learns about *other* sessions by reading their
-/// `session-metadata.kdl`, which is never written when a user has
-/// `session_serialization false` — leaving every cross-session agent invisible.
-/// `EXITED` lines are resurrectable corpses, not live sessions.
+/// It no longer lists sessions. That used to fork a `zellij` client which dialled
+/// every session's socket — 12ms against 4ms for the rest of the script — and
+/// `get_session_list()` answers the same question as a host call. It has to be
+/// that call and not `SessionUpdate`: the update learns about *other* sessions by
+/// reading their `session-metadata.kdl`, which is never written when a user has
+/// `session_serialization false`, while `get_session_list` scans the socket
+/// directory (`scan_session_list_default_dirs`) exactly as the CLI does.
 ///
 /// Trailing `true` keeps the exit code clean when the glob matches nothing,
 /// which is the normal case with no agents running — and is also why the
 /// directory is not created here: the hook makes it when it has something to
 /// write, and a `mkdir` per tick is a fork per tick for nothing.
-const SCAN_SCRIPT: &str = "date +%s; \
-     zellij list-sessions --no-formatting 2>/dev/null \
-     | grep -v EXITED | sed 's/[[:space:]].*//; s/^/session=/'; \
-     cat /tmp/agenttij/*.state 2>/dev/null; true";
-
-/// The same without the session list, for the ticks in between: reading the
-/// state files is a `cat`, while listing sessions forks a `zellij` client that
-/// dials every session's socket. Sessions do not appear and vanish at 1Hz.
-const STATE_SCRIPT: &str = "date +%s; cat /tmp/agenttij/*.state 2>/dev/null; true";
-
-/// Marks a live-session line in the scan output.
-const SESSION_PREFIX: &str = "session=";
+const SCAN_SCRIPT: &str = "date +%s; cat /tmp/agenttij/*.state 2>/dev/null; true";
 
 /// Dumps a pane's screen, for a peek to render.
 ///
@@ -63,13 +52,8 @@ pub const CONTEXT_KEY: &str = "agenttij";
 pub const CONTEXT_SCAN: &str = "scan";
 pub const CONTEXT_PEEK: &str = "peek";
 
-pub fn command(with_sessions: bool) -> [&'static str; 3] {
-    let script = if with_sessions {
-        SCAN_SCRIPT
-    } else {
-        STATE_SCRIPT
-    };
-    ["sh", "-c", script]
+pub fn command() -> [&'static str; 3] {
+    ["sh", "-c", SCAN_SCRIPT]
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -77,8 +61,6 @@ pub struct Scan {
     /// Host clock, read in the same breath as the state files so ages are
     /// measured against the same clock that wrote them.
     pub now: u64,
-    /// Every session currently running on this machine.
-    pub live_sessions: Vec<String>,
     pub agents: Vec<Agent>,
 }
 
@@ -89,28 +71,17 @@ pub fn parse(stdout: &[u8]) -> Option<Scan> {
     let mut lines = text.lines().filter(|line| !line.trim().is_empty());
 
     let now = lines.next()?.trim().parse().ok()?;
+    let agents = lines.filter_map(parse_agent).collect();
 
-    let mut live_sessions = Vec::new();
-    let mut agents = Vec::new();
-    for line in lines {
-        if let Some(session) = line.strip_prefix(SESSION_PREFIX) {
-            let session = session.trim();
-            if !session.is_empty() {
-                live_sessions.push(session.to_owned());
-            }
-        } else {
-            agents.extend(parse_agent(line));
-        }
-    }
-
-    Some(Scan {
-        now,
-        live_sessions,
-        agents,
-    })
+    Some(Scan { now, agents })
 }
 
-/// `<status>\t<session>\t<pane>\t<unix-seconds>\t<cwd>`
+/// `<status>\t<session>\t<pane>\t<unix-seconds>\t<cwd>[\t<root>[\t<host>]]`
+///
+/// The last two are newer than the first five, and a hook older than the plugin
+/// is the normal state of an upgrade — so a line without them is not a broken
+/// line: the project falls back to the working directory, and no host means this
+/// machine.
 fn parse_agent(line: &str) -> Option<Agent> {
     let mut fields = line.split('\t');
     let status = Status::parse(fields.next()?.trim())?;
@@ -118,6 +89,8 @@ fn parse_agent(line: &str) -> Option<Agent> {
     let pane = fields.next()?.trim().parse().ok()?;
     let reported_at = fields.next()?.trim().parse().ok()?;
     let cwd = fields.next().unwrap_or_default().trim();
+    let root = fields.next().unwrap_or_default().trim();
+    let host = fields.next().unwrap_or_default().trim();
 
     if session.is_empty() {
         return None;
@@ -129,6 +102,8 @@ fn parse_agent(line: &str) -> Option<Agent> {
         status,
         reported_at,
         cwd: cwd.to_owned(),
+        root: if root.is_empty() { cwd } else { root }.to_owned(),
+        host: host.to_owned(),
         title: String::new(),
         panes: 1,
         depth: 0,
@@ -140,34 +115,30 @@ mod tests {
     use super::*;
 
     #[test]
-    fn scan_script_uses_the_state_dir() {
+    fn scan_script_uses_the_state_dir_and_forks_nothing_else() {
         assert!(SCAN_SCRIPT.contains(STATE_DIR));
-        assert!(STATE_SCRIPT.contains(STATE_DIR));
+        // The session list is a host call now; forking a client for it cost
+        // three times the rest of the script.
+        assert!(!command()[2].contains("list-sessions"));
     }
 
     #[test]
-    fn only_the_full_scan_lists_sessions() {
-        assert!(command(true)[2].contains("list-sessions"));
-        assert!(!command(false)[2].contains("list-sessions"));
+    fn a_line_without_a_project_falls_back_to_the_working_directory() {
+        // What a hook older than the plugin writes.
+        let out = b"1754400000\nrunning\tmain\t3\t1754399990\t/home/pp/api/crates/core\n";
+        let agent = &parse(out).expect("parses").agents[0];
+
+        assert_eq!(agent.root, "/home/pp/api/crates/core");
+        assert_eq!(agent.host, "", "no host means this machine");
     }
 
     #[test]
-    fn parses_live_sessions_and_agents_in_one_pass() {
-        let out = b"1754400000\nsession=main\nsession=other\nrunning\tmain\t3\t1754399990\t/x\n";
-        let scan = parse(out).expect("parses");
+    fn a_project_and_a_host_are_read_when_they_are_there() {
+        let out = b"1754400000\nrunning\tmain\t3\t1754399990\t/home/pp/api/crates/core\t/home/pp/api\tdev1\n";
+        let agent = &parse(out).expect("parses").agents[0];
 
-        assert_eq!(scan.live_sessions, vec!["main", "other"]);
-        assert_eq!(scan.agents.len(), 1);
-        assert_eq!(scan.agents[0].key(), ("main", 3));
-    }
-
-    #[test]
-    fn a_session_named_like_a_state_line_is_still_a_session() {
-        let out = b"1754400000\nsession=running\n";
-        let scan = parse(out).expect("parses");
-
-        assert_eq!(scan.live_sessions, vec!["running"]);
-        assert_eq!(scan.agents, vec![]);
+        assert_eq!(agent.root, "/home/pp/api");
+        assert_eq!(agent.host, "dev1");
     }
 
     #[test]

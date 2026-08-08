@@ -10,7 +10,7 @@ use zellij_tile::prelude::*;
 use crate::{actions, render, snapshot};
 
 /// How many ticks between session lists. Sessions come and go far more slowly
-/// than agent state, and listing them forks a whole `zellij` client.
+/// than agent state, and asking is a round-trip that walks the socket directory.
 const SESSION_TICKS: u8 = 5;
 
 /// How often the state files are re-read. A `sh` fork at this rate is noise;
@@ -243,10 +243,26 @@ impl Sidebar {
             return;
         }
 
+        // Which sessions are alive, from the host rather than from a forked
+        // `zellij list-sessions`. It has to come from here and not `SessionUpdate`:
+        // that only learns of other sessions through files a session with
+        // `session_serialization false` never writes, while this walks the socket
+        // directory, which is true the moment a session starts.
+        if self.sessions_in == 0 {
+            self.sessions_in = SESSION_TICKS;
+            if let Ok(sessions) = get_session_list() {
+                self.live_sessions = sessions
+                    .live_sessions
+                    .iter()
+                    .map(|session| session.name.clone())
+                    .collect();
+            }
+        }
+        self.sessions_in = self.sessions_in.saturating_sub(1);
+
         let context =
             BTreeMap::from([(scan::CONTEXT_KEY.to_owned(), scan::CONTEXT_SCAN.to_owned())]);
-        self.sessions_in = self.sessions_in.checked_sub(1).unwrap_or(SESSION_TICKS);
-        run_command(&scan::command(self.sessions_in == SESSION_TICKS), context);
+        run_command(&scan::command(), context);
     }
 
     fn absorb_scan(&mut self, stdout: &[u8], context: &BTreeMap<String, String>) -> bool {
@@ -265,11 +281,6 @@ impl Sidebar {
         };
 
         self.now = result.now;
-        // Empty means this scan did not ask for the list, not that every session
-        // died: our own is always in it. Keep what we had.
-        if !result.live_sessions.is_empty() {
-            self.live_sessions = result.live_sessions;
-        }
 
         let before = std::mem::replace(&mut self.reported, result.agents);
         self.rebuild();

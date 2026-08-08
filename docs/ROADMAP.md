@@ -127,7 +127,7 @@ together they cost one tick, not four.
 
 | | what | why it earns its place | cost |
 |---|---|---|---|
-| 1 | `get_session_list()` instead of forking `zellij list-sessions` | a host call replaces the most expensive fork we make; also hands us dead sessions for free | small |
+| 1 | ✅ `get_session_list()` instead of forking `zellij list-sessions` | a host call replaces the most expensive fork we make; also hands us dead sessions for free | small |
 | 2 | blocked queue (`!`) | filters to what needs you, across sessions and hosts — the sidebar's whole reason, one key | small |
 | 3 | interrupt an agent (`c`, two presses like `d`) | `send_sigint_to_pane_id`. Runaway agents are why people watch them | small |
 | 4 | pane frame colour by status (`set_pane_color`) | a blocked agent's pane goes yellow — awareness with no sidebar and no keystroke | small |
@@ -146,9 +146,14 @@ together they cost one tick, not four.
 
 ## Order
 
-- **First, the plumbing**: item 1, the state format gaining `root` and `host`,
-  and local peeks off `get_pane_scrollback`. Small, and everything else leans on
-  it.
+- **First, the plumbing** ✅ except one part: item 1 is done, and the state format
+  now carries `root` and `host`. Local peeks off `get_pane_scrollback` are *not*
+  done and should stay undone for now: that call needs `ReadPaneContents`, a
+  permission the plugin does not ask for, so adding it re-prompts every existing
+  user — an invisible prompt in a narrow pane — to remove a fork that only exists
+  while a peek is open. Worth revisiting when something else needs that
+  permission, and reading a pane to work out an agent's state *without* a hook
+  would be exactly that.
 - **Then the sidebar people actually asked for**: projects, `!`, `c`.
 - **Then reach**: ssh hosts, handoff, flip-back, graveyard.
 - **Then the suite**: jump first — it is the one that changes a working day.

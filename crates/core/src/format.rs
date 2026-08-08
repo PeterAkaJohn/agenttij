@@ -141,9 +141,8 @@ mod tests {
             status,
             reported_at,
             cwd: cwd.into(),
-            title: String::new(),
             panes: 1,
-            depth: 0,
+            ..Agent::default()
         }
     }
 

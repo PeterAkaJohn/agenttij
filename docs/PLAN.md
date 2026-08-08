@@ -50,8 +50,10 @@ about other sessions by reading their `session-metadata.kdl`
 (`background_jobs.rs:766`), which Zellij never writes when a user sets
 `session_serialization false` — as this machine does. Reconciling against pane
 data alone therefore hides every cross-session agent. The authoritative
-liveness signal is `zellij list-sessions`, which is derived from IPC sockets
-and is correct the instant a session starts.
+liveness signal is the socket directory, which is correct the instant a session
+starts: `get_session_list()` walks it (`scan_session_list_default_dirs`) exactly
+as `zellij list-sessions` does, without the forked client the sidebar used to
+pay for every five seconds.
 
 **`switch_session_with_focus` does not need a tab position.** Verified live:
 with `tab_position: None` and only a pane id, the client still landed on a pane
@@ -85,11 +87,20 @@ State flows one way: the agent reports, a file records, the sidebar reads.
 ```
 Claude Code hook ──> /tmp/agenttij/<session>.<pane>.state
                           │
-             sh: date + list-sessions + cat, 1/tick
+                sh: date + cat, 1/tick
                           v
    SessionUpdate ──> [ sidebar plugin ] ──> Enter: switch_session_with_focus
-   (pane detail)                        └──> p:     dump-screen, polled 1/s
+   (pane detail)         ^              └──> p:     dump-screen, polled 1/s
+                         │
+              get_session_list(), 1/5 ticks — which sessions are alive
 ```
+
+A state line is `<status> <session> <pane> <unix-seconds> <cwd> <root> <host>`,
+tab separated. The last two arrived after the first five and are optional, since
+a hook older than the plugin is the normal state of an upgrade: no `root` means
+the project is the working directory, no `host` means this machine. `root` is
+resolved by the hook — one `git rev-parse` when an agent reports, rather than one
+per row per tick in a plugin that redraws every second.
 
 Files, not plugin memory or pipes, because a sidebar in a session that started
 *later* must still see every running agent, and a reload must lose nothing.
