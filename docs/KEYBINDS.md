@@ -65,7 +65,9 @@ There is a container for trying this without a second machine:
 `⇢` marks a row in another session on this machine: `Enter` there detaches and
 reattaches, which is what going there costs. `⇥` marks one on another machine
 (see `hosts` in the README): `Enter` opens a pane here attached to that session,
-since Zellij can only show panes it owns. `p` peeks at either without moving.
+since Zellij can only show panes it owns. That pane takes the slot and joins the
+row you were on, the way `a` does — so `v` gets you back to what you were doing,
+and it inherits that row's directory rather than arriving in no project at all. `p` peeks at either without moving.
 
 ### What the first column means
 

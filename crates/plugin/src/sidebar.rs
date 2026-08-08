@@ -678,7 +678,14 @@ impl Sidebar {
                 // A session belongs to the machine running it, so there is
                 // nothing to switch to: open a pane that is attached to it.
                 if !agent.host.is_empty() {
-                    actions::attach(&agent.host, &agent.session);
+                    let visible = self.slot();
+                    let opened =
+                        actions::attach(&agent.host, &agent.session, visible, self.config.solo);
+                    // Joins the row you were on, like `a` does: it took that
+                    // row's place on screen, so `v` gets you back.
+                    if let (Some(PaneId::Terminal(opened)), Some(visible)) = (opened, visible) {
+                        self.groups.add(visible, opened);
+                    }
                     return false;
                 }
 

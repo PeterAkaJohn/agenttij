@@ -31,7 +31,9 @@ pub fn go_to(agent: &Agent, current_session: &str, all_panes: &[PaneSnapshot]) {
 pub fn go_to_target(target: &agenttij_core::jump::Target, current_session: &str) {
     use agenttij_core::jump::Target;
     match target {
-        Target::Remote { host, session } => attach(host, session),
+        Target::Remote { host, session } => {
+            attach(host, session, None, false);
+        }
         Target::Pane { session, pane } if session == current_session => {
             focus_pane_with_id(PaneId::Terminal(*pane), false, false);
         }
@@ -134,14 +136,27 @@ pub fn help(own_url: &str) -> Option<PaneId> {
 ///
 /// The closest thing to jumping that exists: Zellij cannot show a pane it does
 /// not own, and it does not own anything on that host.
-pub fn attach(host: &str, session: &str) {
+pub fn attach(host: &str, session: &str, slot: Option<u32>, solo: bool) -> Option<PaneId> {
     let command = agenttij_core::scan::attach_command(host, session);
     let run = CommandToRun {
         path: PathBuf::from(&command[0]),
         args: command[1..].to_vec(),
-        cwd: None,
+        // A command pane reports no directory of its own, and a row with no
+        // directory belongs to no project — it would arrive in the nameless one
+        // rather than beside the work it was opened from.
+        cwd: slot
+            .and_then(|slot| get_pane_cwd(PaneId::Terminal(slot)).ok())
+            .or_else(|| Some(own_cwd())),
     };
-    open_command_pane(run, BTreeMap::new());
+
+    let opened = open_command_pane(run, BTreeMap::new())?;
+    // Takes the slot rather than splitting it, the same as anything else the
+    // sidebar opens.
+    if let Some(slot) = slot.filter(|_| solo) {
+        hide_pane_with_id(PaneId::Terminal(slot));
+    }
+    focus_pane_with_id(opened, false, false);
+    Some(opened)
 }
 
 /// Opens the jump palette: this plugin again, floating, in jump mode.
