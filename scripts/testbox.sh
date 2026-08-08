@@ -23,7 +23,9 @@ up)
     cat >"$work/Dockerfile" <<'EOF'
 FROM alpine:3.20
 RUN apk add --no-cache openssh-server && ssh-keygen -A
-RUN adduser -D -s /bin/sh dev
+# Unlocked, or sshd refuses the key: adduser leaves the account with a locked
+# password and public-key auth is denied for locked accounts.
+RUN adduser -D -s /bin/sh dev && passwd -u dev
 RUN mkdir -p /home/dev/.ssh /tmp/agenttij
 COPY key.pub /home/dev/.ssh/authorized_keys
 RUN chown -R dev:dev /home/dev/.ssh && chmod 700 /home/dev/.ssh \
