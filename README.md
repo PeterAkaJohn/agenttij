@@ -70,8 +70,14 @@ would otherwise be a blank pane waiting on a keypress you cannot see. Revoke by
 deleting the entry from `~/.cache/zellij/permissions.kdl`. Note the cache is
 keyed by plugin URL, so a rebuild installed elsewhere gets asked again.
 
-Which side the sidebar sits on is a layout property, not a plugin setting —
-use `agenttij-right`, or edit the layout and change `size="20%"` to taste.
+The layouts are examples. Which side the sidebar sits on, how wide it is, what
+else is in the tab — all of that is yours to write; ours only shows the sidebar
+next to a working area, with Zellij's tab bar and status bar commented out
+because your config probably supplies its own. Copy one and edit it, or lift the
+`plugin` block into a layout you already have. The only part worth keeping
+verbatim is the `rail` swap layout, which has to repeat the sidebar's
+configuration exactly for `Alt ]` to fold the pane you have rather than launch a
+second one.
 
 ### Workspace mode: a sidebar that never reloads
 
