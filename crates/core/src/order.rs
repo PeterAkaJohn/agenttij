@@ -29,10 +29,13 @@ pub struct Arrangement {
     /// roots under one name are one project — which is how a front end and a
     /// back end in separate repositories become the thing you actually work on.
     pub names: BTreeMap<String, String>,
-    /// Machines to watch besides this one. Kept here rather than only in a
-    /// layout because which boxes you care about changes during a day, and
-    /// editing a layout file to say so is not something anyone does twice.
-    pub hosts: Vec<String>,
+    /// Machines to watch, by the session they were added in.
+    ///
+    /// Per session, not per machine: which boxes you care about is part of what
+    /// you are working on, and a session you open tomorrow for something else
+    /// should not inherit them. A layout that names hosts is the other kind of
+    /// answer — those are watched everywhere it is used.
+    pub hosts: BTreeMap<String, Vec<String>>,
 }
 
 /// The order, as a file.
@@ -56,8 +59,10 @@ pub fn encode(arrangement: &Arrangement) -> String {
     for (root, name) in &arrangement.names {
         out.push_str(&format!("{NAMED}\t{root}\t{name}\n"));
     }
-    for host in &arrangement.hosts {
-        out.push_str(&format!("{HOST}\t{host}\n"));
+    for (session, hosts) in &arrangement.hosts {
+        for host in hosts {
+            out.push_str(&format!("{HOST}\t{session}\t{host}\n"));
+        }
     }
     out
 }
@@ -82,8 +87,17 @@ pub fn decode(text: &str) -> Arrangement {
                 }
             }
             Some(HOST) => {
-                if let Some(host) = fields.next().filter(|host| !host.is_empty()) {
-                    out.hosts.push(host.to_owned());
+                // Three fields since hosts became a session's business; a line
+                // from before that named a host and no session, and belongs to
+                // nobody now.
+                let (Some(session), Some(host)) = (fields.next(), fields.next()) else {
+                    continue;
+                };
+                if !session.is_empty() && !host.is_empty() {
+                    out.hosts
+                        .entry(session.to_owned())
+                        .or_default()
+                        .push(host.to_owned());
                 }
             }
             Some(NAMED) => {
@@ -180,10 +194,26 @@ mod tests {
                 ("/home/pp/acme-frontend".to_owned(), "acme".to_owned()),
                 ("/home/pp/acme-backend".to_owned(), "acme".to_owned()),
             ]),
-            hosts: vec!["dev1".to_owned(), "build2".to_owned()],
+            hosts: BTreeMap::from([(
+                "main".to_owned(),
+                vec!["dev1".to_owned(), "build2".to_owned()],
+            )]),
         };
 
         assert_eq!(decode(&encode(&arrangement)), arrangement);
+    }
+
+    #[test]
+    fn a_host_belongs_to_the_session_it_was_added_in() {
+        let arrangement = decode("h\tmain\tdev1\nh\tmain\tbuild2\nh\tother\tdev1\nh\told-form\n");
+
+        assert_eq!(arrangement.hosts["main"], vec!["dev1", "build2"]);
+        assert_eq!(arrangement.hosts["other"], vec!["dev1"]);
+        assert_eq!(
+            arrangement.hosts.len(),
+            2,
+            "a host with no session is nobody's"
+        );
     }
 
     #[test]

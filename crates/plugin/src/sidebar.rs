@@ -763,7 +763,13 @@ impl Sidebar {
             // The machines to watch. Prefilled with the ones already watched,
             // because removing one is the same edit as adding one.
             BareKey::Char('h') => {
-                self.typing = Some((Field::Hosts, self.arrangement.hosts.join(",")));
+                let watched = self
+                    .arrangement
+                    .hosts
+                    .get(&self.current_session)
+                    .cloned()
+                    .unwrap_or_default();
+                self.typing = Some((Field::Hosts, watched.join(",")));
                 true
             }
             // Project to project, wrapping, so a long list is a couple of keys
@@ -995,11 +1001,26 @@ impl Sidebar {
     /// A host that has just been dropped takes its rows with it immediately —
     /// they were only ever its answer to a question we have stopped asking.
     fn watch_hosts(&mut self, typed: &str) {
-        self.arrangement.hosts = typed
+        let hosts: Vec<String> = typed
             .split(',')
             .map(|host| host.trim().to_owned())
             .filter(|host| !host.is_empty())
             .collect();
+
+        if hosts.is_empty() {
+            self.arrangement.hosts.remove(&self.current_session);
+        } else {
+            self.arrangement
+                .hosts
+                .insert(self.current_session.clone(), hosts);
+        }
+        // Sessions that have gone take their hosts with them, or the file grows
+        // a line for every session that ever watched anything.
+        let live = self.live_sessions.clone();
+        let current = self.current_session.clone();
+        self.arrangement
+            .hosts
+            .retain(|session, _| *session == current || live.contains(session));
 
         let watched = self.hosts();
         self.remote.retain(|host, _| watched.contains(host));
@@ -1012,7 +1033,13 @@ impl Sidebar {
     /// Every machine to ask: the ones a layout named, and the ones you added.
     fn hosts(&self) -> Vec<String> {
         let mut hosts = self.config.hosts.clone();
-        for host in &self.arrangement.hosts {
+        for host in self
+            .arrangement
+            .hosts
+            .get(&self.current_session)
+            .into_iter()
+            .flatten()
+        {
             if !hosts.contains(host) {
                 hosts.push(host.clone());
             }

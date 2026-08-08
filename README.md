@@ -67,9 +67,11 @@ plugin location="file:~/.config/zellij/plugins/agenttij.wasm" {
 }
 ```
 
-Or press `h` in the sidebar and type them — that list is remembered with
-everything else you arranged, so a box you only care about this week does not
-have to go in a layout file.
+Or press `h` in the sidebar and type them. That list belongs to the session you
+typed it in and is remembered for it, so a box you care about this afternoon does
+not have to go in a layout file — and does not turn up in tomorrow's session for
+something else. Hosts named in a layout are watched wherever that layout is used,
+which is the other half of the choice.
 
 The state files are the whole protocol, so watching a machine is reading them
 over ssh — install agenttij there too (the hook is what writes them), and give

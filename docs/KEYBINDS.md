@@ -48,11 +48,13 @@ waiting for you. `Tab` folds and unfolds, `[` and `]` step between projects, and
 
 `h` opens the list of machines to watch, prefilled with the ones already being
 watched, so adding and removing one are the same edit: type a comma-separated
-list of ssh hosts and press `Enter`. It is remembered with everything else you
-arranged, and a machine you drop takes its rows with it immediately — they were
-only ever its answer to a question that has stopped being asked.
+list of ssh hosts and press `Enter`. It is remembered for *this session* — which boxes you care about is part of what
+you are working on, so a session you open tomorrow for something else starts with
+none. A machine you drop takes its rows with it immediately: they were only ever
+its answer to a question that has stopped being asked.
 
-A layout can name hosts too, and both are watched; `scope "session"` does not
+A layout can name hosts too, and those are watched in every session that uses it
+— that is the difference between the two ways of saying it. Both are watched; `scope "session"` does not
 hide them, because how far to look on *this* machine is a different question from
 which other machines you asked about.
 
