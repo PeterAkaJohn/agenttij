@@ -86,20 +86,23 @@ zellij --new-session-with-layout agenttij-workspace
 ```
 
 This is the layout to use if you want the sidebar to *stay put* while the area
-beside it changes. The sidebar owns a fixed column; the rest of the tab is a
-single slot holding exactly one agent. Picking another agent puts it in the slot
-and **parks** the previous one off screen — Zellij calls that suppressed, and it
-keeps running. The sidebar never moves, never re-renders from scratch, and there
-is no detach: `Enter` is a pane swap.
+beside it changes. The sidebar owns a column; the rest of the tab is a single
+slot holding exactly one pane. Picking a row puts that row's current pane in the
+slot and **parks** whatever was there — Zellij calls it suppressed, and it keeps
+running. The sidebar never moves, never re-renders from scratch, and there is no
+detach: `Enter` is a pane swap.
 
 ```
 ┌ agents ────┬──────────────────────────┐
-│ ● bravo    │                          │
-│ ◐ delta    │  bravo                   │  ← the only agent on screen
-│ ✓ alpha    │                          │
-│ ○ charlie  │  (the rest are parked,   │
-│            │   still running)         │
+│ ⚠ bravo    │                          │
+│ ◐ delta  2 │  delta's editor          │ ← the row on screen is showing
+│ ✓ alpha    │                          │   its second pane, not the agent
+│ · scratch  │  (every other pane is    │
+│            │   parked, still running) │
 └────────────┴──────────────────────────┘
+     ▲            ▲
+     │            └─ one pane, whichever member of the row you were last on
+     └─ one row per agent; "2" means that row owns two panes
 ```
 
 Start agents with `n` (or `Alt g`) and add panes to a row with `a` (or `Alt m`).
