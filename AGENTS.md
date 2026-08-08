@@ -116,6 +116,12 @@ Each of these cost a debugging round already:
   sets it to the url.
 - **A pane opened from a plugin steals focus after the call returns**, so taking
   focus back has to wait for a later event, not the same handler.
+- **Swapping panes still loses one, even via hide/show.** `show_pane_with_id`
+  followed by `hide_pane_with_id` destroyed the outgoing pane the first time a
+  swap actually ran. Beware of "verified" swap tests: until grouping formed, `v`
+  had no target and swapped nothing, so the test proved only that idleness is
+  safe. Assert on a swap having *happened* (the visible pane changed), not just
+  on the pane count.
 - **Never swap panes with `replace_pane_with_existing_pane`.** Zellij files
   suppressed panes in a `HashMap` keyed by *the pane that replaced them*
   (`tab/mod.rs`, `SuppressedPanes`), so a pane that is already someone's value is

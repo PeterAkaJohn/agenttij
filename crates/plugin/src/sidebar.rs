@@ -467,7 +467,7 @@ impl Sidebar {
         if self.positions.get(&visible) == Some(&name) {
             return;
         }
-        rename_terminal_pane(visible, &name);
+        rename_pane_with_id(PaneId::Terminal(visible), &name);
         self.positions.insert(visible, name);
     }
 

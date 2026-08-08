@@ -50,6 +50,14 @@ impl Group {
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Groups {
     groups: Vec<Group>,
+    /// Panes added since the last reconciliation.
+    ///
+    /// A pane is added the moment it is asked for, and the update that proves it
+    /// exists may not be the next one to arrive — a focus change alone triggers
+    /// one, carrying a pane list from before the pane was made. Without this,
+    /// reconciliation drops the new member instantly and the group falls back to
+    /// singletons.
+    fresh: Vec<u32>,
 }
 
 impl Groups {
@@ -57,8 +65,11 @@ impl Groups {
     /// members are dropped, empty groups disappear, and anything unrecognised
     /// becomes its own group.
     pub fn reconcile(&mut self, live: &[u32]) {
+        let fresh = std::mem::take(&mut self.fresh);
         for group in &mut self.groups {
-            group.members.retain(|member| live.contains(member));
+            group
+                .members
+                .retain(|member| live.contains(member) || fresh.contains(member));
         }
         self.groups.retain(|group| !group.members.is_empty());
 
@@ -89,6 +100,7 @@ impl Groups {
             }
             None => self.groups.push(Group::new(pane)),
         }
+        self.fresh.push(pane);
     }
 
     /// The next member to cycle to within the group holding `pane`.
@@ -161,6 +173,33 @@ mod tests {
         assert_eq!(groups.members_of(99), &[] as &[u32]);
     }
 
+    /// The update that proves a new pane exists may not be the next one to
+    /// arrive, so a just-added pane survives one reconciliation without proof.
+    #[test]
+    fn a_just_added_pane_survives_an_update_that_has_not_seen_it() {
+        let mut groups = Groups::default();
+        groups.reconcile(&[3]);
+        groups.add(3, 4);
+
+        groups.reconcile(&[3]); // stale: the new pane is not in this list yet
+        assert_eq!(groups.rows().collect::<Vec<_>>(), vec![(3, 2)]);
+
+        groups.reconcile(&[3, 4]); // and now it is
+        assert_eq!(groups.rows().collect::<Vec<_>>(), vec![(3, 2)]);
+    }
+
+    /// It does not get a second reprieve: a pane that never appears is gone.
+    #[test]
+    fn a_pane_that_never_arrives_is_dropped() {
+        let mut groups = Groups::default();
+        groups.reconcile(&[3]);
+        groups.add(3, 4);
+
+        groups.reconcile(&[3]);
+        groups.reconcile(&[3]);
+        assert_eq!(groups.rows().collect::<Vec<_>>(), vec![(3, 1)]);
+    }
+
     #[test]
     fn cycling_walks_the_group_and_wraps() {
         let mut groups = Groups::default();
@@ -187,6 +226,7 @@ mod tests {
         groups.reconcile(&[3]);
         groups.add(3, 4);
         groups.reconcile(&[3]);
+        groups.reconcile(&[3]); // past the one update a new pane is given
 
         assert_eq!(groups.rows().collect::<Vec<_>>(), vec![(3, 1)]);
         assert_eq!(
@@ -203,6 +243,7 @@ mod tests {
         groups.reconcile(&[3]);
         groups.add(3, 4);
         groups.reconcile(&[4]);
+        groups.reconcile(&[4]);
 
         assert_eq!(groups.rows().collect::<Vec<_>>(), vec![(4, 1)]);
     }
@@ -215,6 +256,7 @@ mod tests {
         assert_eq!(groups.current_of(3), Some(4));
 
         groups.reconcile(&[3]);
+        groups.reconcile(&[3]); // past the one update a new pane is given
         assert_eq!(groups.current_of(3), Some(3));
     }
 
