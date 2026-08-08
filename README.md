@@ -17,7 +17,8 @@ jump to it.
 ```
 
 The sidebar is an ordinary pane: focus it with your usual pane navigation (or
-`Alt s`), then
+`Alt s`), then. In the first column, `›` is the cursor and `▪` is the row on
+screen — the same thing until you open a pane somewhere else.
 
 | key | |
 |---|---|

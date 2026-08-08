@@ -42,6 +42,14 @@ worst status inside it, so folding a project away never hides an agent that is
 waiting for you. `Tab` folds and unfolds, `[` and `]` step between projects, and
 `Enter` opens a folded one.
 
+### What the first column means
+
+`›` is the cursor — where the next key lands. `▪` is the row that is actually on
+screen. They are the same thing until you open a pane somewhere else, and then
+they are not: `Alt g` puts a new row in front of you, and a sidebar that marked
+only one of the two would be telling you the wrong one. The cursor now follows a
+row you create, so the two agree again straight afterwards.
+
 ### Rows, not panes
 
 In solo mode (`solo "true"`, which the workspace layout ships) a **row is a group

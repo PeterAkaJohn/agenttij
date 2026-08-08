@@ -3,7 +3,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use agenttij_core::{
-    agent, config::Scope, format, order, panes, project, scan, Agent, Config, Groups, Kind,
+    agent, config::Scope, format, order, panes, project, scan, Agent, Config, Group, Groups, Kind,
     PaneSnapshot, Status,
 };
 use zellij_tile::prelude::*;
@@ -248,7 +248,12 @@ impl ZellijPlugin for Sidebar {
         }
 
         let prompt = self.prompt();
+        let on_screen = self.slot();
+        let on_screen_row =
+            on_screen.and_then(|pane| self.groups.group_of(pane).map(Group::primary));
         render::draw(&render::View {
+            on_screen,
+            on_screen_row,
             rows,
             cols,
             prompt: prompt.as_deref(),
@@ -436,7 +441,19 @@ impl Sidebar {
             .as_ref()
             .is_some_and(|selection| self.find(selection).is_some());
 
-        if !still_there {
+        // A pane opened a moment ago is not a row yet — it becomes one when the
+        // manifest catches up — so a selection pointing at a live pane is
+        // waiting, not stale, and moving the cursor off it would undo the
+        // following that put it there.
+        let arriving = matches!(
+            self.selected.as_ref(),
+            Some(Selection::Row { session, pane })
+                if self.panes.iter().any(|snapshot| {
+                    snapshot.session == *session && snapshot.pane == *pane
+                })
+        );
+
+        if !still_there && !arriving {
             self.selected = self.agents.first().map(Selection::of);
         }
     }
@@ -1254,7 +1271,16 @@ impl Sidebar {
 
     /// A pane of its own: reconciliation turns anything ungrouped into a row.
     fn new_row(&mut self) {
-        actions::new_in_slot(&self.panes, &self.current_session, self.config.solo);
+        let opened = actions::new_in_slot(&self.panes, &self.current_session, self.config.solo);
+        // Follow it. Otherwise the cursor stays on the row you left while the
+        // screen shows the one you just made, and the next key goes somewhere
+        // you are not looking — which is what `Alt g` felt like.
+        if let Some(PaneId::Terminal(pane)) = opened {
+            self.selected = Some(Selection::Row {
+                session: self.current_session.clone(),
+                pane,
+            });
+        }
     }
 
     fn close_peek(&mut self) {

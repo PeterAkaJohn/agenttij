@@ -7,11 +7,19 @@
 
 use agenttij_core::{format, Agent, Colors};
 
-/// Reset everything: colour, and the reverse video used for the cursor row.
+/// Reset everything: colour, and the weight the cursor row is drawn in.
 const RESET: &str = "\u{1b}[0m";
-/// Reverse video marks the selected row, so the cursor is visible whatever
-/// colours the user chose.
-const SELECTED: &str = "\u{1b}[7m";
+/// The cursor row is bold rather than reversed. A block of inverted video across
+/// a 20-column sidebar is the loudest thing on the screen, and it says the one
+/// thing it should not: that the row it covers is the row you are looking at.
+const CURSOR: &str = "\u{1b}[1m";
+
+/// The first column says what a row is to you: where the keyboard is pointing,
+/// and which row is actually on screen. They are the same until you open a pane
+/// somewhere else, and then they are not — which is the whole reason to draw
+/// them apart.
+const AT_CURSOR: char = '›';
+const ON_SCREEN: char = '▪';
 
 pub struct View<'a> {
     pub rows: usize,
@@ -25,6 +33,10 @@ pub struct View<'a> {
     pub notice: Option<&'a str>,
     /// Which session we are in, so rows elsewhere can be marked.
     pub current_session: &'a str,
+    /// The pane holding the workspace slot, and the row that owns it — the thing
+    /// you are looking at, which is not always the thing the cursor is on.
+    pub on_screen: Option<u32>,
+    pub on_screen_row: Option<u32>,
     /// Asked before something irreversible; takes the hint line's place.
     pub prompt: Option<&'a str>,
     pub colors: &'a Colors,
@@ -57,17 +69,33 @@ pub fn draw(view: &View) {
 
     let offset = format::scroll_offset(view.cursor, capacity);
     for (row, agent) in view.agents.iter().skip(offset).take(capacity).enumerate() {
-        let (glyph, rest) = format::row_parts(agent, view.now, view.cols, view.current_session);
+        // The mark takes a column, so the row itself is drawn one narrower and
+        // the ages still line up down the list.
+        let (glyph, rest) = format::row_parts(
+            agent,
+            view.now,
+            view.cols.saturating_sub(1),
+            view.current_session,
+        );
         let color = view.colors.of(agent.status);
         let selected = offset + row == view.cursor;
+        let here = agent.session == view.current_session
+            && (Some(agent.pane) == view.on_screen || Some(agent.pane) == view.on_screen_row);
+
+        let mark = match (selected, here) {
+            // Both, and the cursor is the more useful thing to say.
+            (true, _) => AT_CURSOR,
+            (false, true) => ON_SCREEN,
+            _ => ' ',
+        };
 
         at(row);
         if selected {
-            print!("{SELECTED}");
+            print!("{CURSOR}");
         }
-        print!("\u{1b}[{color}m{glyph}{RESET}");
+        print!("{mark}\u{1b}[{color}m{glyph}{RESET}");
         if selected {
-            print!("{SELECTED}");
+            print!("{CURSOR}");
         }
         print!("{rest}{RESET}");
     }
