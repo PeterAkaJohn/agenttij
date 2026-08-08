@@ -51,10 +51,17 @@ pub fn row_parts(agent: &Agent, now: u64, width: usize, current_session: &str) -
     } else {
         String::new()
     };
+    // A pane listed under its row is indented, so the two read as a tree rather
+    // than as siblings.
+    let indent = " ".repeat(agent.depth);
 
     // glyph, its space, the elsewhere marker, the count, the gap before the age,
     // and the age itself.
-    let reserved = 3 + elsewhere.chars().count() + owned.chars().count() + age.chars().count();
+    let reserved = 3
+        + elsewhere.chars().count()
+        + owned.chars().count()
+        + age.chars().count()
+        + indent.chars().count();
     if width <= reserved {
         let rest = truncate(&format!(" {elsewhere}{}", agent.label()), width - 1);
         return (glyph.to_string(), rest);
@@ -66,7 +73,7 @@ pub fn row_parts(agent: &Agent, now: u64, width: usize, current_session: &str) -
 
     (
         glyph.to_string(),
-        format!(" {elsewhere}{label}{gap} {owned}{age}"),
+        format!(" {indent}{elsewhere}{label}{gap} {owned}{age}"),
     )
 }
 
@@ -122,6 +129,7 @@ mod tests {
             cwd: cwd.into(),
             title: String::new(),
             panes: 1,
+            depth: 0,
         }
     }
 
@@ -129,6 +137,17 @@ mod tests {
     fn a_row_is_glyph_label_and_right_aligned_age() {
         let agent = agent(Status::Running, 900, "/home/pp/api");
         assert_eq!(row(&agent, 1_020, 20, "sess"), "◐ api             2m");
+    }
+
+    #[test]
+    fn a_pane_listed_under_its_row_is_indented() {
+        let mut child = agent(Status::Pane, 0, "");
+        child.title = "nvim".into();
+        child.depth = 1;
+
+        let row = row(&child, 1_020, 20, "sess");
+        assert_eq!(row, "·  nvim            -");
+        assert_eq!(row.chars().count(), 20);
     }
 
     #[test]

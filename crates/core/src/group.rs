@@ -112,6 +112,13 @@ impl Groups {
         self.group_of(pane).map(|group| group.current)
     }
 
+    /// The panes a row owns, in the order they joined.
+    pub fn members_of(&self, primary: u32) -> &[u32] {
+        self.group_of(primary)
+            .map(|group| group.members.as_slice())
+            .unwrap_or(&[])
+    }
+
     /// One entry per row: the primary, and how many panes the row owns.
     pub fn rows(&self) -> impl Iterator<Item = (u32, usize)> + '_ {
         self.groups
@@ -141,6 +148,17 @@ mod tests {
 
         assert_eq!(groups.rows().collect::<Vec<_>>(), vec![(3, 2)]);
         assert_eq!(groups.current_of(3), Some(4), "the new pane is showing");
+    }
+
+    #[test]
+    fn a_rows_members_come_back_in_the_order_they_joined() {
+        let mut groups = Groups::default();
+        groups.reconcile(&[3]);
+        groups.add(3, 5);
+        groups.add(3, 4);
+
+        assert_eq!(groups.members_of(3), &[3, 5, 4]);
+        assert_eq!(groups.members_of(99), &[] as &[u32]);
     }
 
     #[test]

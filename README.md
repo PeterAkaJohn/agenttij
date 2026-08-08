@@ -23,6 +23,7 @@ The sidebar is an ordinary pane: focus it with your usual pane navigation (or
 |---|---|
 | `j` / `k`, `↓` / `↑` | move |
 | `Enter` | show that row — switches session if the agent is elsewhere |
+| `Tab` | open a row up: its panes listed underneath, `Enter` goes to one |
 | `b` | flip back to the previous row (`Alt b` anywhere) |
 | `v` | cycle the panes *within* this row (`Alt v` anywhere) |
 | `a` | add a pane to this row: an editor, a log, whatever (`Alt m`) |
@@ -96,7 +97,8 @@ detach: `Enter` is a pane swap.
 ┌ agents ────┬──────────────────────────┐
 │ ⚠ bravo    │                          │
 │ ◐ delta  2 │  delta's editor          │ ← the row on screen is showing
-│ ✓ alpha    │                          │   its second pane, not the agent
+│   · nvim   │                          │   its second pane; Tab opened
+│ ✓ alpha    │                          │   the row to list it
 │ · scratch  │  (every other pane is    │
 │            │   parked, still running) │
 └────────────┴──────────────────────────┘

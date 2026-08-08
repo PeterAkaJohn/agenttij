@@ -93,6 +93,7 @@ pub fn discover(panes: &[PaneSnapshot], reported: &[Agent], names: &[String]) ->
             cwd: String::new(),
             title: short_title(&pane.title),
             panes: 1,
+            depth: 0,
         })
         .collect()
 }
@@ -126,6 +127,7 @@ pub fn list_panes(panes: &[PaneSnapshot], listed: &[Agent], session: &str) -> Ve
             cwd: String::new(),
             title: short_title(&pane.title),
             panes: 1,
+            depth: 0,
         })
         .collect()
 }
@@ -198,6 +200,7 @@ mod tests {
             cwd: "/x".into(),
             title: String::new(),
             panes: 1,
+            depth: 0,
         }
     }
 

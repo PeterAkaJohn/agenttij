@@ -13,7 +13,8 @@ working while the sidebar has focus.
 |---|---|
 | `j`, `↓` | next row |
 | `k`, `↑` | previous row |
-| `Enter` | show the selected row |
+| `Enter` | show the selected row, or the pane under it |
+| `Tab` | show a row's other panes underneath it, indented |
 | `b` | flip back to the row you were on before |
 | `v` | cycle to the next pane *within* the row on screen |
 | `a` | add a pane to the row on screen |
@@ -29,8 +30,13 @@ of which exactly one is on screen. Companions get no row of their own; the row
 *is* the agent session. Each row remembers which member you were last on, so
 coming back to it puts you where you left off.
 
-`v` moves *inside* a row. `b` moves *between* rows, flipping between the last
-two. Both matter more as `Alt v` and `Alt b` below, since the point is doing them
+`Tab` opens a row up: its panes are listed underneath, indented by a space, and
+`Enter` on one goes straight to that pane rather than to whichever the row was
+last on. Rows owning a single pane have nothing to open, so `Tab` leaves them
+alone.
+
+`v` moves *inside* a row without opening it. `b` moves *between* rows, flipping
+between the last two. Both matter more as `Alt v` and `Alt b` below, since the point is doing them
 while you are typing at the agent.
 
 Every pane belongs to exactly one row. A pane the sidebar does not recognise

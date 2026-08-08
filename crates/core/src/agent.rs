@@ -72,6 +72,9 @@ pub struct Agent {
     /// How many panes this row owns, counting the agent. Shown when it is more
     /// than one, so a row with an editor behind it does not look bare.
     pub panes: usize,
+    /// 0 for a row, 1 for one of its panes shown underneath it while the row is
+    /// expanded. Only affects indentation and what `Enter` targets.
+    pub depth: usize,
 }
 
 impl Agent {
@@ -146,6 +149,7 @@ mod tests {
             cwd: cwd.into(),
             title: String::new(),
             panes: 1,
+            depth: 0,
         }
     }
 

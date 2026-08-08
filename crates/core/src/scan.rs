@@ -119,6 +119,7 @@ fn parse_agent(line: &str) -> Option<Agent> {
         cwd: cwd.to_owned(),
         title: String::new(),
         panes: 1,
+        depth: 0,
     })
 }
 

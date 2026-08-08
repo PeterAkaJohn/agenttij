@@ -1,8 +1,10 @@
 //! Plugin lifecycle: events in, sidebar out.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
-use agenttij_core::{agent, config::Scope, panes, scan, Agent, Config, Groups, PaneSnapshot};
+use agenttij_core::{
+    agent, config::Scope, panes, scan, Agent, Config, Groups, PaneSnapshot, Status,
+};
 use zellij_tile::prelude::*;
 
 use crate::{actions, render, snapshot};
@@ -33,6 +35,8 @@ pub struct Sidebar {
     live_sessions: Vec<String>,
     /// The row we were on before this one, for flipping back to it.
     previous_row: Option<u32>,
+    /// Rows showing their panes underneath them, by primary.
+    expanded: BTreeSet<u32>,
     /// The open peek pane, so `q` can close it and `p` never stacks two.
     peek: Option<PaneId>,
     /// Lines of the pane this instance is peeking at, when it is a peek.
@@ -228,6 +232,9 @@ impl Sidebar {
             agents.retain(|agent| agent.session == self.current_session);
         }
         agent::sort_for_display(&mut agents, &self.current_session);
+        if self.config.solo {
+            agents = self.with_expanded_panes(agents);
+        }
 
         self.agents = agents;
         self.resync_selection();
@@ -277,13 +284,34 @@ impl Sidebar {
             BareKey::Enter => {
                 if let Some(agent) = self.selected_agent().cloned() {
                     let here = agent.session == self.current_session;
-                    if self.config.solo && here {
+                    if self.config.solo && here && agent.depth > 0 {
+                        self.show_pane(agent.pane);
+                    } else if self.config.solo && here {
                         self.switch_to_row(agent.pane);
                     } else {
                         actions::go_to(&agent, &self.current_session, &self.panes);
                     }
                 }
                 false
+            }
+            // Show or hide a row's other panes, so you can go straight to one.
+            BareKey::Tab => {
+                if let Some(agent) = self.selected_agent().cloned() {
+                    let row = if agent.depth > 0 {
+                        self.groups
+                            .group_of(agent.pane)
+                            .map(|group| group.primary())
+                    } else {
+                        Some(agent.pane)
+                    };
+                    if let Some(row) = row.filter(|row| self.groups.members_of(*row).len() > 1) {
+                        if !self.expanded.remove(&row) {
+                            self.expanded.insert(row);
+                        }
+                        self.rebuild();
+                    }
+                }
+                true
             }
             // Cycle to the next pane in the row on screen. The same thing is a
             // keybind away when the agent itself has focus, which is the point.
@@ -369,10 +397,67 @@ impl Sidebar {
         rows
     }
 
+    /// Splices an expanded row's panes in underneath it.
+    ///
+    /// After sorting, not before: a child has to stay under its parent, and the
+    /// sort has no idea the two are related.
+    fn with_expanded_panes(&self, rows: Vec<Agent>) -> Vec<Agent> {
+        let mut out = Vec::with_capacity(rows.len());
+
+        for row in rows {
+            let expanded = self.expanded.contains(&row.pane) && row.session == self.current_session;
+            let members = if expanded {
+                self.groups.members_of(row.pane).to_vec()
+            } else {
+                Vec::new()
+            };
+            out.push(row.clone());
+
+            for member in members.into_iter().filter(|member| *member != row.pane) {
+                let title = self
+                    .panes
+                    .iter()
+                    .find(|pane| pane.session == self.current_session && pane.pane == member)
+                    .map(|pane| panes::short_title(&pane.title))
+                    .unwrap_or_default();
+
+                out.push(Agent {
+                    pane: member,
+                    status: Status::Pane,
+                    reported_at: 0,
+                    cwd: String::new(),
+                    title,
+                    panes: 1,
+                    depth: 1,
+                    ..row.clone()
+                });
+            }
+        }
+        out
+    }
+
     /// The pane on screen in our tab, which is the one the slot holds.
     fn slot(&self) -> Option<u32> {
         let (tab, _) = get_focused_pane_info().ok()?;
         panes::visible_terminal(&self.panes, &self.current_session, tab)
+    }
+
+    /// Shows one particular pane of a row, rather than whichever the row was
+    /// last on.
+    fn show_pane(&mut self, pane: u32) {
+        let slot = self.slot();
+        if let Some(leaving) = slot
+            .and_then(|visible| self.groups.group_of(visible))
+            .map(|group| group.primary())
+        {
+            let arriving = self.groups.group_of(pane).map(|group| group.primary());
+            if arriving != Some(leaving) {
+                self.previous_row = Some(leaving);
+            }
+        }
+
+        self.groups.show(pane);
+        actions::show_in_slot(pane, slot);
     }
 
     /// Flips to the row we were on before this one.
