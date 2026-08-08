@@ -793,9 +793,23 @@ impl Sidebar {
     /// lands here from now on. An empty name takes the roots back to being
     /// themselves.
     fn name_project(&mut self, project: &str, name: &str) {
-        let Some(roots) = self.project_roots.get(project).cloned() else {
+        let Some(mut roots) = self.project_roots.get(project).cloned() else {
             return;
         };
+
+        // Anything already called this joins it. "Two projects with the same
+        // name are one" has to mean the name on screen: a project still keyed by
+        // its path shows the last part of that path, so naming another one
+        // `dotfiles` when a `~/code/dotfiles` is sitting there has to merge them,
+        // or you get two identical-looking headers and no way to tell why.
+        if !name.is_empty() {
+            for (key, others) in &self.project_roots {
+                if project::display(key) == name {
+                    roots.extend(others.iter().cloned());
+                }
+            }
+        }
+
         for root in roots {
             if name.is_empty() {
                 self.arrangement.names.remove(&root);

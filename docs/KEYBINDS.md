@@ -101,7 +101,10 @@ marker, since it is the more specific thing to have said.
 Naming is also how two repositories become one project. A front end and a back
 end have different git roots and no shared parent worth grouping by, so nothing
 can join them except you saying they are the same thing: name both `acme` and
-they are one project, keeping their own row names inside it. Every agent started
+they are one project, keeping their own row names inside it. Naming one the same
+as a project that is already on screen joins that one too, even though it is
+still keyed by its path — the name being compared is the one you can see, or you
+would get two identical headers and no way to tell why. Every agent started
 in either lands there afterwards without being told again, since the name is
 remembered against the git root rather than against the agent. Naming a project
 that is already several repositories renames all of them, so it stays together.

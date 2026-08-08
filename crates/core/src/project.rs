@@ -35,6 +35,16 @@ pub fn key<'a>(agent: &'a Agent, names: &'a BTreeMap<String, String>) -> &'a str
     names.get(root).map(String::as_str).unwrap_or(root)
 }
 
+/// What a project is called on screen: the last part of its path, or the name
+/// itself once it has one.
+///
+/// The same answer `Agent::label` gives a header, and the one that matters when
+/// deciding whether two projects are "the same name" — because the name someone
+/// compares is the one they can see, not the key underneath it.
+pub fn display(key: &str) -> &str {
+    key.rsplit('/').find(|part| !part.is_empty()).unwrap_or(key)
+}
+
 /// Splices a header above each set of rows sharing a project, and drops the rows
 /// of folded ones.
 ///
@@ -243,6 +253,18 @@ mod tests {
             ],
             "the rows keep their own names; the project takes the one you gave it"
         );
+    }
+
+    #[test]
+    fn a_project_is_called_what_a_header_calls_it() {
+        assert_eq!(display("/home/pp/personal/agenttij"), "agenttij");
+        assert_eq!(display("/home/pp/dotfiles/"), "dotfiles");
+        assert_eq!(
+            display("acme"),
+            "acme",
+            "a name is already what it is called"
+        );
+        assert_eq!(display(""), "");
     }
 
     #[test]
