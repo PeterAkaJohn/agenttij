@@ -28,6 +28,7 @@ The sidebar is an ordinary pane: focus it with your usual pane navigation (or
 | `v` | cycle the panes *within* this row (`Alt v` anywhere) |
 | `a` | add a pane to this row: an editor, a log, whatever (`Alt m`) |
 | `n` | new agent pane — a new row (`Alt g`) |
+| `d` `d` | close the row, or the pane under it — asks first |
 | `p` | peek at an agent without leaving your session |
 | `q`, `Esc` | dismiss a peek |
 | `?` | show every key and what it does |

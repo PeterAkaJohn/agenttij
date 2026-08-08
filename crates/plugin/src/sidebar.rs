@@ -39,6 +39,9 @@ pub struct Sidebar {
     live_sessions: Vec<String>,
     /// The row we were on before this one, for flipping back to it.
     previous_row: Option<u32>,
+    /// What a second `d` would close. Closing panes is the only thing here that
+    /// cannot be undone, so it takes two presses and says what it will take.
+    pending_delete: Option<(String, u32)>,
     /// Rows showing their panes underneath them, by primary.
     expanded: BTreeSet<u32>,
     /// The position label each pane currently carries, so a pane is only renamed
@@ -190,9 +193,11 @@ impl ZellijPlugin for Sidebar {
             return;
         }
 
+        let prompt = self.delete_prompt();
         render::draw(&render::View {
             rows,
             cols,
+            prompt: prompt.as_deref(),
             agents: &self.agents,
             cursor: self.cursor(),
             now: self.now,
@@ -342,6 +347,9 @@ impl Sidebar {
         // costs you a keystroke. q and Esc are the keys that only dismiss.
         let had_peek = self.peek.is_some();
         self.close_peek();
+        // Any key at all disarms a pending delete, including the one that then
+        // does something else entirely.
+        let armed = self.pending_delete.take();
 
         match key.bare_key {
             BareKey::Char('q') | BareKey::Esc => had_peek,
@@ -410,6 +418,20 @@ impl Sidebar {
                 self.go_back();
                 false
             }
+            // Close what the cursor is on: a row takes its panes with it, a
+            // pane inside an opened row goes on its own. Panes in another
+            // session are not ours to close, so `d` does not arm on them.
+            BareKey::Char('d') => {
+                if let Some(agent) = self.selected_agent().cloned() {
+                    let target = (agent.session.clone(), agent.pane);
+                    if armed.as_ref() == Some(&target) {
+                        self.delete(&agent);
+                    } else if agent.session == self.current_session {
+                        self.pending_delete = Some(target);
+                    }
+                }
+                true
+            }
             BareKey::Char('p') => {
                 if let (Some(agent), Some(url)) =
                     (self.selected_agent().cloned(), self.own_url.clone())
@@ -431,6 +453,67 @@ impl Sidebar {
         let next = self.cursor().saturating_add_signed(delta).min(last);
         self.selected = Some((self.agents[next].session.clone(), self.agents[next].pane));
         true
+    }
+
+    /// Closes the selection, and puts something back on screen if it was what
+    /// you were looking at.
+    fn delete(&mut self, agent: &Agent) {
+        let whole_row = agent.depth == 0;
+        let closing = self.groups.closing(agent.pane, whole_row);
+        let slot = self.slot();
+
+        for pane in &closing {
+            // Show it first, even when it is already on screen. Zellij reads a
+            // close for a *suppressed* pane as "put it back": `close_pane`
+            // (tab/mod.rs) hands it to `replace_pane_with_suppressed_pane`
+            // instead of closing it, which un-suppresses it over whatever is on
+            // screen — measured: deleting a row of three emptied the tab, taking
+            // the sidebar with it. Showing a pane that is already visible only
+            // costs a log line, and asking our pane list which ones are parked
+            // would trust it for a second longer than it is true.
+            show_pane_with_id(PaneId::Terminal(*pane), false, false);
+            close_pane_with_id(PaneId::Terminal(*pane));
+        }
+        if whole_row {
+            self.expanded.remove(&agent.pane);
+        }
+        if self.previous_row.is_some_and(|row| closing.contains(&row)) {
+            self.previous_row = None;
+        }
+        // The cursor cannot stay on something that no longer exists; the next
+        // rebuild puts it on whatever is still there.
+        self.selected = None;
+
+        // Closing what was on screen leaves the workspace empty, and a parked
+        // pane does not come back on its own — so put the row we were on before
+        // in the slot, if it is still there to put.
+        let emptied = slot.is_some_and(|slot| closing.contains(&slot));
+        if let Some(previous) = self
+            .previous_row
+            .filter(|_| emptied)
+            .and_then(|row| self.groups.current_of(row))
+        {
+            actions::show_in_slot(previous, None);
+        }
+    }
+
+    /// What an armed `d` would take, so the second press is never a surprise.
+    fn delete_prompt(&self) -> Option<String> {
+        let (session, pane) = self.pending_delete.as_ref()?;
+        let agent = self
+            .agents
+            .iter()
+            .find(|agent| agent.key() == (session.as_str(), *pane))?;
+
+        let panes = if agent.depth == 0 {
+            self.groups.closing(*pane, true).len()
+        } else {
+            1
+        };
+        Some(match panes {
+            0 | 1 => format!("close {}? d", agent.label()),
+            panes => format!("close {} +{}? d", agent.label(), panes - 1),
+        })
     }
 
     /// Names our pane, once. Renaming needs ChangeApplicationState, and

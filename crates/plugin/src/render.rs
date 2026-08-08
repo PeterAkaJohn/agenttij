@@ -25,6 +25,8 @@ pub struct View<'a> {
     pub notice: Option<&'a str>,
     /// Which session we are in, so rows elsewhere can be marked.
     pub current_session: &'a str,
+    /// Asked before something irreversible; takes the hint line's place.
+    pub prompt: Option<&'a str>,
     pub colors: &'a Colors,
 }
 
@@ -43,8 +45,11 @@ pub fn draw(view: &View) {
 
     // Leave the bottom line for the key hint, but only if the list does not
     // need it and there is width to read it in.
+    // A question always gets its line, even when the list would rather have it:
+    // a confirmation you cannot see is worse than a row you cannot.
     let hint_fits = view.agents.len() < view.rows && view.cols >= format::RAIL_MAX_COLS;
-    let capacity = if hint_fits {
+    let footer = view.rows > 0 && (view.prompt.is_some() || hint_fits);
+    let capacity = if footer {
         view.rows.saturating_sub(1)
     } else {
         view.rows
@@ -67,8 +72,9 @@ pub fn draw(view: &View) {
         print!("{rest}{RESET}");
     }
 
-    if hint_fits {
-        line("j/k ↵ n a v b  p peek", view.rows - 1, view.cols);
+    if footer {
+        let hint = view.prompt.unwrap_or("j/k ↵ n a v b d  p peek");
+        line(hint, view.rows - 1, view.cols);
     }
 }
 

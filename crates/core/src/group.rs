@@ -143,6 +143,18 @@ impl Groups {
             .unwrap_or(&[])
     }
 
+    /// The panes that closing a selection has to close: a row takes its whole
+    /// group with it, one pane inside a row goes on its own.
+    ///
+    /// A pane no group claims — one in another session, or one that never joined
+    /// one — is still a pane, so it closes as itself rather than as nothing.
+    pub fn closing(&self, pane: u32, whole_row: bool) -> Vec<u32> {
+        match self.members_of(pane) {
+            members if whole_row && !members.is_empty() => members.to_vec(),
+            _ => vec![pane],
+        }
+    }
+
     /// One entry per row: the primary, and how many panes the row owns.
     pub fn rows(&self) -> impl Iterator<Item = (u32, usize)> + '_ {
         self.groups
@@ -153,6 +165,24 @@ impl Groups {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_row_closes_as_a_whole_and_a_pane_closes_alone() {
+        let mut groups = super::Groups::default();
+        groups.reconcile(&[1]);
+        groups.add(1, 2);
+        groups.add(1, 3);
+
+        assert_eq!(
+            groups.closing(1, true),
+            vec![1, 2, 3],
+            "the row and its panes"
+        );
+        assert_eq!(groups.closing(2, false), vec![2], "just this one");
+        // A pane in another session belongs to no group here, but closing it
+        // still has to mean closing it.
+        assert_eq!(groups.closing(99, true), vec![99]);
+    }
+
     use super::*;
 
     #[test]

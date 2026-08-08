@@ -143,6 +143,17 @@ Each of these cost a debugging round already:
   second. `hide_pane_with_id` files a pane under its own id (`suppress_pane`,
   same file, with a comment saying so), so hide-the-old / show-the-new chains
   safely.
+- **Closing a hidden pane un-hides it instead.** `close_pane` returns early for
+  a suppressed id and hands it to `replace_pane_with_suppressed_pane`
+  (`tab/mod.rs`) — the plugin API always passes `ignore_suppressed_panes: false`,
+  so there is no way to ask for the other behaviour. Show the pane first, then
+  close it; `delete` in the sidebar shows even panes it believes are visible,
+  because a pane list one second stale is exactly how you hit the bad path.
+- **`dump-layout` prints an empty tab when only plugin panes are left**, so it
+  cannot tell you whether the sidebar survived something — `list-panes` can. And
+  neither sees suppressed panes: to prove a *hidden* pane was closed rather than
+  merely hidden, count the processes the session's server owns
+  (`ps --ppid "$(pgrep -f "^[^ ]*zellij --server .*/<session>$")"`).
 - **Replacing a pane that is itself a replacement destroys the pane in the
   middle.** Zellij stacks suppressed panes behind a replacement, and
   `open_*_in_place_of_pane_id` on top of that stack drops the middle one

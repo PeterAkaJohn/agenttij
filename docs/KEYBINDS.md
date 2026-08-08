@@ -19,6 +19,7 @@ working while the sidebar has focus.
 | `v` | cycle to the next pane *within* the row on screen |
 | `a` | add a pane to the row on screen |
 | `n` | new agent pane — a new row |
+| `d` `d` | close what the cursor is on — twice, it cannot be undone |
 | `p` | peek at a row's agent without leaving this session |
 | `q`, `Esc` | dismiss a peek |
 | `?` | this list, in a floating pane |
@@ -64,6 +65,12 @@ a floating pane is only on screen while it holds focus, and a *command* pane
 cannot read a key, so a command-pane peek was either invisible or impossible to
 dismiss. Any key dismisses a peek and then still does its own job; `q` and `Esc`
 are the two that only dismiss.
+
+`d` on a row closes the row: the pane you can see and every pane parked behind
+it, agents included. `d` on a pane listed under an opened row closes only that
+pane. Either way the first press only arms it — the bottom line names what is
+about to go and how many panes go with it — and *any* other key cancels. Rows in
+another session are not ours to close, so `d` does nothing on them.
 
 ## From anywhere in Zellij
 
