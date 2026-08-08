@@ -193,6 +193,8 @@ pane size="20%" {
         colors "needs-input=yellow,running=blue,done=green,idle=bright-black"
         // run something when an agent becomes blocked on you
         notify "notify-send -u critical"
+        // "false" to stop naming a row's panes "<row> 2/3"
+        position "true"
     }
 }
 ```

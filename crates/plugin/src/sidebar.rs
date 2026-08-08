@@ -3,7 +3,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use agenttij_core::{
-    agent, config::Scope, panes, scan, Agent, Config, Groups, PaneSnapshot, Status,
+    agent, config::Scope, format, panes, scan, Agent, Config, Groups, PaneSnapshot, Status,
 };
 use zellij_tile::prelude::*;
 
@@ -37,6 +37,9 @@ pub struct Sidebar {
     previous_row: Option<u32>,
     /// Rows showing their panes underneath them, by primary.
     expanded: BTreeSet<u32>,
+    /// The position label each pane currently carries, so a pane is only renamed
+    /// when what it should say has actually changed.
+    positions: BTreeMap<u32, String>,
     /// The open peek pane, so `q` can close it and `p` never stacks two.
     peek: Option<PaneId>,
     /// Lines of the pane this instance is peeking at, when it is a peek.
@@ -242,6 +245,7 @@ impl Sidebar {
 
         self.agents = agents;
         self.resync_selection();
+        self.label_positions();
     }
 
     /// Keeps the cursor on a real row after the list changes underneath it.
@@ -426,6 +430,35 @@ impl Sidebar {
 
         rows.extend(remote);
         rows
+    }
+
+    /// Names each pane in a row `<row> 2/3`, so a pane says where it sits in its
+    /// row while the sidebar is folded away or off screen.
+    ///
+    /// Renaming pins a pane's title, which otherwise follows the running command
+    /// — hence `position "false"` for anyone who would rather keep that.
+    fn label_positions(&mut self) {
+        if !self.config.position || !self.config.solo {
+            return;
+        }
+
+        for (primary, count) in self.groups.rows().collect::<Vec<_>>() {
+            let Some(row) = self.agents.iter().find(|agent| agent.pane == primary) else {
+                continue;
+            };
+            let label = row.label().to_owned();
+
+            for (index, pane) in self.groups.members_of(primary).to_vec().iter().enumerate() {
+                let Some(name) = format::pane_position(&label, index, count) else {
+                    continue;
+                };
+                if self.positions.get(pane) == Some(&name) {
+                    continue;
+                }
+                rename_terminal_pane(*pane, &name);
+                self.positions.insert(*pane, name);
+            }
+        }
     }
 
     /// Splices an expanded row's panes in underneath it.

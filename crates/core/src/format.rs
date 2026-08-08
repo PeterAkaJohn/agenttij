@@ -83,6 +83,14 @@ pub fn row_parts(agent: &Agent, now: u64, width: usize, current_session: &str) -
     )
 }
 
+/// What a pane in a row calls itself: the row's name and where you are in it.
+///
+/// A row of one has no position worth showing, so it gets nothing back and keeps
+/// whatever name it had.
+pub fn pane_position(row: &str, index: usize, count: usize) -> Option<String> {
+    (count > 1).then(|| format!("{row} {}/{count}", index + 1))
+}
+
 /// First row to show, so the cursor stays visible in a list taller than the
 /// pane. Keeps the cursor on the last line while scrolling down.
 pub fn scroll_offset(cursor: usize, capacity: usize) -> usize {
@@ -229,6 +237,14 @@ mod tests {
 
         assert_eq!(glyph, "◐");
         assert!(rest.starts_with(' ') && rest.contains("api"));
+    }
+
+    #[test]
+    fn a_pane_says_where_it_sits_in_its_row() {
+        assert_eq!(pane_position("api", 0, 3).as_deref(), Some("api 1/3"));
+        assert_eq!(pane_position("api", 2, 3).as_deref(), Some("api 3/3"));
+        // A row of one is just a pane; the position would be noise.
+        assert_eq!(pane_position("api", 0, 1), None);
     }
 
     #[test]

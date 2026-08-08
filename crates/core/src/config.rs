@@ -43,6 +43,9 @@ pub struct Config {
     /// Set on a help instance: this sidebar is the keybind list, and closes on
     /// any key.
     pub help: bool,
+    /// Name each pane in a row `<row> <n>/<total>`, so a pane says where it sits
+    /// without the sidebar being on screen. On unless turned off.
+    pub position: bool,
     /// Show only the selected agent's pane, parking the others out of sight
     /// instead of leaving them on screen.
     pub solo: bool,
@@ -59,6 +62,7 @@ impl Default for Config {
             notify: Vec::new(),
             peek: None,
             help: false,
+            position: true,
             solo: false,
         }
     }
@@ -86,6 +90,7 @@ impl Config {
 
         let solo = configuration.get("solo").map(|raw| raw.trim()) == Some("true");
         let help = configuration.get("help").map(|raw| raw.trim()) == Some("true");
+        let position = configuration.get("position").map(|raw| raw.trim()) != Some("false");
 
         // Not `title`: Zellij keeps that key for itself and it never reaches the
         // plugin — measured by dumping a launched plugin's configuration, which
@@ -128,6 +133,7 @@ impl Config {
             notify,
             peek,
             help,
+            position,
             solo,
         }
     }
@@ -232,6 +238,13 @@ mod tests {
         );
         assert_eq!(Config::from_map(&map(&[("peek", "main:x")])).peek, None);
         assert_eq!(Config::from_map(&map(&[("peek", "main")])).peek, None);
+    }
+
+    #[test]
+    fn pane_positions_are_on_unless_turned_off() {
+        assert!(Config::from_map(&map(&[])).position);
+        assert!(Config::from_map(&map(&[("position", "true")])).position);
+        assert!(!Config::from_map(&map(&[("position", "false")])).position);
     }
 
     #[test]
