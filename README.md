@@ -294,6 +294,7 @@ integrations/  per-tool glue that calls it (an opencode plugin)
 layouts/       left, right, workspace, each with `sidebar` and `rail` swaps
 scripts/       installer, its helpers, and a real-keystroke test harness
 docs/KEYBINDS.md  every key, and how to change them
+docs/ROADMAP.md   what could come next, and what Zellij will not allow
 docs/PLAN.md      design notes and the Zellij constraints they follow from
 ```
 
