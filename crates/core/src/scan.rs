@@ -29,7 +29,28 @@ pub const STATE_DIR: &str = "/tmp/agenttij";
 /// which is the normal case with no agents running — and is also why the
 /// directory is not created here: the hook makes it when it has something to
 /// write, and a `mkdir` per tick is a fork per tick for nothing.
-const SCAN_SCRIPT: &str = "date +%s; cat /tmp/agenttij/*.state 2>/dev/null; true";
+const SCAN_SCRIPT: &str =
+    "date +%s; cat /tmp/agenttij/from 2>/dev/null; cat /tmp/agenttij/*.state 2>/dev/null; true";
+
+/// Marks the session you jumped away from, in the scan output.
+const FROM_PREFIX: &str = "from=";
+
+/// Records the session being left, so the sidebar in the one being entered can
+/// take you back.
+///
+/// A file rather than plugin memory, because the two sidebars are different
+/// instances in different processes — the only thing they share is this
+/// directory. It rides along on the scan that already runs, so reading it costs
+/// nothing, and the session name goes as an argument rather than inside the
+/// script.
+pub fn remember_command(session: &str) -> [String; 4] {
+    [
+        "sh".to_owned(),
+        "-c".to_owned(),
+        format!("mkdir -p {STATE_DIR} && printf 'from=%s\\n' \"$0\" > {STATE_DIR}/from"),
+        session.to_owned(),
+    ]
+}
 
 /// Reads another machine's state files.
 ///
@@ -172,6 +193,8 @@ pub struct Scan {
     /// measured against the same clock that wrote them.
     pub now: u64,
     pub agents: Vec<Agent>,
+    /// The session someone jumped away from, if anyone has.
+    pub from: Option<String>,
 }
 
 /// Parses scan output. Unreadable lines are skipped rather than failing the
@@ -181,9 +204,18 @@ pub fn parse(stdout: &[u8]) -> Option<Scan> {
     let mut lines = text.lines().filter(|line| !line.trim().is_empty());
 
     let now = lines.next()?.trim().parse().ok()?;
-    let agents = lines.filter_map(parse_agent).collect();
 
-    Some(Scan { now, agents })
+    let mut from = None;
+    let mut agents = Vec::new();
+    for line in lines {
+        match line.strip_prefix(FROM_PREFIX) {
+            Some(session) if !session.trim().is_empty() => from = Some(session.trim().to_owned()),
+            Some(_) => {}
+            None => agents.extend(parse_agent(line)),
+        }
+    }
+
+    Some(Scan { now, agents, from })
 }
 
 /// `<status>\t<session>\t<pane>\t<unix-seconds>\t<cwd>[\t<root>[\t<host>]]`
@@ -244,6 +276,16 @@ mod tests {
         // The session list is a host call now; forking a client for it cost
         // three times the rest of the script.
         assert!(!command()[2].contains("list-sessions"));
+    }
+
+    #[test]
+    fn the_session_you_came_from_rides_along_with_the_scan() {
+        let out = b"1754400000\nfrom=main\nrunning\tother\t3\t1754399990\t/x\n";
+        let scan = parse(out).expect("parses");
+
+        assert_eq!(scan.from.as_deref(), Some("main"));
+        assert_eq!(scan.agents.len(), 1, "and is not mistaken for an agent");
+        assert!(remember_command("main")[2].contains(STATE_DIR));
     }
 
     #[test]

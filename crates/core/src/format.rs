@@ -1,6 +1,6 @@
 //! Fitting agent rows into a narrow sidebar.
 
-use crate::agent::{Agent, Kind};
+use crate::agent::{Agent, Kind, Status};
 
 /// Below this width a row shows only its status glyph — a label and an age do
 /// not fit, and half a word is worse than none.
@@ -104,12 +104,22 @@ pub fn row_parts(agent: &Agent, now: u64, width: usize, current_session: &str) -
     )
 }
 
-/// What a pane in a row calls itself: the row's name and where you are in it.
+/// What a pane in a row calls itself: what the agent is doing, the row's name,
+/// and where you are in the row.
 ///
-/// A row of one has no position worth showing, so it gets nothing back and keeps
-/// whatever name it had.
-pub fn pane_position(row: &str, index: usize, count: usize) -> Option<String> {
-    (count > 1).then(|| format!("{row} {}/{count}", index + 1))
+/// The status glyph is here because a pane frame is the one piece of the sidebar
+/// you can see while looking at the agent itself. Colour would be better and is
+/// not available: Zellij's `set_pane_color` sets a pane's default *text* colours,
+/// so using it would repaint the agent's own output.
+///
+/// A row of one still gets its status; it just has no position worth showing.
+pub fn pane_title(row: &str, status: Status, index: usize, count: usize) -> String {
+    let glyph = status.glyph();
+    if count > 1 {
+        format!("{glyph} {row} {}/{count}", index + 1)
+    } else {
+        format!("{glyph} {row}")
+    }
 }
 
 /// First row to show, so the cursor stays visible in a list taller than the
@@ -262,10 +272,14 @@ mod tests {
 
     #[test]
     fn a_pane_says_where_it_sits_in_its_row() {
-        assert_eq!(pane_position("api", 0, 3).as_deref(), Some("api 1/3"));
-        assert_eq!(pane_position("api", 2, 3).as_deref(), Some("api 3/3"));
+        assert_eq!(pane_title("api", Status::Idle, 0, 3), "○ api 1/3");
+        assert_eq!(pane_title("api", Status::Idle, 2, 3), "○ api 3/3");
         // A row of one is just a pane; the position would be noise.
-        assert_eq!(pane_position("api", 0, 1), None);
+        assert_eq!(
+            pane_title("api", Status::Idle, 0, 1),
+            "○ api",
+            "no position in a row of one"
+        );
     }
 
     #[test]

@@ -29,6 +29,8 @@ screen — the same thing until you open a pane somewhere else.
 | `J`, `K` | move a project, or a row within its project |
 | `r` | name a project — two with the same name are one |
 | `b` | flip back to the previous row (`Alt b` anywhere) |
+| `B` | back to the session you came from |
+| `o` | open a workspace here on that row's project |
 | `v` | cycle the panes *within* this row (`Alt v` anywhere) |
 | `a` | add a pane to this row: an editor, a log, whatever (`Alt m`) |
 | `n` | new agent pane — a new row (`Alt g`) |

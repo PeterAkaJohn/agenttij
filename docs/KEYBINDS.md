@@ -20,6 +20,8 @@ working while the sidebar has focus.
 | `r` | name a project — two with the same name are one |
 | `h` | the machines to watch, over ssh |
 | `b` | flip back to the row you were on before |
+| `B` | back to the session you came from |
+| `o` | open a workspace here on that row's project |
 | `v` | cycle to the next pane *within* the row on screen |
 | `a` | add a pane to the row on screen |
 | `n` | new agent pane — a new row |
@@ -43,6 +45,20 @@ the header is a line taken from a list twenty columns wide. A header carries the
 worst status inside it, so folding a project away never hides an agent that is
 waiting for you. `Tab` folds and unfolds, `[` and `]` step between projects, and
 `Enter` opens a folded one.
+
+### Following work without moving it
+
+`o` opens a row here on the selected row's project — the same code, in the
+session you are already in, leaving the agent where it is. That is what people
+usually mean by wanting a group in two places, and the only version of it that is
+not a lie: a pane belongs to the session that owns it. On a project header it
+uses the project's own directory, and on a project you have *named* it uses one
+of its roots, since a name is not a place.
+
+`B` goes back to the session you came from, which makes `Enter` into another
+session a round trip rather than a one-way door. The two sidebars are different
+plugin instances in different processes, so the one you leave writes the name
+down and the one you arrive in reads it off the scan that was already running.
 
 ### Machines
 

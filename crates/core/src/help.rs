@@ -4,7 +4,7 @@
 //! this, and a test checks it against nothing being forgotten.
 
 /// A key and what it does, in the order they are worth learning.
-pub const SIDEBAR_KEYS: [(&str, &str); 18] = [
+pub const SIDEBAR_KEYS: [(&str, &str); 20] = [
     ("j / k", "move"),
     ("Enter", "show this row"),
     ("Tab", "open a row, or fold a project"),
@@ -13,6 +13,8 @@ pub const SIDEBAR_KEYS: [(&str, &str); 18] = [
     ("r", "name a project — same name joins them"),
     ("h", "machines to watch, over ssh"),
     ("b", "flip to the previous row"),
+    ("B", "back to the session you came from"),
+    ("o", "a workspace here on that project"),
     ("v", "cycle panes in this row"),
     ("a", "add a pane to this row"),
     ("n", "new row (new agent)"),

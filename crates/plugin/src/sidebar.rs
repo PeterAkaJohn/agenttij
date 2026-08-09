@@ -92,6 +92,10 @@ pub struct Sidebar {
     live_sessions: Vec<String>,
     /// The row we were on before this one, for flipping back to it.
     previous_row: Option<u32>,
+    /// The session someone jumped away from, so `B` can go back to it. Shared
+    /// through a file, because the sidebar there is a different instance in a
+    /// different process.
+    previous_session: Option<String>,
     /// What a second press would do, and to what. Closing a pane and
     /// interrupting an agent are the two things here that cannot be undone, so
     /// both take two presses and say what they are about to take.
@@ -478,6 +482,7 @@ impl Sidebar {
         };
 
         self.now = result.now;
+        self.previous_session = result.from.filter(|from| *from != self.current_session);
 
         let before = std::mem::replace(&mut self.reported, result.agents);
         if self.config.jump {
@@ -618,7 +623,8 @@ impl Sidebar {
                     false
                 }
                 Act::Go(target) => {
-                    actions::go_to_target(&target, &self.current_session);
+                    let slot = self.slot();
+                    actions::go_to_target(&target, &self.current_session, slot, self.config.solo);
                     self.leaving = true;
                     set_timeout(0.1);
                     false
@@ -695,6 +701,9 @@ impl Sidebar {
                 } else if self.config.solo && here {
                     self.switch_to_row(agent.pane);
                 } else {
+                    if agent.session != self.current_session {
+                        actions::remember(&self.current_session);
+                    }
                     actions::go_to(&agent, &self.current_session, &self.panes);
                 }
                 false
@@ -703,7 +712,7 @@ impl Sidebar {
             BareKey::Char('/') => {
                 self.close_peek();
                 if let Some(url) = self.own_url.clone() {
-                    self.peek = actions::jump(&url);
+                    self.peek = actions::jump(&url, self.config.solo);
                 }
                 false
             }
@@ -794,9 +803,25 @@ impl Sidebar {
                 self.new_row();
                 false
             }
-            // Back to the session we came from.
+            // Back to the row we came from.
             BareKey::Char('b') => {
                 self.go_back();
+                false
+            }
+            // Back to the session we came from — the other direction of the same
+            // idea, and the way out of a session you jumped into.
+            BareKey::Char('B') => {
+                if let Some(session) = self.previous_session.clone() {
+                    actions::leave_for(&session, &self.current_session);
+                }
+                false
+            }
+            // The same project, here: a workspace on that code in the session you
+            // are already in, without moving the agent that is working on it.
+            BareKey::Char('o') => {
+                if let Some(agent) = self.selected_agent().cloned() {
+                    self.hand_off(&agent);
+                }
                 false
             }
             // Close what the cursor is on: a row takes its panes with it, a
@@ -1372,16 +1397,16 @@ impl Sidebar {
         let Some(index) = members.iter().position(|member| *member == visible) else {
             return;
         };
-        let label = self
-            .agents
-            .iter()
-            .find(|agent| agent.pane == primary)
-            .map(|agent| agent.label().to_owned())
-            .unwrap_or_default();
-
-        let Some(name) = format::pane_position(&label, index, members.len()) else {
-            return;
+        // The row's own status, not the visible pane's: what the frame is for is
+        // telling you about the agent while you are looking at something else in
+        // its row.
+        let row = self.agents.iter().find(|agent| agent.pane == primary);
+        let (label, status) = match row {
+            Some(row) => (row.label().to_owned(), row.status),
+            None => return,
         };
+
+        let name = format::pane_title(&label, status, index, members.len());
         if self.positions.get(&visible) == Some(&name) {
             return;
         }
@@ -1454,6 +1479,41 @@ impl Sidebar {
 
         self.groups.show(pane);
         actions::show_in_slot(pane, slot);
+    }
+
+    /// Opens a row here on the same code, leaving the agent where it is.
+    ///
+    /// Only for rows on this machine: a directory on another one is a path that
+    /// means nothing here, and `Enter` on those already does the honest thing.
+    fn hand_off(&mut self, agent: &Agent) {
+        // A project header hands off its own directory, which is the project —
+        // exactly the thing you would want a workspace on.
+        if !agent.host.is_empty() {
+            return;
+        }
+        // A named project is keyed by its name, which is not a directory — its
+        // roots are. Any of them is the project; the first is as good as another.
+        let cwd = match agent.kind {
+            Kind::Project { .. } => self
+                .project_roots
+                .get(project::root(agent))
+                .and_then(|roots| roots.iter().next())
+                .cloned()
+                .unwrap_or_default(),
+            _ if agent.cwd.is_empty() => project::root(agent).to_owned(),
+            _ => agent.cwd.clone(),
+        };
+        if cwd.is_empty() || !cwd.starts_with('/') {
+            return;
+        }
+
+        let slot = self.slot();
+        if let Some(PaneId::Terminal(opened)) = actions::open_at(&cwd, slot, self.config.solo) {
+            self.selected = Some(Selection::Row {
+                session: self.current_session.clone(),
+                pane: opened,
+            });
+        }
     }
 
     /// Flips to the row we were on before this one.

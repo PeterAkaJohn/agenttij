@@ -66,10 +66,10 @@ action (`P` promotes a project to its own tab), not as the model.
 There is no way to render a pane that belongs to another session, and no way to
 move one. What is actually available, in order of how much it helps:
 
-1. **Handoff** (`o`): open a row here with that project's directory. The agent
+1. **Handoff** (`o`) ✅: open a row here with that project's directory. The agent
    stays where it is, you get a workspace on the same code in the session you
    are already sitting in. This is what people mean nine times in ten.
-2. **Flip back across sessions**: `b` flips rows within a session; it should flip
+2. **Flip back across sessions** ✅ (`B`): `b` flips rows within a session; it should flip
    back to the session you jumped from too, so `Enter` into another session stops
    being a one-way trip.
 3. **Watch** (`p`, already): a peek is the only way to see another session's pane,
@@ -130,7 +130,7 @@ together they cost one tick, not four.
 | 1 | ✅ `get_session_list()` instead of forking `zellij list-sessions` | a host call replaces the most expensive fork we make; also hands us dead sessions for free | small |
 | 2 | blocked queue (`!`) | filters to what needs you, across sessions and hosts — the sidebar's whole reason, one key | small |
 | 3 | interrupt an agent (`c`, two presses like `d`) | `send_sigint_to_pane_id`. Runaway agents are why people watch them | small |
-| 4 | pane frame colour by status (`set_pane_color`) | a blocked agent's pane goes yellow — awareness with no sidebar and no keystroke | small |
+| 4 | ✅ status in the pane frame — *not* by colour: `set_pane_color` sets a pane's default text colours, which would repaint the agent's own output, so the glyph goes in the frame title | small |
 | 5 | dead-session graveyard | `resurrectable_sessions` comes back in the same call as item 1: yesterday's session, one key to resurrect | small |
 | 6 | project launcher (`N`) | pick a project root you have used before, start an agent there | medium |
 | 7 | reply to a blocked agent | `write_chars_to_pane_id` — answering "1" without leaving the sidebar. Crosses the "never types into an agent" line, so: opt-in, needs-input rows only, never a default | medium, and a judgement call |
@@ -155,6 +155,8 @@ together they cost one tick, not four.
   permission, and reading a pane to work out an agent's state *without* a hook
   would be exactly that.
 - **Then the sidebar people actually asked for**: projects, `!`, `c`.
-- **Then reach**: ssh hosts ✅, and the graveyard arrived with the palette, which
-  lists resurrectable sessions. Handoff and flip-back are still open.
+- **Then reach**: ssh hosts ✅, handoff ✅, flip-back ✅, and the graveyard arrived
+  with the palette, which lists resurrectable sessions.
+- **Left**: the suite (bar, notify), the project launcher, promoting a project to
+  its own tab, and replying to a blocked agent.
 - **Then the suite**: jump first — it is the one that changes a working day.

@@ -28,11 +28,18 @@ pub fn go_to(agent: &Agent, current_session: &str, all_panes: &[PaneSnapshot]) {
 /// A session switch needs no tab position — verified live, a pane id alone lands
 /// on a pane in a background tab — which is what makes this work without the
 /// pane manifests other sessions never publish.
-pub fn go_to_target(target: &agenttij_core::jump::Target, current_session: &str) {
+pub fn go_to_target(
+    target: &agenttij_core::jump::Target,
+    current_session: &str,
+    slot: Option<u32>,
+    solo: bool,
+) {
     use agenttij_core::jump::Target;
     match target {
+        // The same as picking it in the sidebar: takes the slot rather than
+        // splitting it, when the palette was told this is a solo workspace.
         Target::Remote { host, session } => {
-            attach(host, session, None, false);
+            attach(host, session, slot, solo);
         }
         Target::Pane { session, pane } if session == current_session => {
             focus_pane_with_id(PaneId::Terminal(*pane), false, false);
@@ -46,6 +53,30 @@ pub fn go_to_target(target: &agenttij_core::jump::Target, current_session: &str)
         }
         Target::Session { .. } => {}
     }
+}
+
+/// Opens a terminal in a directory, taking the slot like anything else.
+pub fn open_at(cwd: &str, slot: Option<u32>, solo: bool) -> Option<PaneId> {
+    let opened = open_terminal(PathBuf::from(cwd))?;
+    if let Some(slot) = slot.filter(|_| solo) {
+        hide_pane_with_id(PaneId::Terminal(slot));
+    }
+    focus_pane_with_id(opened, false, false);
+    Some(opened)
+}
+
+/// Writes down the session being left, for the sidebar in the one being entered.
+pub fn remember(session: &str) {
+    let command = agenttij_core::scan::remember_command(session);
+    let words: Vec<&str> = command.iter().map(String::as_str).collect();
+    run_command(&words, BTreeMap::new());
+}
+
+/// Goes back to a session, remembering this one on the way so the flip works in
+/// both directions.
+pub fn leave_for(session: &str, current_session: &str) {
+    remember(current_session);
+    switch_session_with_focus(session, None, None);
 }
 
 /// Tells you an agent is blocked, when you are not looking at the sidebar.
@@ -163,10 +194,14 @@ pub fn attach(host: &str, session: &str, slot: Option<u32>, solo: bool) -> Optio
 ///
 /// Wider than the keybind list and anchored high, because it is a thing you read
 /// while typing rather than a page you consult.
-pub fn jump(own_url: &str) -> Option<PaneId> {
+pub fn jump(own_url: &str, solo: bool) -> Option<PaneId> {
     let configuration = BTreeMap::from([
         ("jump".to_owned(), "true".to_owned()),
         ("pane_title".to_owned(), "jump".to_owned()),
+        // So a palette opened from a solo sidebar knows to park rather than
+        // split when it opens something. One opened by the global keybind knows
+        // nothing about your layout and does the safe thing instead.
+        ("solo".to_owned(), solo.to_string()),
     ]);
     let coordinates = FloatingPaneCoordinates::new(
         Some("20%".to_owned()),
