@@ -75,7 +75,9 @@ pane size=1 borderless=true {
 ⚠2 ◐1 ✓5 · api-refactor 2m
 ```
 
-It never takes focus, the way a status bar should not, and it works with or
+It counts every agent on the machine unless you add `scope "session"` — a summary
+is usually a summary of everything, while a sidebar is usually about where you
+are. It never takes focus, the way a status bar should not, and it works with or
 without a sidebar — including `notify`, so a bar is also how you get desktop
 notifications in a session that has no sidebar at all.
 

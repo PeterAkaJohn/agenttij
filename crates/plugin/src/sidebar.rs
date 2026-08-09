@@ -575,7 +575,13 @@ impl Sidebar {
                 self.projects.entry(key).or_default().push(row.pane);
             }
         }
-        let agents = project::group(agents, &self.arrangement.folded, &self.arrangement.names);
+        // A bar has no rows to gather, and a header carries the worst status of
+        // the rows under it — counting one would count that agent twice.
+        let agents = if self.config.bar {
+            agents
+        } else {
+            project::group(agents, &self.arrangement.folded, &self.arrangement.names)
+        };
 
         self.agents = agents;
         self.resync_selection();

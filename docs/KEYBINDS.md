@@ -67,6 +67,11 @@ rows (see the README). It has no keys and never takes focus — a status bar you
 have to dismiss is not a status bar — and it reads the same state files the
 sidebar does, so it works on its own.
 
+It takes `scope` like everything else, and the default is every agent on the
+machine. A bar next to a `scope "session"` sidebar will therefore say more than
+the sidebar does, which is usually the point; add `scope "session"` to it if you
+would rather they agreed.
+
 ### Machines
 
 `h` opens the list of machines to watch, prefilled with the ones already being

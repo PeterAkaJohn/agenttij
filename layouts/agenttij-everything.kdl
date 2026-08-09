@@ -40,6 +40,10 @@ layout {
     pane size=1 borderless=true {
         plugin location="file:~/.config/zellij/plugins/agenttij.wasm" {
             bar "true"
+            // Every agent on the machine, which is what a summary is usually
+            // for: the sidebar beside it is `scope "session"`, so the two
+            // deliberately disagree. Uncomment to make them match.
+            // scope "session"
             // notify "notify-send -u critical"
         }
     }
