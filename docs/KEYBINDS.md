@@ -60,6 +60,13 @@ session a round trip rather than a one-way door. The two sidebars are different
 plugin instances in different processes, so the one you leave writes the name
 down and the one you arrive in reads it off the scan that was already running.
 
+### The bar
+
+A plugin pane with `bar "true"` is one line of counts rather than a column of
+rows (see the README). It has no keys and never takes focus — a status bar you
+have to dismiss is not a status bar — and it reads the same state files the
+sidebar does, so it works on its own.
+
 ### Machines
 
 `h` opens the list of machines to watch, prefilled with the ones already being

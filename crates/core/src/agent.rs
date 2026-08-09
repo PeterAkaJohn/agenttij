@@ -34,6 +34,16 @@ impl Status {
         }
     }
 
+    /// The word the hook writes, which is also what [`Status::parse`] reads.
+    pub fn word(self) -> &'static str {
+        match self {
+            Self::NeedsInput => "needs-input",
+            Self::Running => "running",
+            Self::Done => "done",
+            Self::Idle | Self::Unknown | Self::Pane => "idle",
+        }
+    }
+
     pub fn glyph(self) -> char {
         match self {
             Self::NeedsInput => '⚠',

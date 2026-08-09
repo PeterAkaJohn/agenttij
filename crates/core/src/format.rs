@@ -122,6 +122,44 @@ pub fn pane_title(row: &str, status: Status, index: usize, count: usize) -> Stri
     }
 }
 
+/// One line for a status bar: how many agents are in each state, then whoever
+/// most wants you.
+///
+/// Counts first because they are the part that fits: a bar is one line of a
+/// screen someone is working in, and the name is what gets truncated when the
+/// window is narrow.
+pub fn bar(agents: &[Agent], now: u64, width: usize) -> String {
+    let count = |status: Status| agents.iter().filter(|agent| agent.status == status).count();
+    let mut out = String::new();
+    for status in [
+        Status::NeedsInput,
+        Status::Running,
+        Status::Done,
+        Status::Idle,
+    ] {
+        let many = count(status);
+        if many > 0 {
+            out.push_str(&format!("{}{many} ", status.glyph()));
+        }
+    }
+
+    // Sorted by status already means the first is the one that wants you most.
+    match agents.iter().min_by_key(|agent| agent.status) {
+        Some(agent) if agent.status <= Status::Running => {
+            out.push_str(&format!(
+                "· {} {}",
+                agent.label(),
+                age(now, agent.reported_at)
+            ));
+        }
+        // Nothing running and nothing waiting: the counts have said everything
+        // there is to say, and an empty bar would look broken.
+        _ if out.is_empty() => out.push_str("no agents"),
+        _ => {}
+    }
+    truncate(out.trim_end(), width)
+}
+
 /// First row to show, so the cursor stays visible in a list taller than the
 /// pane. Keeps the cursor on the last line while scrolling down.
 pub fn scroll_offset(cursor: usize, capacity: usize) -> usize {
@@ -280,6 +318,29 @@ mod tests {
             "○ api",
             "no position in a row of one"
         );
+    }
+
+    #[test]
+    fn a_bar_counts_first_and_names_what_wants_you() {
+        let line = bar(
+            &[
+                agent(Status::NeedsInput, 40, "/home/pp/api"),
+                agent(Status::Running, 90, "/home/pp/web"),
+            ],
+            100,
+            40,
+        );
+
+        assert!(line.starts_with("⚠1 ◐1"), "{line}");
+        assert!(line.contains("api"), "{line}");
+    }
+
+    #[test]
+    fn a_bar_with_nothing_to_say_says_so() {
+        assert_eq!(bar(&[], 0, 20), "no agents");
+        // Idle agents are still counted; they are just not named, because
+        // nothing is waiting on you.
+        assert_eq!(bar(&[agent(Status::Idle, 0, "/x")], 0, 20), "○1");
     }
 
     #[test]

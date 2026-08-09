@@ -111,17 +111,24 @@ than one reader:
   host and dead session. Three letters and Enter, from anywhere, without looking
   at a sidebar. For someone with four projects this is probably worth more than
   everything else here.
-- **agenttij-bar** — one status line: `⚠2 ◐1 ✓5 · api-refactor needs input`. For
-  people who want the information without the column.
-- **agenttij-notify** — headless; only turns a blocked agent into a desktop
-  notification. Today that is a knob on the sidebar, which means no sidebar, no
-  notifications.
+- **agenttij-bar** ✅ — one status line: `⚠2 ◐1 ✓5 · api-refactor 2m`. For people
+  who want the information without the column.
+- **agenttij-notify** ✅ without being written: `notify` was already a knob that
+  every mode honours, so a bar with it set *is* the notifier. A separate headless
+  plugin would have been a second thing to install for a line of configuration.
 
-They must not each pay for the poll. The rule: **whoever has the sidebar open
-publishes.** The sidebar pipes its merged snapshot to the others
-(`pipe_message_to_plugin`); the others poll only if nothing has arrived for a few
-seconds. Each still works alone — that is the independence requirement — but
-together they cost one tick, not four.
+They must not each pay for the poll — and the plan for that, a sidebar piping its
+snapshot to the others, is **not built, on purpose**. It was written and then
+taken out: `pipe_message_to_plugin` needs `MessageAndLaunchOtherPlugins`, and
+that permission would not pre-grant here at all. Zellij rewrote
+`permissions.kdl` without it on every run, so the send stayed denied — which is
+the same silent failure that a user who never sees the prompt would get.
+
+Against that, what the feed saves is one `cat` per second in the bar: about 4ms,
+measured. A permission that re-prompts everyone and breaks the plugin when
+unanswered is not worth 4ms, so each piece reads the state files itself. If a
+third and fourth reader ever appear, revisit it — with the permission granted
+before any session starts.
 
 ## Everything else worth building, ranked
 

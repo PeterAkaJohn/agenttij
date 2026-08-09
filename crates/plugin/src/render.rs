@@ -118,6 +118,20 @@ fn line(content: &str, row: usize, cols: usize) {
     print!("{text}{}{RESET}", " ".repeat(padding));
 }
 
+/// One line of counts and whoever most wants you, in that agent's colour.
+pub fn draw_bar(agents: &[Agent], now: u64, cols: usize, colors: &Colors) {
+    let line = format::bar(agents, now, cols);
+    let worst = agents
+        .iter()
+        .min_by_key(|agent| agent.status)
+        .map(|agent| agent.status);
+    let color = worst.map(|status| colors.of(status)).unwrap_or("0");
+    let padding = cols.saturating_sub(line.chars().count());
+
+    at(0);
+    print!("\u{1b}[{color}m{line}{RESET}{}", " ".repeat(padding));
+}
+
 /// One plain line of a floating list, padded so the frame underneath is covered.
 pub fn line_at(content: &str, row: usize, cols: usize) {
     line(content, row, cols);

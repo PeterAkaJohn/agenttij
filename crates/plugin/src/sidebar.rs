@@ -199,7 +199,9 @@ impl ZellijPlugin for Sidebar {
         // palette, which has to hold focus to be typed into at all. Unselectable
         // meant focus bounced straight back to the sidebar, whose next keystroke
         // closes whatever floating instance it opened.
-        set_selectable(true);
+        // A bar is a status line: it should never take focus, the way Zellij's own
+        // status bar never does.
+        set_selectable(!self.config.bar);
         // The keybind list never changes, so it has nothing to wake up for.
         if !self.config.help {
             set_timeout(TICK_SECONDS);
@@ -293,6 +295,10 @@ impl ZellijPlugin for Sidebar {
         }
         if self.config.jump {
             self.palette.draw(rows, cols, &self.config.colors);
+            return;
+        }
+        if self.config.bar {
+            render::draw_bar(&self.agents, self.now, cols, &self.config.colors);
             return;
         }
 

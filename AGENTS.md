@@ -110,6 +110,12 @@ Each of these cost a debugging round already:
   nothing: no new panes, no floating panes, no scan. Check that file first when a
   plugin stops acting, and re-grant before testing anything that adds a
   permission.
+- **A running session rewrites `permissions.kdl` from its own memory.** Granting
+  a *new* permission while any session is up is undone the moment one of them
+  writes the file back, so the next session asks for something the cache no
+  longer has, gets no answer, and the command fails silently. Grant before
+  starting sessions — and check the file again afterwards, because it may not say
+  what you just wrote.
 - **Permission grants are keyed by the plugin's path with no `file:` prefix.**
   Zellij writes `~/.cache/zellij/permissions.kdl` as bare paths, so an entry
   written as `"file:/path/x.wasm"` is never matched: the plugin loads, asks, and

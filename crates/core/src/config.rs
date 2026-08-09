@@ -48,6 +48,8 @@ pub struct Config {
     pub hosts: Vec<String>,
     /// Set on a peek instance whose pane lives on another machine.
     pub peek_host: String,
+    /// Set on a bar instance: one line of counts instead of a column of rows.
+    pub bar: bool,
     /// Set on a jump instance: this one is the palette — everywhere you could
     /// go, filtered by typing.
     pub jump: bool,
@@ -68,6 +70,7 @@ impl Default for Config {
             colors: Colors::default(),
             colors_raw: String::new(),
             notify: Vec::new(),
+            bar: false,
             hosts: Vec::new(),
             peek_host: String::new(),
             peek: None,
@@ -102,6 +105,7 @@ impl Config {
         let solo = configuration.get("solo").map(|raw| raw.trim()) == Some("true");
         let help = configuration.get("help").map(|raw| raw.trim()) == Some("true");
         let jump = configuration.get("jump").map(|raw| raw.trim()) == Some("true");
+        let bar = configuration.get("bar").map(|raw| raw.trim()) == Some("true");
         let position = configuration.get("position").map(|raw| raw.trim()) != Some("false");
 
         // Not `title`: Zellij keeps that key for itself and it never reaches the
@@ -157,6 +161,7 @@ impl Config {
             colors,
             colors_raw,
             notify,
+            bar,
             hosts,
             peek_host,
             peek,

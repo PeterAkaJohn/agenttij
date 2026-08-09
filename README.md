@@ -58,6 +58,27 @@ Peeking is the point. Checking on an agent shouldn't cost you a detach and a
 reattach, so `p` gives you a live view of its pane wherever it is — another
 session, a background tab, a session nobody is attached to.
 
+## One line instead of a column
+
+The same plugin in bar mode: counts, then whoever most wants you.
+
+```kdl
+pane size=1 borderless=true {
+    plugin location="file:~/.config/zellij/plugins/agenttij.wasm" {
+        bar "true"
+        notify "notify-send -u critical"
+    }
+}
+```
+
+```
+⚠2 ◐1 ✓5 · api-refactor 2m
+```
+
+It never takes focus, the way a status bar should not, and it works with or
+without a sidebar — including `notify`, so a bar is also how you get desktop
+notifications in a session that has no sidebar at all.
+
 ## Another machine
 
 Agents on a dev box show up in the sidebar next to the local ones, marked `⇥`
