@@ -108,6 +108,11 @@ impl Config {
         let bar = configuration.get("bar").map(|raw| raw.trim()) == Some("true");
         let position = configuration.get("position").map(|raw| raw.trim()) != Some("false");
 
+        // What each mode calls its pane when a layout does not say. Two panes
+        // both called "agents" is only confusing in a pane list, since a bar is
+        // borderless and shows no title at all — but confusing in a pane list is
+        // where every one of these bugs starts.
+        let default_title = if bar { "agenttij-bar" } else { DEFAULT_TITLE };
         // Not `title`: Zellij keeps that key for itself and it never reaches the
         // plugin — measured by dumping a launched plugin's configuration, which
         // showed every other key and not this one.
@@ -115,7 +120,7 @@ impl Config {
             .get("pane_title")
             .map(|raw| raw.trim())
             .filter(|raw| !raw.is_empty())
-            .unwrap_or(DEFAULT_TITLE)
+            .unwrap_or(default_title)
             .to_string();
 
         let notify: Vec<String> = configuration
@@ -279,6 +284,18 @@ mod tests {
         assert!(Config::from_map(&map(&[])).position);
         assert!(Config::from_map(&map(&[("position", "true")])).position);
         assert!(!Config::from_map(&map(&[("position", "false")])).position);
+    }
+
+    #[test]
+    fn a_bar_names_its_own_pane() {
+        assert_eq!(
+            Config::from_map(&map(&[("bar", "true")])).title,
+            "agenttij-bar"
+        );
+        assert_eq!(
+            Config::from_map(&map(&[("bar", "true"), ("pane_title", "mine")])).title,
+            "mine"
+        );
     }
 
     #[test]

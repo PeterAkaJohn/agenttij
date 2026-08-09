@@ -129,6 +129,9 @@ rustup target add wasm32-wasip1
 zellij --new-session-with-layout agenttij-left
 ```
 
+To see everything at once — sidebar, bar, projects, the lot — start with
+`zellij -n agenttij-everything` and press `?`.
+
 The installer builds the plugin and drops it in `~/.config/zellij/plugins`,
 installs the sidebar layouts, registers the Claude Code hook in
 `~/.claude/settings.json`, binds `Alt a` in your Zellij config, and pre-grants
@@ -385,7 +388,8 @@ crates/core    agenttij-core — zero dependencies, all the decisions, unit-test
 crates/plugin  agenttij — the wasm plugin: lifecycle, rendering, navigation
 hooks/         the shell hook agents run — tool-agnostic
 integrations/  per-tool glue that calls it (an opencode plugin)
-layouts/       left, right, workspace, each with `sidebar` and `rail` swaps
+layouts/       left, right, workspace, everything (sidebar + bar), each with
+               `sidebar` and `rail` swap layouts
 scripts/       installer, its helpers, and a real-keystroke test harness
 docs/KEYBINDS.md  every key, and how to change them
 docs/ROADMAP.md   what could come next, and what Zellij will not allow

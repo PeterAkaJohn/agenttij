@@ -1,0 +1,91 @@
+// Everything at once, for trying it out: the workspace sidebar, and a bar under
+// it that says the same thing in one line.
+//
+// This is the layout to start a session with when you want to see what the
+// plugin does — `zellij -n agenttij-everything` after `scripts/install.sh`.
+// The other layouts are the ones to copy from once you know which half you want.
+//
+// The sidebar is `scope "session"` and `solo "true"`: it lists this session's
+// agents, and exactly one of them is on screen at a time — picking another parks
+// the current one rather than splitting the screen with it. The bar reads the
+// same state files and needs neither the sidebar nor a session of its own.
+//
+// Worth knowing while you are testing:
+//
+//   ?      every key, in a floating pane
+//   /      the jump list — agents, panes, sessions, and the dead
+//   h      the machines to watch over ssh (scripts/testbox.sh up gives you one)
+//   r      name a project; two projects with one name are one project
+//   !      only what needs you
+//   Alt ]  fold the sidebar to a rail, and back
+//
+// The tab bar and status bar are left out on purpose — your own config probably
+// supplies something (zjstatus, Zellij's own). Uncomment them if not.
+layout {
+    // pane size=1 borderless=true {
+    //     plugin location="zellij:tab-bar"
+    // }
+    pane split_direction="vertical" {
+        pane size="20%" {
+            plugin location="file:~/.config/zellij/plugins/agenttij.wasm" {
+                scope "session"
+                solo "true"
+            }
+        }
+        pane
+    }
+    // One line: how many agents are in each state, then whoever most wants you.
+    // `notify` fires a command when an agent becomes blocked — uncomment it and
+    // you get desktop notifications from a session with no sidebar at all.
+    pane size=1 borderless=true {
+        plugin location="file:~/.config/zellij/plugins/agenttij.wasm" {
+            bar "true"
+            // notify "notify-send -u critical"
+        }
+    }
+
+    // A new pane makes Zellij re-apply a swap layout, and the base layout is
+    // registered with `ExactPanes` — it stops fitting the moment there is one
+    // more pane than it was written for. Without an unconstrained layout to fall
+    // into, opening a pane would fold the sidebar to the rail by itself. Both
+    // swap layouts carry the bar too, or swapping would drop it.
+    swap_tiled_layout name="sidebar" {
+        tab {
+            pane split_direction="vertical" {
+                pane size="20%" {
+                    plugin location="file:~/.config/zellij/plugins/agenttij.wasm" {
+                        scope "session"
+                        solo "true"
+                    }
+                }
+                pane
+            }
+            pane size=1 borderless=true {
+                plugin location="file:~/.config/zellij/plugins/agenttij.wasm" {
+                    bar "true"
+                }
+            }
+        }
+    }
+
+    // Fold the sidebar to a status rail with Zellij's own swap-layout key
+    // (Alt ] by default): same side, same glyphs, five columns.
+    swap_tiled_layout name="rail" {
+        tab {
+            pane split_direction="vertical" {
+                pane size=5 {
+                    plugin location="file:~/.config/zellij/plugins/agenttij.wasm" {
+                        scope "session"
+                        solo "true"
+                    }
+                }
+                pane
+            }
+            pane size=1 borderless=true {
+                plugin location="file:~/.config/zellij/plugins/agenttij.wasm" {
+                    bar "true"
+                }
+            }
+        }
+    }
+}
