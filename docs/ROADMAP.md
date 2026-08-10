@@ -107,6 +107,9 @@ The state directory is already a protocol. Documented as one, it supports more
 than one reader:
 
 - **agenttij** — the sidebar. What exists.
+- **agenttij-remote** ✅ — the controller on a machine you watch: no screen, no
+  keys, keeps that session to one pane at a time and answers pipes. What makes a
+  remote row a *row* rather than something you can only attach to.
 - **agenttij-jump** — a floating fuzzy switcher over every row, project, session,
   host and dead session. Three letters and Enter, from anywhere, without looking
   at a sidebar. For someone with four projects this is probably worth more than

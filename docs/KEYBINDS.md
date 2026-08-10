@@ -72,47 +72,33 @@ machine. A bar next to a `scope "session"` sidebar will therefore say more than
 the sidebar does, which is usually the point; add `scope "session"` to it if you
 would rather they agreed.
 
-### Adding a pane where the work is
+### Rows on another machine
 
-`a` and `Alt m` add a pane to the row on screen. When that row is a session on
-another machine — a pane you opened with `Enter` on a `⇥` row — the pane is
-created *there*, and how depends on what is running over there:
+A machine running the controller (`layouts/agenttij-remote.kdl`) publishes its
+rows, and the sidebar here draws them as rows rather than as lone panes: `⇥ api 3`
+opens with `Tab` and lists its panes, named after what runs in them over there.
 
-- **agenttij is running in that session.** It gets the same message `Alt m` sends
-  here, over `zellij -s <session> pipe --name add`, and does the same thing: opens
-  a pane in its slot and parks the one that was there. Real suppressed panes,
-  because the plugin is in the room to ask for them.
-- **it is not.** Then the pane is opened with `new-pane` and the session is
-  gathered into a Zellij *stack* — one pane expanded, the rest collapsed to title
-  lines. Suppressing a pane is a plugin call and cannot be done from outside a
-  session, so a stack is the nearest thing the CLI can offer: the same promise,
-  kept by Zellij rather than by us.
+The keys then mean the same thing they mean here, and are carried out by that
+machine because only a plugin inside a session can suppress a pane:
 
-It asks by counting rather than by looking for a sidebar: the pipe carries no
-`--plugin`, so it reaches every plugin in that session whatever its configuration
-is called, and if the pane count over there does not move, nobody answered. A
-plugin's identity is its url *and* its configuration, and we cannot know the
-configuration a layout on another machine chose — but a pane appearing is a pane
-appearing.
+| key | on a row somewhere else |
+|---|---|
+| `v` | cycles that row, over there |
+| `a` | adds a pane to it, over there, where the agent is working |
+| `Enter` | attaches to the session; on one of its panes, shows that pane |
+| `d` `d` | closes it, over there |
 
-Which is the argument for installing agenttij on the machines you watch, beyond
-the hook that reports from them: with it, the far side behaves exactly like this
-one.
+Every one of those is `zellij -s <session> pipe --name <what>` over ssh. It
+carries no `--plugin`, which is deliberate: a plugin's identity is its url *and*
+its configuration, and we cannot know the configuration a layout on another
+machine chose — a bare pipe reaches whatever is listening.
 
-The pane starts in the directory the agent over there is working in. That is a
-`cd` rather than `new-pane --cwd`, which was measured being ignored for a session
-started detached — the pane came up in `/` whatever was asked for.
+Without a controller over there, `a` still works: the pane is opened with
+`new-pane` and the session gathered into a Zellij stack, one pane expanded and the
+rest as title lines. It looks similar and is not the same thing, which is the
+argument for putting the controller on the machines you watch.
 
-Arriving does *not* rearrange anything any more. Stacking on arrival would have
-had to stack the pane ids `list-panes` reports, and that list includes panes a
-sidebar over there has deliberately suppressed.
-
-The one gap: only attachments made with `Enter` from the sidebar are remembered
-this way. Jumping to a remote session from the palette (`Alt t`) opens the same
-pane, but the sidebar did not open it and does not know what it is, so `a` there
-adds a local pane.
-
-### Machines
+### Machines### Machines
 
 `h` opens the list of machines to watch, prefilled with the ones already being
 watched, so adding and removing one are the same edit: type a comma-separated

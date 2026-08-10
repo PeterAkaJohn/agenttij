@@ -37,6 +37,9 @@ const FROM_PREFIX: &str = "from=";
 
 /// A row published by a controller: `row <session> <primary> <current> <count>`.
 const ROW_PREFIX: &str = "row=";
+/// One pane of such a row: `mem <session> <primary> <pane> <name>`. A line each
+/// rather than a list, so a name can contain anything but a tab.
+const MEMBER_PREFIX: &str = "mem=";
 
 /// What a controller says about one of its rows, so a sidebar on another machine
 /// can draw it as a row rather than as a single pane.
@@ -51,27 +54,54 @@ pub struct Row {
     pub panes: usize,
 }
 
+/// One pane of a row on another machine, named after whatever runs in it.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Member {
+    pub session: String,
+    pub primary: u32,
+    pub pane: u32,
+    pub name: String,
+}
+
 /// The file a controller writes beside the state files, and a scan reads with the
 /// same `cat`.
 ///
 /// Written only when it changes — a controller that redescribed itself every
 /// second would be a fork a second on someone else's machine.
-pub fn publish_rows_command(rows: &[Row]) -> [String; 4] {
-    let text: String = rows
-        .iter()
-        .map(|row| {
-            format!(
-                "{ROW_PREFIX}{}\t{}\t{}\t{}\n",
-                row.session, row.primary, row.current, row.panes
-            )
-        })
-        .collect();
+pub fn publish_rows_command(rows: &[Row], members: &[Member]) -> [String; 4] {
+    let mut text = String::new();
+    for row in rows {
+        text.push_str(&format!(
+            "{ROW_PREFIX}{}\t{}\t{}\t{}\n",
+            row.session, row.primary, row.current, row.panes
+        ));
+    }
+    for member in members {
+        text.push_str(&format!(
+            "{MEMBER_PREFIX}{}\t{}\t{}\t{}\n",
+            member.session, member.primary, member.pane, member.name
+        ));
+    }
     [
         "sh".to_owned(),
         "-c".to_owned(),
         format!("mkdir -p {STATE_DIR} && printf '%s' \"$0\" > {STATE_DIR}/rows"),
         text,
     ]
+}
+
+fn parse_member(line: &str) -> Option<Member> {
+    let mut fields = line.split('\t');
+    let session = fields.next()?.trim();
+    let primary = fields.next()?.trim().parse().ok()?;
+    let pane = fields.next()?.trim().parse().ok()?;
+    let name = fields.next().unwrap_or_default().trim();
+    (!session.is_empty()).then(|| Member {
+        session: session.to_owned(),
+        primary,
+        pane,
+        name: name.to_owned(),
+    })
 }
 
 fn parse_row(line: &str) -> Option<Row> {
@@ -226,6 +256,25 @@ fn over_ssh(host: &str, remote: String) -> Vec<String> {
     ]
 }
 
+/// Asks a controller on another machine to do something: add a pane, cycle the
+/// row, show one of its panes, close one.
+///
+/// No `--plugin`, so it reaches whatever is running there whatever configuration
+/// gave it life — a plugin's identity is its url *and* its configuration, and we
+/// cannot know the configuration a layout on another machine chose.
+pub fn remote_pipe_command(
+    host: &str,
+    session: &str,
+    name: &str,
+    payload: Option<u32>,
+) -> Vec<String> {
+    let mut remote = format!("zellij -s {} pipe --name {}", quoted(session), quoted(name));
+    if let Some(payload) = payload {
+        remote.push_str(&format!(" {payload}"));
+    }
+    over_ssh(host, remote)
+}
+
 /// Opens a session on another machine: an ssh with a terminal, attaching. There
 /// is no switching to it — a session belongs to the machine running it — so the
 /// honest equivalent is a pane here that is sitting inside it.
@@ -320,6 +369,8 @@ pub struct Scan {
     pub from: Option<String>,
     /// Rows a controller published, when this scan read a machine that has one.
     pub rows: Vec<Row>,
+    /// The panes those rows hold.
+    pub members: Vec<Member>,
 }
 
 /// Parses scan output. Unreadable lines are skipped rather than failing the
@@ -333,9 +384,12 @@ pub fn parse(stdout: &[u8]) -> Option<Scan> {
     let mut from = None;
     let mut agents = Vec::new();
     let mut rows = Vec::new();
+    let mut members = Vec::new();
     for line in lines {
         if let Some(row) = line.strip_prefix(ROW_PREFIX) {
             rows.extend(parse_row(row));
+        } else if let Some(member) = line.strip_prefix(MEMBER_PREFIX) {
+            members.extend(parse_member(member));
         } else if let Some(session) = line.strip_prefix(FROM_PREFIX) {
             if !session.trim().is_empty() {
                 from = Some(session.trim().to_owned());
@@ -350,6 +404,7 @@ pub fn parse(stdout: &[u8]) -> Option<Scan> {
         agents,
         from,
         rows,
+        members,
     })
 }
 
@@ -414,20 +469,40 @@ mod tests {
     }
 
     #[test]
+    fn a_controller_is_asked_by_pipe() {
+        let ask = remote_pipe_command("dev1", "box", "show", Some(3));
+        assert_eq!(ask[0], "ssh");
+        assert_eq!(ask[5], "zellij -s 'box' pipe --name 'show' 3");
+        assert!(!remote_pipe_command("dev1", "box", "cycle", None)[5].ends_with(' '));
+    }
+
+    #[test]
     fn a_controller_rows_ride_along_with_the_state_files() {
-        let published = publish_rows_command(&[Row {
-            session: "box".into(),
-            primary: 0,
-            current: 3,
-            panes: 2,
-        }]);
+        let published = publish_rows_command(
+            &[Row {
+                session: "box".into(),
+                primary: 0,
+                current: 3,
+                panes: 2,
+            }],
+            &[Member {
+                session: "box".into(),
+                primary: 0,
+                pane: 3,
+                name: "nvim".into(),
+            }],
+        );
         assert!(published[2].contains(STATE_DIR));
 
         let scan = parse(format!("0\n{}", published[3]).as_bytes()).expect("parses");
         assert_eq!(scan.rows.len(), 1);
         assert_eq!(scan.rows[0].current, 3);
         assert_eq!(scan.rows[0].panes, 2);
-        assert!(scan.agents.is_empty(), "and are not mistaken for agents");
+        assert_eq!(scan.members[0].name, "nvim", "so the row can be opened up");
+        assert!(
+            scan.agents.is_empty(),
+            "and none of it is mistaken for an agent"
+        );
     }
 
     #[test]

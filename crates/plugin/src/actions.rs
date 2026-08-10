@@ -163,6 +163,13 @@ pub fn help(own_url: &str) -> Option<PaneId> {
     open_plugin_pane_floating(own_url, configuration, coordinates, BTreeMap::new())
 }
 
+/// Asks the controller on another machine to do something to one of its rows.
+pub fn ask(host: &str, session: &str, name: &str, payload: Option<u32>) {
+    let command = agenttij_core::scan::remote_pipe_command(host, session, name, payload);
+    let words: Vec<&str> = command.iter().map(String::as_str).collect();
+    run_command(&words, BTreeMap::new());
+}
+
 /// Opens a pane inside a session on another machine, where the work is.
 pub fn add_remote_pane(host: &str, session: &str, cwd: Option<&str>) {
     let command = agenttij_core::scan::remote_pane_command(host, session, cwd);

@@ -92,6 +92,13 @@ plugin location="file:~/.config/zellij/plugins/agenttij.wasm" {
 }
 ```
 
+On the machine being watched, `zellij -n agenttij-remote` adds a *controller*: the
+same plugin with no column, no keys and nothing on screen, which keeps that
+session to one pane at a time and does what this sidebar asks of it. Its rows then
+appear here as rows — `⇥ api 3`, openable with `Tab` — and `v`, `a`, `d` and
+`Enter` on them are carried out over there, with real suppressed panes, because
+only a plugin inside a session can suppress one.
+
 Or press `h` in the sidebar and type them. That list belongs to the session you
 typed it in and is remembered for it, so a box you care about this afternoon does
 not have to go in a layout file — and does not turn up in tomorrow's session for

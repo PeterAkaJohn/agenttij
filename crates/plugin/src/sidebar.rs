@@ -106,8 +106,10 @@ pub struct Sidebar {
     pending: Option<(Pending, Selection)>,
     /// Show only what needs you, across every project and session.
     only_blocked: bool,
-    /// Rows showing their panes underneath them, by primary.
-    expanded: BTreeSet<u32>,
+    /// Rows showing their panes underneath them, by machine and primary. The
+    /// host is empty for this one — a pane id only means something with the
+    /// machine it is on beside it.
+    expanded: BTreeSet<(String, u32)>,
     /// How you left the sidebar: the order you put things in, and what you
     /// folded away. Written when it changes and read back when one starts.
     arrangement: order::Arrangement,
@@ -153,7 +155,9 @@ pub struct Sidebar {
     palette: Jump,
     /// What this controller last told the world about its rows, so it only says
     /// so again when the answer changed.
-    published: Vec<scan::Row>,
+    published: (Vec<scan::Row>, Vec<scan::Member>),
+    /// Rows and their panes as a machine elsewhere published them, by host.
+    remote_rows: BTreeMap<String, (Vec<scan::Row>, Vec<scan::Member>)>,
     /// Sessions Zellij can bring back, for the palette to offer.
     dead_sessions: Vec<String>,
     /// What each watched machine last told us, and when to ask it again.
@@ -475,6 +479,7 @@ impl Sidebar {
     fn absorb_host(&mut self, host: &str, exit: Option<i32>, stdout: &[u8]) -> bool {
         if exit != Some(0) {
             self.remote.remove(host);
+            self.remote_rows.remove(host);
             self.hosts_in.insert(host.to_owned(), HOST_BACKOFF);
             self.rebuild();
             return true;
@@ -489,10 +494,12 @@ impl Sidebar {
             .map(|line| format!("{line}\t{host}\n"))
             .collect();
 
-        let agents = scan::parse(&format!("0\n{tagged}").into_bytes())
-            .map(|scan| scan.agents)
+        let scanned = scan::parse(&format!("0\n{tagged}").into_bytes());
+        let (agents, rows, members) = scanned
+            .map(|scan| (scan.agents, scan.rows, scan.members))
             .unwrap_or_default();
         self.remote.insert(host.to_owned(), agents);
+        self.remote_rows.insert(host.to_owned(), (rows, members));
         self.rebuild();
         true
     }
@@ -583,6 +590,14 @@ impl Sidebar {
         // one per agent, with its companions folded inside rather than listed.
         if self.config.solo {
             agents = self.group_rows(agents);
+        }
+
+        // A row on another machine knows how many panes it has, because the
+        // controller there said so. Without this it draws as a lone pane.
+        for agent in agents.iter_mut().filter(|agent| !agent.host.is_empty()) {
+            if let Some(row) = self.remote_row(&agent.host, &agent.session, agent.pane) {
+                agent.panes = row.panes;
+            }
         }
 
         // Only what needs you: rows, not the panes underneath them — a pane is
@@ -737,6 +752,13 @@ impl Sidebar {
                     return false;
                 }
 
+                // One pane of a row on another machine: that machine shows it,
+                // and if we are already attached the change is simply there.
+                if !agent.host.is_empty() && agent.kind == Kind::Pane {
+                    actions::ask(&agent.host, &agent.session, "show", Some(agent.pane));
+                    return false;
+                }
+
                 // A session belongs to the machine running it, so there is
                 // nothing to switch to: open a pane that is attached to it.
                 if !agent.host.is_empty() {
@@ -805,9 +827,15 @@ impl Sidebar {
                     } else {
                         Some(agent.pane)
                     };
-                    if let Some(row) = row.filter(|row| self.groups.members_of(*row).len() > 1) {
-                        if !self.expanded.remove(&row) {
-                            self.expanded.insert(row);
+                    let host = agent.host.clone();
+                    let opens = match row {
+                        Some(row) if host.is_empty() => self.groups.members_of(row).len() > 1,
+                        Some(row) => self.remote_members(&host, &agent.session, row).len() > 1,
+                        None => false,
+                    };
+                    if let Some(row) = row.filter(|_| opens) {
+                        if !self.expanded.remove(&(host.clone(), row)) {
+                            self.expanded.insert((host, row));
                         }
                         self.rebuild();
                     }
@@ -848,13 +876,25 @@ impl Sidebar {
             // Cycle to the next pane in the row on screen. The same thing is a
             // keybind away when the agent itself has focus, which is the point.
             BareKey::Char('v') => {
-                self.cycle();
+                // A row on another machine is cycled by the machine it is on;
+                // there is nothing here to cycle.
+                match self.selected_agent().cloned() {
+                    Some(agent) if !agent.host.is_empty() => {
+                        actions::ask(&agent.host, &agent.session, "cycle", None);
+                    }
+                    _ => self.cycle(),
+                }
                 false
             }
             // Add a pane to the selected row: an editor beside the agent, a log,
             // whatever. It joins the group instead of becoming a row of its own.
             BareKey::Char('a') => {
-                self.add_to_row();
+                match self.selected_agent().cloned() {
+                    Some(agent) if !agent.host.is_empty() => {
+                        actions::ask(&agent.host, &agent.session, "add", None);
+                    }
+                    _ => self.add_to_row(),
+                }
                 false
             }
             // A new agent pane that takes over the slot, parking the current
@@ -924,6 +964,13 @@ impl Sidebar {
     /// Closes the selection, and puts something back on screen if it was what
     /// you were looking at.
     fn delete(&mut self, agent: &Agent) {
+        // Panes on another machine are closed by that machine, which knows which
+        // of them are parked.
+        if !agent.host.is_empty() {
+            actions::ask(&agent.host, &agent.session, "close", Some(agent.pane));
+            return;
+        }
+
         let closing: Vec<u32> = match agent.kind {
             // A project takes every row in it, and every row takes its panes.
             Kind::Project { .. } => self
@@ -957,7 +1004,7 @@ impl Sidebar {
             close_pane_with_id(PaneId::Terminal(*pane));
         }
         if agent.kind == Kind::Row {
-            self.expanded.remove(&agent.pane);
+            self.expanded.remove(&(agent.host.clone(), agent.pane));
         }
         if let Kind::Project { .. } = agent.kind {
             self.arrangement
@@ -994,8 +1041,9 @@ impl Sidebar {
             return false;
         };
         let target = Selection::of(&agent);
-        let ours =
-            agent.session == self.current_session || matches!(agent.kind, Kind::Project { .. });
+        let ours = agent.session == self.current_session
+            || !agent.host.is_empty()
+            || matches!(agent.kind, Kind::Project { .. });
 
         if armed == Some((action, target.clone())) {
             match action {
@@ -1347,11 +1395,40 @@ impl Sidebar {
             })
             .collect();
 
-        if rows == self.published {
+        // Named after what runs in them, the same way an opened row is named
+        // here: a shell says nothing, so it borrows the row's own name.
+        let members: Vec<scan::Member> = rows
+            .iter()
+            .flat_map(|row| {
+                let label = self
+                    .agents
+                    .iter()
+                    .find(|agent| agent.pane == row.primary)
+                    .map(|agent| agent.label().to_owned())
+                    .unwrap_or_default();
+                self.groups
+                    .members_of(row.primary)
+                    .iter()
+                    .map(|pane| scan::Member {
+                        session: row.session.clone(),
+                        primary: row.primary,
+                        pane: *pane,
+                        name: self
+                            .programs
+                            .get(pane)
+                            .filter(|program| !program.is_empty())
+                            .cloned()
+                            .unwrap_or_else(|| label.clone()),
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+
+        if (rows.clone(), members.clone()) == self.published {
             return;
         }
-        self.published = rows.clone();
-        let command = scan::publish_rows_command(&rows);
+        self.published = (rows.clone(), members.clone());
+        let command = scan::publish_rows_command(&rows, &members);
         let words: Vec<&str> = command.iter().map(String::as_str).collect();
         run_command(&words, BTreeMap::new());
     }
@@ -1401,7 +1478,8 @@ impl Sidebar {
         let expanded: Vec<u32> = self
             .expanded
             .iter()
-            .flat_map(|primary| self.groups.members_of(*primary).to_vec())
+            .filter(|(host, _)| host.is_empty())
+            .flat_map(|(_, primary)| self.groups.members_of(*primary).to_vec())
             .filter(|member| !self.programs.contains_key(member))
             .collect();
         for member in expanded {
@@ -1517,13 +1595,31 @@ impl Sidebar {
         let mut out = Vec::with_capacity(rows.len());
 
         for row in rows {
-            let expanded = self.expanded.contains(&row.pane) && row.session == self.current_session;
-            let members = if expanded {
-                self.groups.members_of(row.pane).to_vec()
-            } else {
-                Vec::new()
+            // Locally the group knows; for a row on another machine, what that
+            // machine published is the only thing that does.
+            let open = self.expanded.contains(&(row.host.clone(), row.pane));
+            let members: Vec<u32> = match (open, row.host.is_empty()) {
+                (false, _) => Vec::new(),
+                (true, true) if row.session == self.current_session => {
+                    self.groups.members_of(row.pane).to_vec()
+                }
+                (true, true) => Vec::new(),
+                (true, false) => self
+                    .remote_members(&row.host, &row.session, row.pane)
+                    .iter()
+                    .map(|member| member.pane)
+                    .collect(),
             };
             out.push(row.clone());
+
+            let named: BTreeMap<u32, String> = if row.host.is_empty() {
+                BTreeMap::new()
+            } else {
+                self.remote_members(&row.host, &row.session, row.pane)
+                    .into_iter()
+                    .map(|member| (member.pane, member.name))
+                    .collect()
+            };
 
             for member in members.into_iter().filter(|member| *member != row.pane) {
                 // What is running in it, not the pane title: a shell's title is
@@ -1531,9 +1627,9 @@ impl Sidebar {
                 // From the cache `group_rows` filled a moment ago — asking the
                 // host here instead cost one round-trip per hidden pane per
                 // rebuild, which on a row of seven is what made j and k crawl.
-                let title = self
-                    .programs
+                let title = named
                     .get(&member)
+                    .or_else(|| self.programs.get(&member))
                     .filter(|program| !program.is_empty())
                     .cloned()
                     .unwrap_or_else(|| row.label().to_owned());
@@ -1546,6 +1642,10 @@ impl Sidebar {
                     title,
                     panes: 1,
                     depth: 1,
+                    // Explicitly, not inherited: `..row.clone()` made every pane
+                    // under a row another row, which is what `Enter`, the glyph
+                    // and every remote member were reading.
+                    kind: Kind::Pane,
                     ..row.clone()
                 });
             }
@@ -1677,6 +1777,29 @@ impl Sidebar {
         {
             self.groups.add(visible, opened);
         }
+    }
+
+    /// The panes a row on another machine holds, as that machine published them.
+    fn remote_members(&self, host: &str, session: &str, primary: u32) -> Vec<scan::Member> {
+        self.remote_rows
+            .get(host)
+            .map(|(_, members)| members)
+            .into_iter()
+            .flatten()
+            .filter(|member| member.session == session && member.primary == primary)
+            .cloned()
+            .collect()
+    }
+
+    /// What a row on another machine says about itself: how many panes it holds,
+    /// so it draws as a row rather than as a lone pane.
+    fn remote_row(&self, host: &str, session: &str, primary: u32) -> Option<scan::Row> {
+        self.remote_rows
+            .get(host)?
+            .0
+            .iter()
+            .find(|row| row.session == session && row.primary == primary)
+            .cloned()
     }
 
     /// Where an agent on that machine is working, so a pane opened there starts
