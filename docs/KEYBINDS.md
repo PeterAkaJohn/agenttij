@@ -78,6 +78,10 @@ A machine running the controller (`layouts/agenttij-remote.kdl`) publishes its
 rows, and the sidebar here draws them as rows rather than as lone panes: `⇥ api 3`
 opens with `Tab` and lists its panes, named after what runs in them over there.
 
+Those rows do not need an agent in them. A session on that machine with nothing
+but a shell in it is still somewhere to go, and the controller says so — the same
+way a plain pane is a row on this machine.
+
 The keys then mean the same thing they mean here, and are carried out by that
 machine because only a plugin inside a session can suppress a pane:
 

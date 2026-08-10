@@ -52,6 +52,10 @@ pub struct Row {
     pub current: u32,
     /// How many panes the row owns.
     pub panes: usize,
+    /// What that machine calls it. Without this a session where nothing reports —
+    /// a shell someone left open — would have no name to draw, and a row with no
+    /// name is a row a sidebar cannot show.
+    pub name: String,
 }
 
 /// One pane of a row on another machine, named after whatever runs in it.
@@ -72,8 +76,8 @@ pub fn publish_rows_command(rows: &[Row], members: &[Member]) -> [String; 4] {
     let mut text = String::new();
     for row in rows {
         text.push_str(&format!(
-            "{ROW_PREFIX}{}\t{}\t{}\t{}\n",
-            row.session, row.primary, row.current, row.panes
+            "{ROW_PREFIX}{}\t{}\t{}\t{}\t{}\n",
+            row.session, row.primary, row.current, row.panes, row.name
         ));
     }
     for member in members {
@@ -110,11 +114,13 @@ fn parse_row(line: &str) -> Option<Row> {
     let primary = fields.next()?.trim().parse().ok()?;
     let current = fields.next()?.trim().parse().ok()?;
     let panes = fields.next()?.trim().parse().ok()?;
+    let name = fields.next().unwrap_or_default().trim();
     (!session.is_empty()).then(|| Row {
         session: session.to_owned(),
         primary,
         current,
         panes,
+        name: name.to_owned(),
     })
 }
 
@@ -484,6 +490,7 @@ mod tests {
                 primary: 0,
                 current: 3,
                 panes: 2,
+                name: "api".into(),
             }],
             &[Member {
                 session: "box".into(),
@@ -498,6 +505,7 @@ mod tests {
         assert_eq!(scan.rows.len(), 1);
         assert_eq!(scan.rows[0].current, 3);
         assert_eq!(scan.rows[0].panes, 2);
+        assert_eq!(scan.rows[0].name, "api", "a row a sidebar can draw");
         assert_eq!(scan.members[0].name, "nvim", "so the row can be opened up");
         assert!(
             scan.agents.is_empty(),

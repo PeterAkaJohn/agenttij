@@ -582,6 +582,32 @@ impl Sidebar {
         for agents in self.remote.values() {
             reported.extend(agents.iter().cloned());
         }
+        // A machine can have rows with no agent in them — a shell someone left
+        // open is still somewhere to go. The controller there published them, so
+        // they are rows here too, the same as a plain pane is one locally.
+        for (host, (rows, _)) in &self.remote_rows {
+            for row in rows {
+                let known = reported
+                    .iter()
+                    .any(|agent| agent.session == row.session && agent.pane == row.primary);
+                if known {
+                    continue;
+                }
+                reported.push(Agent {
+                    session: row.session.clone(),
+                    pane: row.primary,
+                    status: Status::Pane,
+                    host: host.clone(),
+                    title: row.name.clone(),
+                    // What that machine calls it is also what to file it under,
+                    // or every row from a session with no agents lands in the
+                    // project that has no name.
+                    root: row.name.clone(),
+                    panes: row.panes,
+                    ..Agent::default()
+                });
+            }
+        }
         let mut agents = panes::reconcile(reported, &self.panes, &self.live_sessions);
         let discovered = panes::discover(&self.panes, &agents, &self.config.agents);
         agents.extend(discovered);
@@ -1377,6 +1403,26 @@ impl Sidebar {
         })
     }
 
+    /// What to call a row when telling someone else about it.
+    ///
+    /// From the directory, never from `label`: that falls back to the pane's own
+    /// title, which this plugin sets — so a published name would be the name it
+    /// last published, and the first one it published was a status glyph.
+    fn row_name(&self, primary: u32) -> String {
+        let named = self
+            .agents
+            .iter()
+            .find(|agent| agent.pane == primary)
+            .map(|agent| project::display(project::root(agent)).to_owned())
+            .unwrap_or_default();
+
+        if named.is_empty() {
+            self.current_session.clone()
+        } else {
+            named
+        }
+    }
+
     /// Publishes this machine's rows for a sidebar elsewhere, when they change.
     fn publish_rows(&mut self) {
         if !self.config.remote {
@@ -1391,6 +1437,7 @@ impl Sidebar {
                     primary,
                     current: self.groups.current_of(primary)?,
                     panes,
+                    name: self.row_name(primary),
                 })
             })
             .collect();
@@ -1400,12 +1447,7 @@ impl Sidebar {
         let members: Vec<scan::Member> = rows
             .iter()
             .flat_map(|row| {
-                let label = self
-                    .agents
-                    .iter()
-                    .find(|agent| agent.pane == row.primary)
-                    .map(|agent| agent.label().to_owned())
-                    .unwrap_or_default();
+                let label = self.row_name(row.primary);
                 self.groups
                     .members_of(row.primary)
                     .iter()

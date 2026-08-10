@@ -77,18 +77,17 @@ EOF
         }
         cp "$wasm" "$work/agenttij.wasm"
         if [ -n "$controller" ]; then
-            # Two panes and a controller, which takes itself off the screen: what
-            # a dev box would run. It has to be in the layout — `launch-plugin`
-            # is refused for a session with no client attached ("No connected
-            # clients found"), and a background session has none.
+            # A bare session — one shell — and a controller that takes itself off
+            # the screen: what a dev box actually looks like. Nothing pretends to
+            # be an agent; the rows you see come from the controller.
+            #
+            # The controller has to be in the layout: `launch-plugin` is refused
+            # for a session with nobody attached ("No connected clients found"),
+            # and a session waiting for you to arrive has nobody attached.
             cat >"$work/box.kdl" <<'EOF'
 layout {
-    pane command="sh" {
-        args "-c" "echo 'api: may I write to src/main.rs? (y/n)'; exec sleep 100000"
-    }
-    pane command="sh" {
-        args "-c" "echo 'web: building...'; exec sleep 100000"
-    }
+    pane
+
     // Floating, and it can never take focus — so it is never on screen: Zellij
     // shows floating panes only while one of them is focused.
     floating_panes {
@@ -147,6 +146,10 @@ set -eu
 su dev -c 'HOME=/home/dev TERM=xterm-256color \
     zellij --layout /home/dev/box.kdl attach box --create-background' || true
 sleep 2
+
+# A controller box reports nothing: no fake agents, just a shell and the
+# controller. The rows a sidebar sees come from what the controller publishes.
+[ -f /home/dev/.controller ] && exec tail -f /dev/null
 
 panes=$(su dev -c 'HOME=/home/dev zellij -s box action list-panes' 2>/dev/null |
     awk '$1 ~ /^terminal_/ { sub(/terminal_/, "", $1); print $1 }' | sort -n)
