@@ -50,6 +50,10 @@ pub struct Config {
     pub peek_host: String,
     /// Set on a bar instance: one line of counts instead of a column of rows.
     pub bar: bool,
+    /// Set on a controller: no column, no keys, nothing on screen. It manages
+    /// this machine's rows on behalf of a sidebar somewhere else, which reaches
+    /// it by pipe and reads what it publishes.
+    pub remote: bool,
     /// Set on a jump instance: this one is the palette — everywhere you could
     /// go, filtered by typing.
     pub jump: bool,
@@ -71,6 +75,7 @@ impl Default for Config {
             colors_raw: String::new(),
             notify: Vec::new(),
             bar: false,
+            remote: false,
             hosts: Vec::new(),
             peek_host: String::new(),
             peek: None,
@@ -102,10 +107,14 @@ impl Config {
             _ => Scope::All,
         };
 
-        let solo = configuration.get("solo").map(|raw| raw.trim()) == Some("true");
+        let solo = configuration.get("solo").map(|raw| raw.trim()) == Some("true")
+            || configuration.get("remote").map(|raw| raw.trim()) == Some("true");
         let help = configuration.get("help").map(|raw| raw.trim()) == Some("true");
         let jump = configuration.get("jump").map(|raw| raw.trim()) == Some("true");
         let bar = configuration.get("bar").map(|raw| raw.trim()) == Some("true");
+        // A controller is a sidebar with no screen, and solo is what it is for:
+        // one pane of a row visible, the rest parked.
+        let remote = configuration.get("remote").map(|raw| raw.trim()) == Some("true");
         let position = configuration.get("position").map(|raw| raw.trim()) != Some("false");
 
         // What each mode calls its pane when a layout does not say. Two panes
@@ -167,6 +176,7 @@ impl Config {
             colors_raw,
             notify,
             bar,
+            remote,
             hosts,
             peek_host,
             peek,
@@ -284,6 +294,13 @@ mod tests {
         assert!(Config::from_map(&map(&[])).position);
         assert!(Config::from_map(&map(&[("position", "true")])).position);
         assert!(!Config::from_map(&map(&[("position", "false")])).position);
+    }
+
+    #[test]
+    fn a_controller_is_solo_without_being_told() {
+        let control = Config::from_map(&map(&[("remote", "true")]));
+        assert!(control.remote);
+        assert!(control.solo, "one pane of a row visible is the whole job");
     }
 
     #[test]

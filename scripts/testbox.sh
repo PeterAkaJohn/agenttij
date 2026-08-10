@@ -4,7 +4,8 @@
 # something to show.
 #
 #   scripts/testbox.sh up             # build, start, print the host string
-#   scripts/testbox.sh up --sidebar   # ... with agenttij running in it too
+#   scripts/testbox.sh up --sidebar   # ... with a full sidebar running in it
+#   scripts/testbox.sh up --controller # ... with a hidden controller only
 #   scripts/testbox.sh down           # remove it
 #
 # With `--sidebar` the box runs the plugin as well, which is what makes adding a
@@ -22,7 +23,9 @@ image=agenttij-testbox
 case "${1:-up}" in
 up)
     sidebar=""
+    controller=""
     [ "${2:-}" = "--sidebar" ] && sidebar=yes
+    [ "${2:-}" = "--controller" ] && { sidebar=yes; controller=yes; }
     work=$(mktemp -d)
     trap 'rm -rf "$work"' EXIT
     cat ~/.ssh/*.pub >"$work/key.pub" 2>/dev/null || {
@@ -73,8 +76,33 @@ EOF
             exit 1
         }
         cp "$wasm" "$work/agenttij.wasm"
-        # Its own solo workspace, the same shape as agenttij-workspace.kdl.
-        cat >"$work/box.kdl" <<'EOF'
+        if [ -n "$controller" ]; then
+            # Two panes and a controller, which takes itself off the screen: what
+            # a dev box would run. It has to be in the layout — `launch-plugin`
+            # is refused for a session with no client attached ("No connected
+            # clients found"), and a background session has none.
+            cat >"$work/box.kdl" <<'EOF'
+layout {
+    pane command="sh" {
+        args "-c" "echo 'api: may I write to src/main.rs? (y/n)'; exec sleep 100000"
+    }
+    pane command="sh" {
+        args "-c" "echo 'web: building...'; exec sleep 100000"
+    }
+    // Floating, and it can never take focus — so it is never on screen: Zellij
+    // shows floating panes only while one of them is focused.
+    floating_panes {
+        pane {
+            plugin location="file:/home/dev/.config/zellij/plugins/agenttij.wasm" {
+                remote "true"
+            }
+        }
+    }
+}
+EOF
+        else
+            # Its own solo workspace, the same shape as agenttij-workspace.kdl.
+            cat >"$work/box.kdl" <<'EOF'
 layout {
     pane split_direction="vertical" {
         pane size="20%" {
@@ -89,6 +117,7 @@ layout {
     }
 }
 EOF
+        fi
         # Pre-granted, or the plugin sits on a prompt nobody can answer.
         cat >"$work/permissions.kdl" <<'EOF'
 "/home/dev/.config/zellij/plugins/agenttij.wasm" {
@@ -134,6 +163,11 @@ second=$(echo "$panes" | sed -n 2p)
 tail -f /dev/null
 EOF
 
+    [ -n "$controller" ] && printf 'yes\n' >"$work/controller" || : >"$work/controller"
+    cat >>"$work/Dockerfile" <<'EOF'
+COPY controller /home/dev/.controller.maybe
+RUN if [ -s /home/dev/.controller.maybe ]; then mv /home/dev/.controller.maybe /home/dev/.controller;     else rm -f /home/dev/.controller.maybe; fi
+EOF
     docker build -q -t "$image" "$work" >/dev/null
     docker rm -f "$name" >/dev/null 2>&1 || true
     docker run -d --name "$name" "$image" >/dev/null

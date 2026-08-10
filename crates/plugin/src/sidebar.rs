@@ -151,6 +151,9 @@ pub struct Sidebar {
     peeked: Vec<String>,
     /// The palette, when this instance is one.
     palette: Jump,
+    /// What this controller last told the world about its rows, so it only says
+    /// so again when the answer changed.
+    published: Vec<scan::Row>,
     /// Sessions Zellij can bring back, for the palette to offer.
     dead_sessions: Vec<String>,
     /// What each watched machine last told us, and when to ask it again.
@@ -203,9 +206,9 @@ impl ZellijPlugin for Sidebar {
         // palette, which has to hold focus to be typed into at all. Unselectable
         // meant focus bounced straight back to the sidebar, whose next keystroke
         // closes whatever floating instance it opened.
-        // A bar is a status line: it should never take focus, the way Zellij's own
-        // status bar never does.
-        set_selectable(!self.config.bar);
+        // A bar is a status line and a controller is not on screen at all;
+        // neither should ever take focus.
+        set_selectable(!self.config.bar && !self.config.remote);
         // The keybind list never changes, so it has nothing to wake up for.
         if !self.config.help {
             set_timeout(TICK_SECONDS);
@@ -291,6 +294,30 @@ impl ZellijPlugin for Sidebar {
             "back" => self.go_back(),
             "new" => self.new_row(),
             "add" => self.add_to_row(),
+            // A controller is told which pane to show, since the sidebar asking
+            // is looking at a list of them.
+            "show" => {
+                if let Some(pane) = message
+                    .payload
+                    .as_deref()
+                    .and_then(|p| p.trim().parse().ok())
+                {
+                    self.show_pane(pane);
+                }
+            }
+            "close" => {
+                if let Some(pane) = message
+                    .payload
+                    .as_deref()
+                    .and_then(|p| p.trim().parse().ok())
+                {
+                    let closing = self.groups.closing(pane, true);
+                    for pane in closing {
+                        show_pane_with_id(PaneId::Terminal(pane), false, false);
+                        close_pane_with_id(PaneId::Terminal(pane));
+                    }
+                }
+            }
             _ => {}
         }
         false
@@ -311,6 +338,10 @@ impl ZellijPlugin for Sidebar {
         }
         if self.config.bar {
             render::draw_bar(&self.agents, self.now, cols, &self.config.colors);
+            return;
+        }
+        // A controller draws nothing. It is not on the screen to draw on.
+        if self.config.remote {
             return;
         }
 
@@ -596,6 +627,7 @@ impl Sidebar {
         };
 
         self.agents = agents;
+        self.publish_rows();
         self.resync_selection();
         self.label_positions();
     }
@@ -1295,6 +1327,33 @@ impl Sidebar {
             0 | 1 => format!("close {}? d", agent.label()),
             panes => format!("close {} +{}? d", agent.label(), panes - 1),
         })
+    }
+
+    /// Publishes this machine's rows for a sidebar elsewhere, when they change.
+    fn publish_rows(&mut self) {
+        if !self.config.remote {
+            return;
+        }
+        let rows: Vec<scan::Row> = self
+            .groups
+            .rows()
+            .filter_map(|(primary, panes)| {
+                Some(scan::Row {
+                    session: self.current_session.clone(),
+                    primary,
+                    current: self.groups.current_of(primary)?,
+                    panes,
+                })
+            })
+            .collect();
+
+        if rows == self.published {
+            return;
+        }
+        self.published = rows.clone();
+        let command = scan::publish_rows_command(&rows);
+        let words: Vec<&str> = command.iter().map(String::as_str).collect();
+        run_command(&words, BTreeMap::new());
     }
 
     /// Names our pane, once. Renaming needs ChangeApplicationState, and

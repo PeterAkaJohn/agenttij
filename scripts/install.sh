@@ -123,7 +123,7 @@ cp "$wasm" "$plugin_dir/agenttij.wasm"
 
 echo "installing layouts -> $layout_dir"
 mkdir -p "$layout_dir"
-for side in left right workspace everything; do
+for side in left right workspace everything remote; do
     sed "s|file:~/.config/zellij/plugins/agenttij.wasm|$plugin_url|" \
         "$repo/layouts/agenttij-$side.kdl" >"$layout_dir/agenttij-$side.kdl"
 done

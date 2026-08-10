@@ -35,6 +35,59 @@ const SCAN_SCRIPT: &str =
 /// Marks the session you jumped away from, in the scan output.
 const FROM_PREFIX: &str = "from=";
 
+/// A row published by a controller: `row <session> <primary> <current> <count>`.
+const ROW_PREFIX: &str = "row=";
+
+/// What a controller says about one of its rows, so a sidebar on another machine
+/// can draw it as a row rather than as a single pane.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Row {
+    pub session: String,
+    /// The pane the row is named by, and the one a sidebar addresses it as.
+    pub primary: u32,
+    /// Which member is on screen over there.
+    pub current: u32,
+    /// How many panes the row owns.
+    pub panes: usize,
+}
+
+/// The file a controller writes beside the state files, and a scan reads with the
+/// same `cat`.
+///
+/// Written only when it changes — a controller that redescribed itself every
+/// second would be a fork a second on someone else's machine.
+pub fn publish_rows_command(rows: &[Row]) -> [String; 4] {
+    let text: String = rows
+        .iter()
+        .map(|row| {
+            format!(
+                "{ROW_PREFIX}{}\t{}\t{}\t{}\n",
+                row.session, row.primary, row.current, row.panes
+            )
+        })
+        .collect();
+    [
+        "sh".to_owned(),
+        "-c".to_owned(),
+        format!("mkdir -p {STATE_DIR} && printf '%s' \"$0\" > {STATE_DIR}/rows"),
+        text,
+    ]
+}
+
+fn parse_row(line: &str) -> Option<Row> {
+    let mut fields = line.split('\t');
+    let session = fields.next()?.trim();
+    let primary = fields.next()?.trim().parse().ok()?;
+    let current = fields.next()?.trim().parse().ok()?;
+    let panes = fields.next()?.trim().parse().ok()?;
+    (!session.is_empty()).then(|| Row {
+        session: session.to_owned(),
+        primary,
+        current,
+        panes,
+    })
+}
+
 /// Records the session being left, so the sidebar in the one being entered can
 /// take you back.
 ///
@@ -71,7 +124,8 @@ pub fn host_command(host: &str) -> [String; 8] {
         "ConnectTimeout=3".to_owned(),
         "-T".to_owned(),
         host.to_owned(),
-        format!("cat {STATE_DIR}/*.state 2>/dev/null; true"),
+        // The rows a controller published come back with the same `cat`.
+        format!("cat {STATE_DIR}/*.state {STATE_DIR}/rows 2>/dev/null; true"),
     ]
 }
 
@@ -264,6 +318,8 @@ pub struct Scan {
     pub agents: Vec<Agent>,
     /// The session someone jumped away from, if anyone has.
     pub from: Option<String>,
+    /// Rows a controller published, when this scan read a machine that has one.
+    pub rows: Vec<Row>,
 }
 
 /// Parses scan output. Unreadable lines are skipped rather than failing the
@@ -276,15 +332,25 @@ pub fn parse(stdout: &[u8]) -> Option<Scan> {
 
     let mut from = None;
     let mut agents = Vec::new();
+    let mut rows = Vec::new();
     for line in lines {
-        match line.strip_prefix(FROM_PREFIX) {
-            Some(session) if !session.trim().is_empty() => from = Some(session.trim().to_owned()),
-            Some(_) => {}
-            None => agents.extend(parse_agent(line)),
+        if let Some(row) = line.strip_prefix(ROW_PREFIX) {
+            rows.extend(parse_row(row));
+        } else if let Some(session) = line.strip_prefix(FROM_PREFIX) {
+            if !session.trim().is_empty() {
+                from = Some(session.trim().to_owned());
+            }
+        } else {
+            agents.extend(parse_agent(line));
         }
     }
 
-    Some(Scan { now, agents, from })
+    Some(Scan {
+        now,
+        agents,
+        from,
+        rows,
+    })
 }
 
 /// `<status>\t<session>\t<pane>\t<unix-seconds>\t<cwd>[\t<root>[\t<host>]]`
@@ -345,6 +411,23 @@ mod tests {
         // The session list is a host call now; forking a client for it cost
         // three times the rest of the script.
         assert!(!command()[2].contains("list-sessions"));
+    }
+
+    #[test]
+    fn a_controller_rows_ride_along_with_the_state_files() {
+        let published = publish_rows_command(&[Row {
+            session: "box".into(),
+            primary: 0,
+            current: 3,
+            panes: 2,
+        }]);
+        assert!(published[2].contains(STATE_DIR));
+
+        let scan = parse(format!("0\n{}", published[3]).as_bytes()).expect("parses");
+        assert_eq!(scan.rows.len(), 1);
+        assert_eq!(scan.rows[0].current, 3);
+        assert_eq!(scan.rows[0].panes, 2);
+        assert!(scan.agents.is_empty(), "and are not mistaken for agents");
     }
 
     #[test]

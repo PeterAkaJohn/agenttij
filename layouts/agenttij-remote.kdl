@@ -1,0 +1,37 @@
+// For a machine you watch from somewhere else: your work, and a controller.
+//
+//   zellij -n agenttij-remote          on the dev box
+//
+// There is no sidebar here on purpose. A sidebar is a column you look at, and you
+// are not looking at this machine — you are looking at it through the sidebar on
+// the one in front of you. What this layout adds instead is a *controller*: the
+// same plugin with `remote "true"`, which draws nothing, takes no keys, and does
+// three things.
+//
+//   - keeps this session to one pane of a row at a time, with real suppressed
+//     panes, the way `solo "true"` does at home
+//   - publishes its rows to /tmp/agenttij/rows, which a sidebar elsewhere reads
+//     over ssh along with the state files
+//   - does what that sidebar asks: `zellij -s <session> pipe --name add`, or
+//     cycle, show, close
+//
+// It is declared *floating*, which is what keeps it off the screen: Zellij shows
+// floating panes only while one of them holds focus, and this one is unselectable
+// so it never can. `hide_self` looks like the obvious way to do that and was
+// measured not removing a plugin pane from the layout.
+//
+// It also has to be here rather than launched on demand: `zellij action
+// launch-plugin` is refused for a session with nobody attached ("No connected
+// clients found"), and a session waiting for you to arrive has nobody attached.
+layout {
+    pane
+    pane
+
+    floating_panes {
+        pane {
+            plugin location="file:~/.config/zellij/plugins/agenttij.wasm" {
+                remote "true"
+            }
+        }
+    }
+}
