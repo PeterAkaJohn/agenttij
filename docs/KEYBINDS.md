@@ -72,6 +72,23 @@ machine. A bar next to a `scope "session"` sidebar will therefore say more than
 the sidebar does, which is usually the point; add `scope "session"` to it if you
 would rather they agreed.
 
+### Adding a pane where the work is
+
+`a` and `Alt m` add a pane to the row on screen. When that row is a session on
+another machine — a pane you opened with `Enter` on a `⇥` row — the new pane is
+created *there*, inside that session, by Zellij's own CLI over ssh. It appears in
+the view you are already looking at, and to anyone else attached to that session,
+which a second ssh connection of our own would not.
+
+It starts in the directory the agent over there is working in. That is done with
+a `cd` rather than `new-pane --cwd`, which was measured being ignored for a
+session started detached — the pane came up in `/` whatever was asked for.
+
+The one gap: only attachments made with `Enter` from the sidebar are remembered
+this way. Jumping to a remote session from the palette (`Alt t`) opens the same
+pane, but the sidebar did not open it and does not know what it is, so `a` there
+adds a local pane.
+
 ### Machines
 
 `h` opens the list of machines to watch, prefilled with the ones already being

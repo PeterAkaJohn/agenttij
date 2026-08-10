@@ -103,6 +103,39 @@ pub fn dump_command(host: &str, session: &str, pane: u32) -> Vec<String> {
     command
 }
 
+/// Quotes a word for the shell on the far side of an ssh, which sees a command
+/// as one string however carefully it was assembled here.
+fn quoted(word: &str) -> String {
+    format!("'{}'", word.replace('\'', r"'\''"))
+}
+
+/// Opens a pane inside a session on another machine.
+///
+/// Zellij's own CLI does the work — the same way a peek reads a pane over there —
+/// so the pane belongs to that session and shows up for anyone attached to it,
+/// rather than being a second connection pretending to be part of it.
+///
+/// The directory is applied with a `cd` rather than `--cwd`, which was measured
+/// being ignored for a session started detached: the pane came up in `/` whatever
+/// was asked for. A `cd` is honoured because it happens inside the pane.
+pub fn remote_pane_command(host: &str, session: &str, cwd: Option<&str>) -> Vec<String> {
+    let mut remote = format!("zellij -s {} action new-pane", quoted(session));
+    if let Some(cwd) = cwd.filter(|cwd| !cwd.is_empty()) {
+        // Three shells deep: this one is read by the remote shell, which hands
+        // the inner script to `sh -c` inside the pane.
+        let script = format!(r#"cd {} 2>/dev/null; exec "${{SHELL:-sh}}""#, quoted(cwd));
+        remote.push_str(&format!(" -- sh -c {}", quoted(&script)));
+    }
+    vec![
+        "ssh".to_owned(),
+        "-o".to_owned(),
+        "BatchMode=yes".to_owned(),
+        "-T".to_owned(),
+        host.to_owned(),
+        remote,
+    ]
+}
+
 /// Opens a session on another machine: an ssh with a terminal, attaching. There
 /// is no switching to it — a session belongs to the machine running it — so the
 /// honest equivalent is a pane here that is sitting inside it.
@@ -312,6 +345,26 @@ mod tests {
         let command = dump_command("", "main", 7);
         assert_eq!(command[2], "main");
         assert!(command.last().unwrap().ends_with("terminal_7"));
+    }
+
+    #[test]
+    fn a_pane_can_be_opened_inside_a_session_on_another_machine() {
+        let command = remote_pane_command("dev1", "box", Some("/srv/api"));
+        assert_eq!(command[0], "ssh");
+        assert_eq!(command[4], "dev1");
+        assert_eq!(
+            command[5],
+            r#"zellij -s 'box' action new-pane -- sh -c 'cd '\''/srv/api'\'' 2>/dev/null; exec "${SHELL:-sh}"'"#
+        );
+
+        // No directory is not an empty one.
+        let bare = remote_pane_command("dev1", "box", None);
+        assert_eq!(bare[5], "zellij -s 'box' action new-pane");
+        // And whatever the shell over there would have made of a quote.
+        assert_eq!(
+            remote_pane_command("dev1", "it's", None)[5],
+            r"zellij -s 'it'\''s' action new-pane"
+        );
     }
 
     #[test]

@@ -105,7 +105,10 @@ starts a container running sshd and a zellij session with two panes, one state
 file each, and prints the host string to paste into `h` — enough that peeking
 shows real pane contents and `Enter` attaches to a real session. `Enter` on a remote row opens a pane here attached to
 that session, because Zellij cannot show a pane it does not own; `p` peeks at it
-without leaving.
+without leaving. And once you are looking at that session, `a` (or `Alt m`) adds
+a pane *on that machine*, in the directory its agent is working in — Zellij's own
+CLI over ssh, so the pane belongs to that session rather than to a second
+connection pretending to.
 
 Set up connection sharing for those hosts or every scan pays for a handshake:
 

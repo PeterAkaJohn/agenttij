@@ -92,6 +92,10 @@ pub struct Sidebar {
     live_sessions: Vec<String>,
     /// The row we were on before this one, for flipping back to it.
     previous_row: Option<u32>,
+    /// Local panes that are sitting inside a session on another machine, and
+    /// which one. Adding a pane while looking at one of these puts it *there*:
+    /// the row you can see belongs to that machine, so the pane should too.
+    attached: BTreeMap<u32, (String, String)>,
     /// The session someone jumped away from, so `B` can go back to it. Shared
     /// through a file, because the sidebar there is a different instance in a
     /// different process.
@@ -701,8 +705,12 @@ impl Sidebar {
                         actions::attach(&agent.host, &agent.session, visible, self.config.solo);
                     // Joins the row you were on, like `a` does: it took that
                     // row's place on screen, so `v` gets you back.
-                    if let (Some(PaneId::Terminal(opened)), Some(visible)) = (opened, visible) {
-                        self.groups.add(visible, opened);
+                    if let Some(PaneId::Terminal(opened)) = opened {
+                        if let Some(visible) = visible {
+                            self.groups.add(visible, opened);
+                        }
+                        self.attached
+                            .insert(opened, (agent.host.clone(), agent.session.clone()));
                     }
                     return false;
                 }
@@ -1580,11 +1588,30 @@ impl Sidebar {
             self.new_row();
             return;
         };
+
+        // Looking at another machine's session: the pane belongs over there, in
+        // it — a pane here would be a second connection pretending to be part of
+        // that workspace. Zellij's own CLI opens it, so anyone attached sees it.
+        if let Some((host, session)) = self.attached.get(&visible).cloned() {
+            let cwd = self.remote_cwd(&host, &session);
+            actions::add_remote_pane(&host, &session, cwd.as_deref());
+            return;
+        }
         if let Some(PaneId::Terminal(opened)) =
             actions::new_in_slot(&self.panes, &self.current_session, self.config.solo)
         {
             self.groups.add(visible, opened);
         }
+    }
+
+    /// Where an agent on that machine is working, so a pane opened there starts
+    /// in the same place rather than in whatever `$HOME` it logs into.
+    fn remote_cwd(&self, host: &str, session: &str) -> Option<String> {
+        self.remote
+            .get(host)?
+            .iter()
+            .find(|agent| agent.session == session && !agent.cwd.is_empty())
+            .map(|agent| agent.cwd.clone())
     }
 
     /// A pane of its own: reconciliation turns anything ungrouped into a row.

@@ -32,7 +32,9 @@ RUN wget -qO- "https://github.com/zellij-org/zellij/releases/download/$ZELLIJ/ze
 # Unlocked, or sshd refuses the key: adduser leaves the account with a locked
 # password, and public-key auth is denied for locked accounts.
 RUN adduser -D -s /bin/sh dev && passwd -u dev
-RUN mkdir -p /home/dev/.ssh /tmp/agenttij /home/dev/.config/zellij
+# /srv/api and /srv/web are the projects its state files claim, so a pane opened
+# there by the sidebar has somewhere to land.
+RUN mkdir -p /home/dev/.ssh /tmp/agenttij /home/dev/.config/zellij /srv/api /srv/web
 # Without a config, zellij greets the session with its first-run wizard, which
 # is the first thing you would see on attaching.
 RUN printf 'show_startup_tips false\nshow_release_notes false\n' \

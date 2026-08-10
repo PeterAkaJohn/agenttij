@@ -163,6 +163,13 @@ pub fn help(own_url: &str) -> Option<PaneId> {
     open_plugin_pane_floating(own_url, configuration, coordinates, BTreeMap::new())
 }
 
+/// Opens a pane inside a session on another machine, where the work is.
+pub fn add_remote_pane(host: &str, session: &str, cwd: Option<&str>) {
+    let command = agenttij_core::scan::remote_pane_command(host, session, cwd);
+    let words: Vec<&str> = command.iter().map(String::as_str).collect();
+    run_command(&words, BTreeMap::new());
+}
+
 /// Attaches to a session on another machine, in a pane here.
 ///
 /// The closest thing to jumping that exists: Zellij cannot show a pane it does
