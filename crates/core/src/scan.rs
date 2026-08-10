@@ -111,44 +111,52 @@ fn quoted(word: &str) -> String {
 
 /// Every terminal pane in a session on another machine, gathered into one stack.
 ///
-/// A stack is what solo mode looks like from over there: one pane expanded, the
-/// rest collapsed to title lines, and a new pane joining on its own. There is no
-/// suppressing a pane through the CLI — and no need, since this is the same
-/// promise, kept by Zellij rather than by us.
+/// A stack is what solo mode looks like from outside: one pane expanded, the rest
+/// collapsed to title lines, and a new pane joining on its own. There is no
+/// suppressing a pane through the CLI — that is a plugin call, and a plugin has
+/// to be *in* the session to make it.
 ///
-/// Safe to run again: re-stacking an already stacked session was measured
-/// leaving every pane where it was.
+/// Only used when no agenttij answered over there, so nothing it stacks is a
+/// pane something else has suppressed. Safe to run twice: re-stacking an already
+/// stacked session was measured leaving every pane where it was.
 fn stack(session: &str) -> String {
     format!(
         "ids=$(zellij -s {session} action list-panes | grep -o '^terminal_[0-9]*'); \
-         [ -n \"$ids\" ] && zellij -s {session} action stack-panes -- $ids",
-        session = quoted(session)
+         [ -n \"$ids\" ] && zellij -s {session} action stack-panes -- $ids"
     )
 }
 
-/// Gathers a remote session into one stack, so it shows one pane at a time.
-pub fn remote_stack_command(host: &str, session: &str) -> Vec<String> {
-    over_ssh(host, stack(session))
-}
-
-/// Opens a pane inside a session on another machine, and keeps that session
-/// showing one pane at a time.
+/// Adds a pane to a session on another machine, the way that machine would.
 ///
-/// Zellij's own CLI does the work — the same way a peek reads a pane over there —
-/// so the pane belongs to that session and shows up for anyone attached to it,
-/// rather than being a second connection pretending to be part of it.
+/// Asks first: a pipe with no `--plugin` goes to every plugin in that session, so
+/// an agenttij running there receives the same message `Alt m` sends here and does
+/// the same thing — opens a pane in its slot and parks the one that was there,
+/// with real suppressed panes rather than an imitation.
 ///
-/// The directory is applied with a `cd` rather than `--cwd`, which was measured
-/// being ignored for a session started detached: the pane came up in `/` whatever
-/// was asked for. A `cd` is honoured because it happens inside the pane.
+/// If nothing answers, the pane count over there will not have moved, and this
+/// opens one itself and stacks the session so it still shows one pane at a time.
+/// Which is why it counts rather than looking for a sidebar by name: a plugin's
+/// configuration decides its identity and its title is whatever a layout called
+/// it, but a pane appearing is a pane appearing.
 pub fn remote_pane_command(host: &str, session: &str, cwd: Option<&str>) -> Vec<String> {
-    let mut remote = format!("zellij -s {} action new-pane", quoted(session));
+    let session = quoted(session);
+    let count = format!("zellij -s {session} action list-panes | grep -c '^terminal_'");
+
+    let mut fallback = format!("zellij -s {session} action new-pane");
     if let Some(cwd) = cwd.filter(|cwd| !cwd.is_empty()) {
+        // Three shells deep: this one is read by the remote shell, which hands
+        // the inner script to `sh -c` inside the pane. `--cwd` was measured being
+        // ignored for a session started detached; a `cd` is honoured because it
+        // happens inside the pane.
         let script = format!(r#"cd {} 2>/dev/null; exec "${{SHELL:-sh}}""#, quoted(cwd));
-        remote.push_str(&format!(" -- sh -c {}", quoted(&script)));
+        fallback.push_str(&format!(" -- sh -c {}", quoted(&script)));
     }
-    remote.push_str("; ");
-    remote.push_str(&stack(session));
+
+    let remote = format!(
+        "before=$({count}); zellij -s {session} pipe --name add >/dev/null 2>&1; sleep 1; \
+         [ \"$({count})\" != \"$before\" ] || {{ {fallback}; {} ; }}",
+        stack(&session)
+    );
     over_ssh(host, remote)
 }
 
@@ -376,29 +384,32 @@ mod tests {
     }
 
     #[test]
-    fn a_pane_can_be_opened_inside_a_session_on_another_machine() {
+    fn adding_a_pane_over_there_asks_that_machine_first() {
         let command = remote_pane_command("dev1", "box", Some("/srv/api"));
         assert_eq!(command[0], "ssh");
         assert_eq!(command[4], "dev1");
-        assert!(command[5].starts_with(
-            r#"zellij -s 'box' action new-pane -- sh -c 'cd '\''/srv/api'\'' 2>/dev/null; exec "${SHELL:-sh}"'"#
+        let remote = &command[5];
+
+        // Ask: every plugin in that session, so an agenttij there does it the way
+        // it would locally.
+        assert!(remote.contains("zellij -s 'box' pipe --name add"));
+        // Then check whether anything happened, rather than looking for a sidebar
+        // by a name a layout chose.
+        assert!(remote.contains("list-panes | grep -c '^terminal_'"));
+        // And only otherwise do it ourselves, in the agent's directory.
+        assert!(remote.contains(
+            r#"new-pane -- sh -c 'cd '\''/srv/api'\'' 2>/dev/null; exec "${SHELL:-sh}"'"#
         ));
-        // And then gathers the session into one stack, so one pane shows at a
-        // time the way solo mode does here.
-        assert!(command[5].contains("stack-panes"));
+        assert!(remote.contains("stack-panes"));
+    }
 
-        // No directory is not an empty one.
-        let bare = remote_pane_command("dev1", "box", None);
-        assert!(bare[5].starts_with("zellij -s 'box' action new-pane; "));
-        assert!(!bare[5].contains("sh -c"));
-
-        // Stacking on its own, for when a session is simply arrived at.
-        let stacking = remote_stack_command("dev1", "box");
-        assert!(stacking[5].contains("list-panes") && stacking[5].contains("stack-panes"));
-        assert!(!stacking[5].contains("new-pane"));
+    #[test]
+    fn a_directory_nobody_knows_is_not_an_empty_one() {
+        let remote = &remote_pane_command("dev1", "box", None)[5];
+        assert!(remote.contains("action new-pane;"), "{remote}");
+        assert!(!remote.contains("sh -c"));
         // And whatever the shell over there would have made of a quote.
-        assert!(remote_pane_command("dev1", "it's", None)[5]
-            .starts_with(r"zellij -s 'it'\''s' action new-pane"));
+        assert!(remote_pane_command("dev1", "it's", None)[5].contains(r"-s 'it'\''s' pipe"));
     }
 
     #[test]

@@ -75,20 +75,37 @@ would rather they agreed.
 ### Adding a pane where the work is
 
 `a` and `Alt m` add a pane to the row on screen. When that row is a session on
-another machine — a pane you opened with `Enter` on a `⇥` row — the new pane is
-created *there*, inside that session, by Zellij's own CLI over ssh. It appears in
-the view you are already looking at, and to anyone else attached to that session,
-which a second ssh connection of our own would not.
+another machine — a pane you opened with `Enter` on a `⇥` row — the pane is
+created *there*, and how depends on what is running over there:
 
-It starts in the directory the agent over there is working in. That is done with
-a `cd` rather than `new-pane --cwd`, which was measured being ignored for a
-session started detached — the pane came up in `/` whatever was asked for.
+- **agenttij is running in that session.** It gets the same message `Alt m` sends
+  here, over `zellij -s <session> pipe --name add`, and does the same thing: opens
+  a pane in its slot and parks the one that was there. Real suppressed panes,
+  because the plugin is in the room to ask for them.
+- **it is not.** Then the pane is opened with `new-pane` and the session is
+  gathered into a Zellij *stack* — one pane expanded, the rest collapsed to title
+  lines. Suppressing a pane is a plugin call and cannot be done from outside a
+  session, so a stack is the nearest thing the CLI can offer: the same promise,
+  kept by Zellij rather than by us.
 
-And that session shows one pane at a time, like solo mode does here: arriving in
-it and adding to it both gather its panes into a Zellij *stack*, so one is
-expanded and the rest are title lines. There is no suppressing a pane through the
-CLI, and no need — a stack is the same promise, kept by Zellij rather than by us,
-and a new pane joins it on its own.
+It asks by counting rather than by looking for a sidebar: the pipe carries no
+`--plugin`, so it reaches every plugin in that session whatever its configuration
+is called, and if the pane count over there does not move, nobody answered. A
+plugin's identity is its url *and* its configuration, and we cannot know the
+configuration a layout on another machine chose — but a pane appearing is a pane
+appearing.
+
+Which is the argument for installing agenttij on the machines you watch, beyond
+the hook that reports from them: with it, the far side behaves exactly like this
+one.
+
+The pane starts in the directory the agent over there is working in. That is a
+`cd` rather than `new-pane --cwd`, which was measured being ignored for a session
+started detached — the pane came up in `/` whatever was asked for.
+
+Arriving does *not* rearrange anything any more. Stacking on arrival would have
+had to stack the pane ids `list-panes` reports, and that list includes panes a
+sidebar over there has deliberately suppressed.
 
 The one gap: only attachments made with `Enter` from the sidebar are remembered
 this way. Jumping to a remote session from the palette (`Alt t`) opens the same

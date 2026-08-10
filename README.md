@@ -108,8 +108,13 @@ that session, because Zellij cannot show a pane it does not own; `p` peeks at it
 without leaving. And once you are looking at that session, `a` (or `Alt m`) adds
 a pane *on that machine*, in the directory its agent is working in — Zellij's own
 CLI over ssh, so the pane belongs to that session rather than to a second
-connection pretending to. That session is kept as a stack, so it shows one pane
-at a time the way solo mode does here.
+connection pretending to. If agenttij is running in that
+session too, it receives the same message `Alt m` sends here and parks the
+previous pane exactly as it would locally — which is the reason to install it on
+the machines you watch, not just the hook. If it is not, the pane is opened
+directly and the session is gathered into a Zellij stack instead: one pane
+expanded, the rest as title lines. Suppressing a pane is a plugin call, so it
+needs a plugin in that session; a stack is the same promise kept by Zellij.
 
 Set up connection sharing for those hosts or every scan pays for a handshake:
 

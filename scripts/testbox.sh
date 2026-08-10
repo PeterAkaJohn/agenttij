@@ -3,8 +3,14 @@
 # zellij session with two panes, each with a state file so the sidebar has
 # something to show.
 #
-#   scripts/testbox.sh up      # build, start, print the host string
-#   scripts/testbox.sh down    # remove it
+#   scripts/testbox.sh up             # build, start, print the host string
+#   scripts/testbox.sh up --sidebar   # ... with agenttij running in it too
+#   scripts/testbox.sh down           # remove it
+#
+# With `--sidebar` the box runs the plugin as well, which is what makes adding a
+# pane over there use suppressed panes rather than a stack: the sidebar in that
+# session answers the pipe and does it the way it would locally. Without it, the
+# fallback is what you see.
 #
 # Add the printed host in the sidebar with `h`. Your own public keys are copied
 # in, so the ssh the plugin runs — BatchMode, no password — just works.
@@ -15,6 +21,8 @@ image=agenttij-testbox
 
 case "${1:-up}" in
 up)
+    sidebar=""
+    [ "${2:-}" = "--sidebar" ] && sidebar=yes
     work=$(mktemp -d)
     trap 'rm -rf "$work"' EXIT
     cat ~/.ssh/*.pub >"$work/key.pub" 2>/dev/null || {
@@ -57,6 +65,47 @@ layout {
     }
 }
 EOF
+
+    if [ -n "$sidebar" ]; then
+        wasm=target/wasm32-wasip1/release/agenttij.wasm
+        [ -f "$wasm" ] || {
+            echo "build it first: cargo build -p agenttij --target wasm32-wasip1 --release" >&2
+            exit 1
+        }
+        cp "$wasm" "$work/agenttij.wasm"
+        # Its own solo workspace, the same shape as agenttij-workspace.kdl.
+        cat >"$work/box.kdl" <<'EOF'
+layout {
+    pane split_direction="vertical" {
+        pane size="20%" {
+            plugin location="file:/home/dev/.config/zellij/plugins/agenttij.wasm" {
+                scope "session"
+                solo "true"
+            }
+        }
+        pane command="sh" {
+            args "-c" "echo 'api: may I write to src/main.rs? (y/n)'; exec sleep 100000"
+        }
+    }
+}
+EOF
+        # Pre-granted, or the plugin sits on a prompt nobody can answer.
+        cat >"$work/permissions.kdl" <<'EOF'
+"/home/dev/.config/zellij/plugins/agenttij.wasm" {
+    ReadApplicationState
+    ChangeApplicationState
+    RunCommands
+    OpenTerminalsOrPlugins
+    WriteToStdin
+}
+EOF
+        cat >>"$work/Dockerfile" <<'EOF'
+RUN mkdir -p /home/dev/.config/zellij/plugins /home/dev/.cache/zellij
+COPY agenttij.wasm /home/dev/.config/zellij/plugins/agenttij.wasm
+COPY permissions.kdl /home/dev/.cache/zellij/permissions.kdl
+RUN chown -R dev:dev /home/dev
+EOF
+    fi
 
     cat >"$work/start.sh" <<'EOF'
 #!/bin/sh
