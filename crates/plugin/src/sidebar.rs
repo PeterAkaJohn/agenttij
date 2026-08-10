@@ -711,6 +711,9 @@ impl Sidebar {
                         }
                         self.attached
                             .insert(opened, (agent.host.clone(), agent.session.clone()));
+                        // One pane at a time over there too, or arriving in a
+                        // session someone left split shows all of it at once.
+                        actions::stack_remote(&agent.host, &agent.session);
                     }
                     return false;
                 }

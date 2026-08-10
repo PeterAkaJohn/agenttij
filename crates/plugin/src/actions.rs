@@ -170,6 +170,14 @@ pub fn add_remote_pane(host: &str, session: &str, cwd: Option<&str>) {
     run_command(&words, BTreeMap::new());
 }
 
+/// Gathers a remote session into one stack, so it shows one pane at a time —
+/// what solo mode looks like from over there.
+pub fn stack_remote(host: &str, session: &str) {
+    let command = agenttij_core::scan::remote_stack_command(host, session);
+    let words: Vec<&str> = command.iter().map(String::as_str).collect();
+    run_command(&words, BTreeMap::new());
+}
+
 /// Attaches to a session on another machine, in a pane here.
 ///
 /// The closest thing to jumping that exists: Zellij cannot show a pane it does

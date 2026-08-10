@@ -84,6 +84,12 @@ It starts in the directory the agent over there is working in. That is done with
 a `cd` rather than `new-pane --cwd`, which was measured being ignored for a
 session started detached — the pane came up in `/` whatever was asked for.
 
+And that session shows one pane at a time, like solo mode does here: arriving in
+it and adding to it both gather its panes into a Zellij *stack*, so one is
+expanded and the rest are title lines. There is no suppressing a pane through the
+CLI, and no need — a stack is the same promise, kept by Zellij rather than by us,
+and a new pane joins it on its own.
+
 The one gap: only attachments made with `Enter` from the sidebar are remembered
 this way. Jumping to a remote session from the palette (`Alt t`) opens the same
 pane, but the sidebar did not open it and does not know what it is, so `a` there

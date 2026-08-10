@@ -108,7 +108,8 @@ that session, because Zellij cannot show a pane it does not own; `p` peeks at it
 without leaving. And once you are looking at that session, `a` (or `Alt m`) adds
 a pane *on that machine*, in the directory its agent is working in — Zellij's own
 CLI over ssh, so the pane belongs to that session rather than to a second
-connection pretending to.
+connection pretending to. That session is kept as a stack, so it shows one pane
+at a time the way solo mode does here.
 
 Set up connection sharing for those hosts or every scan pays for a handshake:
 

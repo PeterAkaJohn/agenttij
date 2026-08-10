@@ -109,7 +109,30 @@ fn quoted(word: &str) -> String {
     format!("'{}'", word.replace('\'', r"'\''"))
 }
 
-/// Opens a pane inside a session on another machine.
+/// Every terminal pane in a session on another machine, gathered into one stack.
+///
+/// A stack is what solo mode looks like from over there: one pane expanded, the
+/// rest collapsed to title lines, and a new pane joining on its own. There is no
+/// suppressing a pane through the CLI — and no need, since this is the same
+/// promise, kept by Zellij rather than by us.
+///
+/// Safe to run again: re-stacking an already stacked session was measured
+/// leaving every pane where it was.
+fn stack(session: &str) -> String {
+    format!(
+        "ids=$(zellij -s {session} action list-panes | grep -o '^terminal_[0-9]*'); \
+         [ -n \"$ids\" ] && zellij -s {session} action stack-panes -- $ids",
+        session = quoted(session)
+    )
+}
+
+/// Gathers a remote session into one stack, so it shows one pane at a time.
+pub fn remote_stack_command(host: &str, session: &str) -> Vec<String> {
+    over_ssh(host, stack(session))
+}
+
+/// Opens a pane inside a session on another machine, and keeps that session
+/// showing one pane at a time.
 ///
 /// Zellij's own CLI does the work — the same way a peek reads a pane over there —
 /// so the pane belongs to that session and shows up for anyone attached to it,
@@ -121,11 +144,16 @@ fn quoted(word: &str) -> String {
 pub fn remote_pane_command(host: &str, session: &str, cwd: Option<&str>) -> Vec<String> {
     let mut remote = format!("zellij -s {} action new-pane", quoted(session));
     if let Some(cwd) = cwd.filter(|cwd| !cwd.is_empty()) {
-        // Three shells deep: this one is read by the remote shell, which hands
-        // the inner script to `sh -c` inside the pane.
         let script = format!(r#"cd {} 2>/dev/null; exec "${{SHELL:-sh}}""#, quoted(cwd));
         remote.push_str(&format!(" -- sh -c {}", quoted(&script)));
     }
+    remote.push_str("; ");
+    remote.push_str(&stack(session));
+    over_ssh(host, remote)
+}
+
+/// One ssh, one command string for the shell on the far side.
+fn over_ssh(host: &str, remote: String) -> Vec<String> {
     vec![
         "ssh".to_owned(),
         "-o".to_owned(),
@@ -352,19 +380,25 @@ mod tests {
         let command = remote_pane_command("dev1", "box", Some("/srv/api"));
         assert_eq!(command[0], "ssh");
         assert_eq!(command[4], "dev1");
-        assert_eq!(
-            command[5],
+        assert!(command[5].starts_with(
             r#"zellij -s 'box' action new-pane -- sh -c 'cd '\''/srv/api'\'' 2>/dev/null; exec "${SHELL:-sh}"'"#
-        );
+        ));
+        // And then gathers the session into one stack, so one pane shows at a
+        // time the way solo mode does here.
+        assert!(command[5].contains("stack-panes"));
 
         // No directory is not an empty one.
         let bare = remote_pane_command("dev1", "box", None);
-        assert_eq!(bare[5], "zellij -s 'box' action new-pane");
+        assert!(bare[5].starts_with("zellij -s 'box' action new-pane; "));
+        assert!(!bare[5].contains("sh -c"));
+
+        // Stacking on its own, for when a session is simply arrived at.
+        let stacking = remote_stack_command("dev1", "box");
+        assert!(stacking[5].contains("list-panes") && stacking[5].contains("stack-panes"));
+        assert!(!stacking[5].contains("new-pane"));
         // And whatever the shell over there would have made of a quote.
-        assert_eq!(
-            remote_pane_command("dev1", "it's", None)[5],
-            r"zellij -s 'it'\''s' action new-pane"
-        );
+        assert!(remote_pane_command("dev1", "it's", None)[5]
+            .starts_with(r"zellij -s 'it'\''s' action new-pane"));
     }
 
     #[test]
