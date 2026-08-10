@@ -1423,11 +1423,19 @@ impl Sidebar {
         // The row's own status, not the visible pane's: what the frame is for is
         // telling you about the agent while you are looking at something else in
         // its row.
-        let row = self.agents.iter().find(|agent| agent.pane == primary);
-        let (label, status) = match row {
-            Some(row) => (row.label().to_owned(), row.status),
-            None => return,
+        let Some(row) = self.agents.iter().find(|agent| agent.pane == primary) else {
+            return;
         };
+        // Named after its directory, never after the pane's own title. `label`
+        // falls back to that title, and this *sets* the title — so the name fed
+        // the next name and grew by a glyph a tick. Measured on a command pane
+        // whose directory could not be read: a frame a few thousand characters
+        // wide, redrawn every second, at 134% of a core.
+        let label = project::display(project::root(row)).to_owned();
+        if label.is_empty() {
+            return;
+        }
+        let status = row.status;
 
         let name = format::pane_title(&label, status, index, members.len());
         if self.positions.get(&visible) == Some(&name) {
