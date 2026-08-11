@@ -32,14 +32,26 @@ add_keybind="${AGENTTIJ_ADD_KEYBIND:-Alt m}"
 # Alt t because Zellij's defaults already claim j, k, l, n, p and the rest of
 # the obvious ones — see docs/KEYBINDS.md.
 jump_keybind="${AGENTTIJ_JUMP_KEYBIND:-Alt t}"
-# The `group` template your layout gives the sidebar, if it gives one: the panes
-# every new row starts with, `;` between them. It has to be repeated in the
-# keybinds, because a plugin's identity is its url plus its configuration — a
-# binding that does not say the same thing launches a second sidebar rather than
-# talking to yours. Same string on both sides, character for character.
+# The `group` template — the panes every new row starts with — taken from the
+# layouts themselves, so it is written in one place and that place is a layout.
 #
-#   AGENTTIJ_GROUP="; nvim .; lazygit" ./scripts/install.sh
-group_template="${AGENTTIJ_GROUP:-}"
+# The keybinds have to repeat it: a plugin's identity is its url *plus* its
+# configuration, so `Alt g` can only reach a sidebar whose configuration it says
+# back exactly. That is also why there is one template per machine rather than
+# one per layout — the binds are machine-wide, so every layout installed here is
+# rewritten to carry the same one, and two layouts asking for different templates
+# is a thing this cannot honour.
+#
+#   AGENTTIJ_GROUP="; nvim ."   overrides whatever the layouts say
+#   AGENTTIJ_GROUP=""           installs no template at all
+layouts_group="$(sed -n 's/^ *group "\(.*\)"$/\1/p' "$repo"/layouts/*.kdl | sort -u)"
+if [ "$(printf '%s\n' "$layouts_group" | grep -c .)" -gt 1 ]; then
+    echo "! the layouts disagree on \`group\`, and the keybinds can only match one."
+    echo "  set AGENTTIJ_GROUP to the one you want; installing none."
+    layouts_group=""
+fi
+# `-` and not `:-`, so an empty AGENTTIJ_GROUP means "none" rather than "default".
+group_template="${AGENTTIJ_GROUP-$layouts_group}"
 
 want_keybind=1
 want_grant=1
@@ -129,6 +141,7 @@ mkdir -p "$plugin_dir"
 cp "$wasm" "$plugin_dir/agenttij.wasm"
 
 echo "installing layouts -> $layout_dir"
+[ -n "$group_template" ] && echo "  every row starts as: $group_template"
 mkdir -p "$layout_dir"
 # The plugin url, and the group template on both sides of the fence.
 #

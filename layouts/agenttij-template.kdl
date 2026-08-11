@@ -25,13 +25,10 @@
 //     joins them, or swapping to the rail hands you a different sidebar.
 //   - your keybinds. `Alt g` carrying no `group` is addressing a sidebar that is
 //     not this one, and Zellij obliges by starting it — you get a second sidebar
-//     and an untemplated row. `scripts/install.sh` writes it for you:
-//
-//         AGENTTIJ_GROUP="claude; ; " ./scripts/install.sh
-//
-//     which rewrites the `group` line below to whatever you passed — and removes
-//     it when you pass nothing, since binds without a template and a layout with
-//     one is the same mismatch the other way round.
+//     and an untemplated row. `scripts/install.sh` reads the line below and
+//     writes it into the binds, so editing it here and re-running the installer
+//     is the whole of it. That also makes the template machine-wide: the binds
+//     are, so every layout installed alongside this one is given the same one.
 //
 // The row this layout *opens* with is templated too, which is why its pane runs
 // the same command the template leads with: nothing in a layout can park a pane,

@@ -267,20 +267,24 @@ it does not survive — put that in a script and name the script here. And the
 template is part of the sidebar's configuration, which is part of its *identity*:
 `Alt g` from your Zellij config has to say the same `group` as the layout does, or
 it addresses a sidebar that does not exist and Zellij starts one — a pane appears
-out of nowhere and every pane you had becomes a row of its own. So say it once, to
-the installer, which writes both sides:
+out of nowhere and every pane you had becomes a row of its own.
+
+So write it in the layout and re-run the installer, which reads that line and puts
+it in the keybinds too:
 
 ```sh
-AGENTTIJ_GROUP="claude; nvim .; lazygit" ./scripts/install.sh
+./scripts/install.sh
 ```
 
-That puts the template in the keybinds *and* in every layout it installs, and
-leaves both without one when you do not pass it — so pass it every time or never,
-and a plain re-run is how you turn templates off. A layout of your own is yours to
-keep in step: the same string, character for character, in every plugin block it
-has (the `sidebar` and `rail` swap layouts included). A session already running
-keeps the configuration it started with, so a template only reaches sessions you
-start after installing it.
+Because the keybinds are machine-wide, so is the template: every layout the
+installer writes carries the same one, and two layouts asking for different
+templates is the one thing this cannot do (it says so and installs none).
+`AGENTTIJ_GROUP="…"` overrides the layouts, and `AGENTTIJ_GROUP=""` installs no
+template at all. A layout you keep somewhere else is yours to hold in step — the
+same string, character for character, in every plugin block it has, the `sidebar`
+and `rail` swap layouts included. And a session already running keeps the
+configuration it started with, so a template reaches the sessions you start after
+installing it, not that one.
 
 `a` stays a plain pane on purpose: it means "one more", not "one more row".
 The layout ships `scope "session"`, so the sidebar lists only this session's

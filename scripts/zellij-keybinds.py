@@ -8,7 +8,8 @@ returns only the first matching node — a second block parses cleanly, passes
 hand, are all iterated, so adding a `shared_except` block inside the first
 `keybinds` node works.
 
-The last argument is the layout's `group` template, or empty. It has to be
+The last argument is the layout's `group` template, or empty — install.sh reads it
+out of the layouts rather than asking anyone to type it twice. It has to be
 repeated here because a plugin's identity is its url *plus* its configuration: a
 sidebar started from a layout that carries `group` is a different instance from
 the one these bindings would talk to, so without it every one of them launches a
@@ -61,7 +62,7 @@ def block(url, summon, cycle, back, focus, new, add, jump, group, indent):
         "    // has focus. Zellij identifies a plugin by url *and* configuration, so",
         "    // this repeats agenttij-workspace.kdl's configuration: change one,",
         "    // change both, or it will launch a second sidebar instead. That",
-        "    // includes `group` — set AGENTTIJ_GROUP and re-run install.sh.",
+        "    // includes `group`, which install.sh copies out of the layouts.",
         f'    bind "{cycle}" {{',
         f'        MessagePlugin "{url}" {{',
         '            name "cycle"',
