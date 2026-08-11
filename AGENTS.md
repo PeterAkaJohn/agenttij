@@ -135,14 +135,22 @@ Each of these cost a debugging round already:
 - **A plugin's identity is its url *plus* its configuration.** A pipe, message or
   `LaunchOrFocusPlugin` whose configuration differs launches a *second* instance
   instead of reaching the one running. Layout configuration and anything
-  addressing it must match exactly.
+  addressing it must match exactly — including a `group` template, which is why
+  `scripts/install.sh` takes `AGENTTIJ_GROUP` and writes it into the binds.
+  Measured: `Alt g` at a sidebar whose layout carried `group` and whose binding
+  did not put `plugin_3` in the pane list and opened an untemplated row.
 - **Only the first `keybinds` block in a config is read** (`kdl/mod.rs`, with a
   TODO about it). Bindings must be inserted inside it.
 - **A pane with a fixed `size=` cannot be resized**, by a plugin or by Zellij's
   own `resize`. Layouts use percentages so the `rail` swap layout works.
-- **Command panes cannot read the keyboard.** Their stdin is `/dev/null`, and a
-  real keypress to a focused command pane is not readable from `/dev/tty`
-  either. Anything that must react to a key has to be a *plugin* pane.
+- **A command pane's program *does* read the keyboard** — this note used to say
+  the opposite, and it was wrong. Measured both ways, layout `pane command=` and
+  the runtime path a plugin uses (`open_command_pane`, same as `zellij run`): a
+  real keypress lands on the program's stdin, which is what makes `group "claude"`
+  as usable as typing `claude` into a shell. What never arrives is `zellij action
+  write-chars` / `send-keys` — that is where the `/dev/null` belief came from, and
+  it is why `scripts/press-keys.sh` pipes into a client instead. A peek still has
+  to be a plugin pane, but for the floating-focus reason below, not this one.
 - **A floating pane is only on screen while it holds focus.** Focus a tiled pane
   and Zellij sets the tab's `hide_floating_panes`; `pinned` does not override it.
   So a floating pane that needs to stay visible must be one that can hold focus

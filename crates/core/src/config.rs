@@ -36,6 +36,11 @@ pub struct Config {
     /// Command run when an agent becomes blocked on you, as words to exec. The
     /// agent's name is appended. Empty means no notification.
     pub notify: Vec<String>,
+    /// The panes every new row starts with, one command line each: the first is
+    /// the pane you see, the rest are parked behind it and reached with `v`. An
+    /// entry with nothing in it is a plain shell. Empty means one plain shell,
+    /// which is what a row was before this existed.
+    pub group: Vec<String>,
     /// Set on a peek instance: the pane it mirrors, as `<session>:<pane>`. A
     /// sidebar with this set *is* the peek — it renders that pane and closes on
     /// any key, which a command pane cannot do because it cannot read one.
@@ -74,6 +79,7 @@ impl Default for Config {
             colors: Colors::default(),
             colors_raw: String::new(),
             notify: Vec::new(),
+            group: Vec::new(),
             bar: false,
             remote: false,
             hosts: Vec::new(),
@@ -137,6 +143,17 @@ impl Config {
             .map(|raw| raw.split_whitespace().map(str::to_owned).collect())
             .unwrap_or_default();
 
+        // A pane per `;`, words split on whitespace — the same shape as
+        // `notify`, and with the same limit: an argument with a space in it does
+        // not survive, so anything that needs one belongs in a script whose path
+        // goes here instead.
+        let group: Vec<String> = configuration
+            .get("group")
+            .map(|raw| raw.trim())
+            .filter(|raw| !raw.is_empty())
+            .map(|raw| raw.split(';').map(|pane| pane.trim().to_owned()).collect())
+            .unwrap_or_default();
+
         let hosts: Vec<String> = configuration
             .get("hosts")
             .map(|raw| {
@@ -175,6 +192,7 @@ impl Config {
             colors,
             colors_raw,
             notify,
+            group,
             bar,
             remote,
             hosts,
@@ -270,6 +288,23 @@ mod tests {
         assert_eq!(
             Config::from_map(&map(&[("notify", "notify-send -u critical")])).notify,
             vec!["notify-send", "-u", "critical"]
+        );
+    }
+
+    #[test]
+    fn a_group_template_is_one_pane_per_semicolon() {
+        assert!(Config::from_map(&map(&[])).group.is_empty());
+        assert!(Config::from_map(&map(&[("group", "  ")])).group.is_empty());
+        assert_eq!(
+            Config::from_map(&map(&[("group", " claude ; nvim . ; ")])).group,
+            vec!["claude", "nvim .", ""],
+            "a trailing separator asks for a plain shell behind the rest"
+        );
+        // Separators on their own are three shells in a row, not a typo to
+        // throw away — a row of plain panes is a thing people want.
+        assert_eq!(
+            Config::from_map(&map(&[("group", ";;")])).group,
+            vec!["", "", ""]
         );
     }
 

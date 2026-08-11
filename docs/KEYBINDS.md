@@ -24,7 +24,7 @@ working while the sidebar has focus.
 | `o` | open a workspace here on that row's project |
 | `v` | cycle to the next pane *within* the row on screen |
 | `a` | add a pane to the row on screen |
-| `n` | new agent pane — a new row |
+| `n` | new agent pane — a new row, or a whole one with `group` in the layout |
 | `d` `d` | close what the cursor is on — twice, it cannot be undone |
 | `c` `c` | interrupt what it is running — twice, same reason |
 | `!` | only what needs you |
@@ -45,6 +45,18 @@ the header is a line taken from a list twenty columns wide. A header carries the
 worst status inside it, so folding a project away never hides an agent that is
 waiting for you. `Tab` folds and unfolds, `[` and `]` step between projects, and
 `Enter` opens a folded one.
+
+### A row from a template
+
+A layout can say what panes a row starts with — `group "claude; nvim .; lazygit"`
+in the sidebar's configuration — and then `n` opens all of them, the first on
+screen and the rest parked behind it on `v`. The row the session opens with gets
+them too. See the README for the whole of it, and one catch: `Alt g` has to carry
+the same `group` as the layout, or Zellij treats it as a different sidebar
+(`AGENTTIJ_GROUP="..." ./scripts/install.sh` writes it into the binds).
+
+`a` is deliberately not templated — it adds one plain pane, because that is what
+"one more" means.
 
 ### Following work without moving it
 

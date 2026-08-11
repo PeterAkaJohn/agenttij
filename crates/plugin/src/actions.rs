@@ -1,7 +1,7 @@
 //! What the sidebar does with the agent you picked: peek at it, or go to it.
 
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use agenttij_core::{panes, Agent, Config, PaneSnapshot};
 use zellij_tile::prelude::*;
@@ -91,12 +91,21 @@ pub fn notify(command: &[String], agent: &Agent) {
     run_command(&words, BTreeMap::new());
 }
 
-/// Opens a fresh terminal in the workspace slot, parking whatever is there.
+/// Opens a row in the workspace slot, parking whatever was there: the pane you
+/// see, and behind it the companions the layout's `group` asks for.
 ///
 /// Two steps rather than one: open the pane normally, then hide the old
 /// occupant. Opening *in place of* the slot looks simpler and destroys panes —
 /// see `show_in_slot` for why anything built on replacement does.
-pub fn new_in_slot(all_panes: &[PaneSnapshot], session: &str, solo: bool) -> Option<PaneId> {
+///
+/// An empty template is one plain shell, which is what `a` wants and what a row
+/// was before templates existed.
+pub fn open_row(
+    all_panes: &[PaneSnapshot],
+    session: &str,
+    solo: bool,
+    template: &[String],
+) -> (Option<u32>, Vec<u32>) {
     let tab = get_focused_pane_info().ok().map(|(tab, _)| tab);
     let slot = tab.and_then(|tab| panes::visible_terminal(all_panes, session, tab));
 
@@ -104,16 +113,76 @@ pub fn new_in_slot(all_panes: &[PaneSnapshot], session: &str, solo: bool) -> Opt
         .and_then(|slot| get_pane_cwd(PaneId::Terminal(slot)).ok())
         .unwrap_or_else(own_cwd);
 
-    let opened = open_terminal(cwd);
-    let (Some(opened), Some(slot)) = (opened, slot.filter(|_| solo)) else {
-        return opened;
+    let Some(head) = spawn(
+        template.first().map(String::as_str).unwrap_or_default(),
+        &cwd,
+    ) else {
+        return (None, Vec::new());
     };
 
     // The new pane arrives as a split; hiding the old one collapses it back to
     // one on screen, without the suppression chain a replacement would build.
-    hide_pane_with_id(PaneId::Terminal(slot));
-    focus_pane_with_id(opened, false, false);
-    Some(opened)
+    if let Some(slot) = slot.filter(|_| solo) {
+        hide_pane_with_id(PaneId::Terminal(slot));
+    }
+
+    let parked = park(&cwd, template);
+    // Last, and after the parking. A pane opened from a plugin takes focus once
+    // the handler returns, and the last one opened here is one we suppressed.
+    focus_pane_with_id(PaneId::Terminal(head), false, false);
+    (Some(head), parked)
+}
+
+/// Fills a row out to what the layout asked for: the template's companions,
+/// parked behind a pane that is already there.
+///
+/// A layout can say what its first pane *runs*, but nothing in a layout can park
+/// a pane — so without this the row a session opens with would be the one row
+/// missing the companions every later row gets.
+pub fn fill_row(head: u32, template: &[String]) -> Vec<u32> {
+    let cwd = get_pane_cwd(PaneId::Terminal(head)).unwrap_or_else(|_| own_cwd());
+    let parked = park(&cwd, template);
+    focus_pane_with_id(PaneId::Terminal(head), false, false);
+    parked
+}
+
+/// Opens the template's companions and hides each one as it arrives.
+fn park(cwd: &Path, template: &[String]) -> Vec<u32> {
+    let mut parked = Vec::new();
+    for command in template.iter().skip(1) {
+        if let Some(pane) = spawn(command, cwd) {
+            hide_pane_with_id(PaneId::Terminal(pane));
+            parked.push(pane);
+        }
+    }
+    parked
+}
+
+/// One pane of a row: a command pane when the template says what to run, a
+/// plain shell when it does not.
+///
+/// A command pane is as usable as a shell for this — measured, since the note in
+/// AGENTS.md said otherwise: a real keypress reaches a command pane's stdin. It
+/// is `write-chars` and the like that never arrive.
+fn spawn(command: &str, cwd: &Path) -> Option<u32> {
+    let mut words = command.split_whitespace();
+    let opened = match words.next() {
+        Some(program) => open_command_pane(
+            CommandToRun {
+                path: PathBuf::from(program),
+                args: words.map(str::to_owned).collect(),
+                cwd: Some(cwd.to_path_buf()),
+            },
+            BTreeMap::new(),
+        ),
+        None => open_terminal(cwd),
+    };
+
+    match opened {
+        Some(PaneId::Terminal(pane)) => Some(pane),
+        // Neither call can hand back a plugin pane, and a row is terminals.
+        _ => None,
+    }
 }
 
 /// Brings a pane into the slot, parking whoever was there. This is the move

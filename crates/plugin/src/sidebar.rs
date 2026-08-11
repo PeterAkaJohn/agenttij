@@ -171,6 +171,9 @@ pub struct Sidebar {
     own_url: Option<String>,
     /// Whether the pane has been named yet.
     named: bool,
+    /// Whether the row this session started with has been filled out from the
+    /// layout's `group` template.
+    filled: bool,
     /// Our own pane id. Read once: `get_plugin_ids` is a host round-trip, and it
     /// answers the same thing every time.
     plugin_id: u32,
@@ -256,6 +259,7 @@ impl ZellijPlugin for Sidebar {
                     .map(|pane| pane.pane)
                     .collect();
                 self.groups.reconcile(&here);
+                self.fill_first_row(&here);
                 self.tab = snapshot::own_tab(&sessions, self.plugin_id).or(self.tab);
                 if self.own_url.is_none() {
                     self.own_url = snapshot::own_url(&sessions, self.plugin_id);
@@ -1814,9 +1818,11 @@ impl Sidebar {
             actions::add_remote_pane(&host, &session, cwd.as_deref());
             return;
         }
-        if let Some(PaneId::Terminal(opened)) =
-            actions::new_in_slot(&self.panes, &self.current_session, self.config.solo)
-        {
+        // One plain pane, deliberately: `a` means "one more", and the template
+        // describes a whole row rather than the next pane of one.
+        let (opened, _) =
+            actions::open_row(&self.panes, &self.current_session, self.config.solo, &[]);
+        if let Some(opened) = opened {
             self.groups.add(visible, opened);
         }
     }
@@ -1854,18 +1860,57 @@ impl Sidebar {
             .map(|agent| agent.cwd.clone())
     }
 
+    /// Gives the row the session started with the companions every later row
+    /// gets, once, on the first pane list that arrives.
+    ///
+    /// Guarded twice. `filled` keeps a pane list generated *before* the
+    /// companions were opened from asking for them a second time, and the count
+    /// keeps a reloaded plugin — which starts with `filled` false and a session
+    /// already holding the whole row — from doubling it. Both matter: the
+    /// manifest carries suppressed panes, so a filled row never reads as one.
+    fn fill_first_row(&mut self, here: &[u32]) {
+        // A bar shares this code path and must never open a pane, whatever a
+        // copied-and-pasted configuration asks it for.
+        if self.filled || self.config.bar || self.config.group.len() < 2 || here.len() != 1 {
+            return;
+        }
+        self.filled = true;
+
+        let head = here[0];
+        for companion in actions::fill_row(head, &self.config.group) {
+            self.groups.add(head, companion);
+        }
+        self.groups.show(head);
+    }
+
     /// A pane of its own: reconciliation turns anything ungrouped into a row.
+    /// With a `group` template in the layout it is a whole row — the same one
+    /// you would have built by hand with `a`, without building it.
     fn new_row(&mut self) {
-        let opened = actions::new_in_slot(&self.panes, &self.current_session, self.config.solo);
+        let (head, parked) = actions::open_row(
+            &self.panes,
+            &self.current_session,
+            self.config.solo,
+            &self.config.group,
+        );
+        let Some(pane) = head else {
+            return;
+        };
+
+        for companion in parked {
+            self.groups.add(pane, companion);
+        }
+        // `add` leaves the last companion as the member on screen and that one is
+        // parked; what you are looking at is the head.
+        self.groups.show(pane);
+
         // Follow it. Otherwise the cursor stays on the row you left while the
         // screen shows the one you just made, and the next key goes somewhere
         // you are not looking — which is what `Alt g` felt like.
-        if let Some(PaneId::Terminal(pane)) = opened {
-            self.selected = Some(Selection::Row {
-                session: self.current_session.clone(),
-                pane,
-            });
-        }
+        self.selected = Some(Selection::Row {
+            session: self.current_session.clone(),
+            pane,
+        });
     }
 
     fn close_peek(&mut self) {

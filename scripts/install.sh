@@ -32,6 +32,14 @@ add_keybind="${AGENTTIJ_ADD_KEYBIND:-Alt m}"
 # Alt t because Zellij's defaults already claim j, k, l, n, p and the rest of
 # the obvious ones — see docs/KEYBINDS.md.
 jump_keybind="${AGENTTIJ_JUMP_KEYBIND:-Alt t}"
+# The `group` template your layout gives the sidebar, if it gives one: the panes
+# every new row starts with, `;` between them. It has to be repeated in the
+# keybinds, because a plugin's identity is its url plus its configuration — a
+# binding that does not say the same thing launches a second sidebar rather than
+# talking to yours. Same string on both sides, character for character.
+#
+#   AGENTTIJ_GROUP="; nvim .; lazygit" ./scripts/install.sh
+group_template="${AGENTTIJ_GROUP:-}"
 
 want_keybind=1
 want_grant=1
@@ -81,7 +89,7 @@ add_keybind() {
     cp "$zellij_config" "$zellij_config.agenttij.bak"
     python3 "$repo/scripts/zellij-keybinds.py" install "$zellij_config" \
         "$plugin_url" "$keybind" "$cycle_keybind" "$back_keybind" "$focus_keybind" \
-        "$new_keybind" "$add_keybind" "$jump_keybind"
+        "$new_keybind" "$add_keybind" "$jump_keybind" "$group_template"
 
     if zellij --config "$zellij_config" setup --check >/dev/null 2>&1; then
         echo "  bound $keybind, $focus_keybind, $cycle_keybind, $back_keybind,"
@@ -98,7 +106,7 @@ remove_keybind() {
     grep -q "agenttij:begin" "$zellij_config" || return 0
     need_python "keybind removal" || return 0
     cp "$zellij_config" "$zellij_config.agenttij.bak"
-    python3 "$repo/scripts/zellij-keybinds.py" uninstall "$zellij_config" "" "" "" "" "" "" "" ""
+    python3 "$repo/scripts/zellij-keybinds.py" uninstall "$zellij_config" "" "" "" "" "" "" "" "" ""
     echo "  keybinds removed (backup: $zellij_config.agenttij.bak)"
 }
 

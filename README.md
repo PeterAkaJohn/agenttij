@@ -238,6 +238,38 @@ anywhere, including while you are typing at the agent, which is the point of it.
 Each row remembers which member you were last looking at. Every pane belongs to
 exactly one row, and a pane the sidebar does not recognise becomes a row of its
 own — so a reload costs you the grouping, never access to a pane.
+
+### A row from a template
+
+If every row you build by hand comes out the same, say so once in the layout and
+stop building it:
+
+```kdl
+plugin location="file:~/.config/zellij/plugins/agenttij.wasm" {
+    scope "session"
+    solo "true"
+    group "claude; nvim .; lazygit"
+}
+```
+
+Now `n` (and `Alt g`) opens all three at once: `claude` on screen, the editor and
+`lazygit` parked behind it on `v`. `;` separates panes, the first entry is the one
+you see, and an entry with nothing in it is a plain shell — `group "; nvim ."` is
+a shell with an editor behind it. The row the session *starts* with gets the same
+treatment, once, since no layout can park a pane itself.
+
+Two things to know. Words are split on whitespace, so an argument with a space in
+it does not survive — put that in a script and name the script here. And the
+template is part of the sidebar's configuration, which is part of its *identity*:
+`Alt g` from your Zellij config has to say the same `group` as the layout does, or
+it launches a second sidebar instead of talking to yours. `scripts/install.sh`
+writes that for you:
+
+```sh
+AGENTTIJ_GROUP="claude; nvim .; lazygit" ./scripts/install.sh
+```
+
+`a` stays a plain pane on purpose: it means "one more", not "one more row".
 The layout ships `scope "session"`, so the sidebar lists only this session's
 agents and `Enter` can never throw you out of the workspace, and `solo "true"`,
 which is what parks the others instead of leaving them on screen.
@@ -320,6 +352,10 @@ pane size="20%" {
         notify "notify-send -u critical"
         // "false" to stop naming a row's panes "<row> 2/3"
         position "true"
+        // the panes every new row starts with: `;` between them, the first
+        // being the one you see and the rest parked behind it. An entry with
+        // nothing in it is a plain shell — see "A row from a template"
+        group "claude; nvim .; lazygit"
     }
 }
 ```

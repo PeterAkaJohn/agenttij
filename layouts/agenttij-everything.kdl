@@ -30,6 +30,15 @@ layout {
             plugin location="file:~/.config/zellij/plugins/agenttij.wasm" {
                 scope "session"
                 solo "true"
+                // The panes every row starts with, `;` between them: the first
+                // is the one you see, the rest are parked behind it on `v`. An
+                // empty entry is a plain shell. The row this layout opens with
+                // gets them too — no layout can park a pane by itself.
+                //
+                // Repeat it in the swap layouts below *and* in the keybinds
+                // (`AGENTTIJ_GROUP="..." ./scripts/install.sh`), or `Alt g`
+                // talks to a sidebar that is not this one.
+                // group "claude; nvim .; lazygit"
             }
         }
         pane

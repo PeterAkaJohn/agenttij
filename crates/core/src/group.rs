@@ -108,7 +108,20 @@ impl Groups {
                 }
                 group.current = pane;
             }
-            None => self.groups.push(Group::new(pane)),
+            // Nothing holds `beside` yet: a row being *built*, rather than one
+            // being added to. A layout's group template opens every pane of a
+            // row before a single pane update has arrived, so the primary is as
+            // new as the companion joining it. Dropping `beside` here made the
+            // first companion the row's primary and left the agent a stranger.
+            None => {
+                self.groups.push(Group {
+                    members: vec![beside, pane],
+                    current: pane,
+                });
+                // Also unseen, for the same reason `pane` is. A `beside` that is
+                // already alive leaves the list on the next reconcile anyway.
+                self.unseen.push((beside, 10));
+            }
         }
         // Ten updates is a second or so of slack — far more than the two or
         // three that arrive around a pane being created.
@@ -202,6 +215,27 @@ mod tests {
 
         assert_eq!(groups.rows().collect::<Vec<_>>(), vec![(3, 2)]);
         assert_eq!(groups.current_of(3), Some(4), "the new pane is showing");
+    }
+
+    /// A templated row opens all of its panes at once, so the primary has not
+    /// been reconciled either when the first companion joins it.
+    #[test]
+    fn a_row_can_be_built_before_any_of_its_panes_has_been_seen() {
+        let mut groups = Groups::default();
+        groups.add(3, 4);
+        groups.add(3, 5);
+        groups.show(3);
+
+        assert_eq!(groups.members_of(3), &[3, 4, 5]);
+        assert_eq!(
+            groups.current_of(3),
+            Some(3),
+            "the head is the one on screen"
+        );
+        // The grace period has to cover the primary too, or the row loses its
+        // agent on the update that arrives before the panes exist.
+        groups.reconcile(&[]);
+        assert_eq!(groups.rows().collect::<Vec<_>>(), vec![(3, 3)]);
     }
 
     #[test]

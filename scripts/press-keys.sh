@@ -6,7 +6,9 @@
 #
 # Keys go into the client's stdin, which is the only way to exercise anything
 # input-related: `zellij action send-keys` bypasses keybind resolution, and
-# `write-chars` does not reach command panes at all (their stdin is /dev/null).
+# `write-chars` does not reach command panes at all — a real keypress does reach
+# their program's stdin, which is exactly what this proves and what nothing else
+# can.
 # Focus has to be moved by the keystream too — an external `focus-pane-id` gets
 # overridden by whatever the layout does on startup. `\033h` is Alt+h, Zellij's
 # default "focus left".
