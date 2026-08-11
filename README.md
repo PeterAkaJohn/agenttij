@@ -148,7 +148,8 @@ zellij --new-session-with-layout agenttij-left
 ```
 
 To see everything at once — sidebar, bar, projects, the lot — start with
-`zellij -n agenttij-everything` and press `?`.
+`zellij -n agenttij-everything` and press `?`. For rows that come out of the
+layout already built, `zellij -n agenttij-template` (see below).
 
 The installer builds the plugin and drops it in `~/.config/zellij/plugins`,
 installs the sidebar layouts, registers the Claude Code hook in
@@ -258,16 +259,28 @@ you see, and an entry with nothing in it is a plain shell — `group "; nvim ."`
 a shell with an editor behind it. The row the session *starts* with gets the same
 treatment, once, since no layout can park a pane itself.
 
+`layouts/agenttij-template.kdl` is that, ready to run: `zellij -n
+agenttij-template`.
+
 Two things to know. Words are split on whitespace, so an argument with a space in
 it does not survive — put that in a script and name the script here. And the
 template is part of the sidebar's configuration, which is part of its *identity*:
 `Alt g` from your Zellij config has to say the same `group` as the layout does, or
-it launches a second sidebar instead of talking to yours. `scripts/install.sh`
-writes that for you:
+it addresses a sidebar that does not exist and Zellij starts one — a pane appears
+out of nowhere and every pane you had becomes a row of its own. So say it once, to
+the installer, which writes both sides:
 
 ```sh
 AGENTTIJ_GROUP="claude; nvim .; lazygit" ./scripts/install.sh
 ```
+
+That puts the template in the keybinds *and* in every layout it installs, and
+leaves both without one when you do not pass it — so pass it every time or never,
+and a plain re-run is how you turn templates off. A layout of your own is yours to
+keep in step: the same string, character for character, in every plugin block it
+has (the `sidebar` and `rail` swap layouts included). A session already running
+keeps the configuration it started with, so a template only reaches sessions you
+start after installing it.
 
 `a` stays a plain pane on purpose: it means "one more", not "one more row".
 The layout ships `scope "session"`, so the sidebar lists only this session's

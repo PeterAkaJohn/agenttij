@@ -116,8 +116,7 @@ if [ "$uninstall" -eq 1 ]; then
     set_permissions revoke
     remove_keybind
     rm -f "$hook_path" "$plugin_dir/agenttij.wasm" \
-        "$layout_dir/agenttij-left.kdl" "$layout_dir/agenttij-right.kdl" \
-        "$layout_dir/agenttij-workspace.kdl"
+        "$layout_dir"/agenttij-*.kdl
     echo "removed."
     exit 0
 fi
@@ -131,8 +130,25 @@ cp "$wasm" "$plugin_dir/agenttij.wasm"
 
 echo "installing layouts -> $layout_dir"
 mkdir -p "$layout_dir"
-for side in left right workspace everything remote; do
-    sed "s|file:~/.config/zellij/plugins/agenttij.wasm|$plugin_url|" \
+# The plugin url, and the group template on both sides of the fence.
+#
+# A plugin's identity is its url *plus* its configuration, so a keybinding that
+# does not say the same `group` as the layout is addressing a sidebar that does
+# not exist — and Zellij obliges by starting one, which is a pane appearing out
+# of nowhere and every existing pane becoming a row of its own. Rewriting the
+# layouts from the same variable that writes the binds is what keeps that from
+# happening: with a template both sides carry it, without one neither does.
+layout_edit="s|file:~/.config/zellij/plugins/agenttij.wasm|$plugin_url|
+/^ *group \"/d"
+if [ -n "$group_template" ]; then
+    # A real newline, continued with a backslash: `\n` in a replacement is a GNU
+    # extension and this is not.
+    layout_edit="$layout_edit
+s|^\\( *\\)solo \"true\"|\\1solo \"true\"\\
+\\1group \"$group_template\"|"
+fi
+for side in left right workspace everything remote template; do
+    sed "$layout_edit" \
         "$repo/layouts/agenttij-$side.kdl" >"$layout_dir/agenttij-$side.kdl"
 done
 

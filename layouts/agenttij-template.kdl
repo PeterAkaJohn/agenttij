@@ -1,0 +1,92 @@
+// Every row the same shape: an agent, an editor behind it, a shell behind that.
+//
+//   zellij -n agenttij-template
+//
+// This is `agenttij-workspace` with one line added — `group` — which says what
+// panes a row is made of. `n` in the sidebar (or `Alt g` from anywhere) then
+// opens all of them at once instead of one: the first entry on screen, the rest
+// parked behind it, `v` to cycle. `;` separates panes and words are split on
+// whitespace, so an argument with a space in it belongs in a script whose path
+// goes here instead.
+//
+// An entry with nothing in it is a plain shell, which is why the template below
+// reads `claude; ; ` — an agent, and two shells to put an editor and a `git` in.
+// Fill them in with what you actually run:
+//
+//   group "claude; nvim .; lazygit"
+//
+// A program that is not installed still gets its pane; it says so and Enter
+// re-runs it, so a template is not a thing you can get wrong quietly.
+//
+// Two places this has to be repeated, both because Zellij identifies a plugin by
+// its url *plus* its configuration:
+//
+//   - the swap layouts below. They already repeat `scope` and `solo`; `group`
+//     joins them, or swapping to the rail hands you a different sidebar.
+//   - your keybinds. `Alt g` carrying no `group` is addressing a sidebar that is
+//     not this one, and Zellij obliges by starting it — you get a second sidebar
+//     and an untemplated row. `scripts/install.sh` writes it for you:
+//
+//         AGENTTIJ_GROUP="claude; ; " ./scripts/install.sh
+//
+//     which rewrites the `group` line below to whatever you passed — and removes
+//     it when you pass nothing, since binds without a template and a layout with
+//     one is the same mismatch the other way round.
+//
+// The row this layout *opens* with is templated too, which is why its pane runs
+// the same command the template leads with: nothing in a layout can park a pane,
+// so the sidebar fills the companions in behind whatever is already there.
+layout {
+    pane split_direction="vertical" {
+        pane size="20%" {
+            plugin location="file:~/.config/zellij/plugins/agenttij.wasm" {
+                // Only this session's agents, so Enter always stays in the
+                // workspace. Drop it to see every agent on the machine.
+                scope "session"
+                solo "true"
+                group "claude; nvim .; lazygit"
+            }
+        }
+        // The head of the first row. A command pane reads the keyboard like any
+        // other, so this is an agent you type at, not a log you watch.
+        pane command="claude"
+    }
+
+    // A new pane makes Zellij re-apply a swap layout, and the base layout above
+    // is registered with `ExactPanes` — it stops fitting the moment there is one
+    // more pane than it was written for. Templated rows arrive three panes at a
+    // time, so without an unconstrained arrangement to land in, the first `n`
+    // would fold the sidebar to the rail by itself.
+    swap_tiled_layout name="sidebar" {
+        tab {
+            pane split_direction="vertical" {
+                pane size="20%" {
+                    plugin location="file:~/.config/zellij/plugins/agenttij.wasm" {
+                        scope "session"
+                        solo "true"
+                        group "claude; nvim .; lazygit"
+                    }
+                }
+                pane
+            }
+        }
+    }
+
+    // Fold the sidebar to a rail with Zellij's own swap-layout key (Alt ] by
+    // default). A swap layout rather than something the plugin does to itself: a
+    // plugin can only resize in coarse async steps, and the width drifts.
+    swap_tiled_layout name="rail" {
+        tab {
+            pane split_direction="vertical" {
+                pane size=5 {
+                    plugin location="file:~/.config/zellij/plugins/agenttij.wasm" {
+                        scope "session"
+                        solo "true"
+                        group "claude; nvim .; lazygit"
+                    }
+                }
+                pane
+            }
+        }
+    }
+}
