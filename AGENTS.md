@@ -192,6 +192,15 @@ Each of these cost a debugging round already:
   `open_*_in_place_of_pane_id` on top of that stack drops the middle one
   (measured: three panes in, two out). Open a pane normally, *then* swap it into
   place.
+- **The pane list is up to a second old, and every key that shows a pane changes
+  the screen now.** Trusting `PaneManifest` one keypress later hides a pane that
+  is already parked — a no-op — while the show un-suppresses its neighbour beside
+  what you are actually looking at, and the workspace ends up split between two
+  rows. Measured: `Enter` then `Alt v` in a single write left two panes at 50%
+  each, and it stayed that way. What the plugin put on screen itself is not a
+  guess, so `panes::slot` prefers that (`Sidebar::showing`) until a list confirms
+  it, with a countdown so a show that never landed cannot wedge the slot for ever.
+  The same staleness swallowed the second of two quick `Alt v`s.
 - **Reconcile against fresh pane data only.** `PaneUpdate`/`SessionUpdate` is the
   only moment the pane list is true; reconciling group membership on a state-file
   tick deletes whatever was added since the last update.

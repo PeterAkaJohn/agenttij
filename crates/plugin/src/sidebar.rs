@@ -147,6 +147,17 @@ pub struct Sidebar {
     sessions_in: u8,
     /// The tab we live in, from the manifest rather than a host call.
     tab: Option<usize>,
+    /// The pane we last put on screen, and how many pane lists may still
+    /// disagree before we stop insisting.
+    ///
+    /// Every key that shows a pane changes the screen immediately, while the
+    /// pane list saying so is up to a second behind — and acting on the old one
+    /// hides a pane that is already parked (nothing happens) and un-suppresses
+    /// its neighbour next to what you are looking at. That is the second column.
+    /// The countdown is the same idea as `Groups::unseen`: believe ourselves for
+    /// a few updates, then let the list win, so a show that never landed cannot
+    /// wedge the slot for ever.
+    showing: Option<(u32, u8)>,
     /// The open peek pane, so `q` can close it and `p` never stacks two.
     peek: Option<PaneId>,
     /// Lines of the pane this instance is peeking at, when it is a peek.
@@ -259,6 +270,24 @@ impl ZellijPlugin for Sidebar {
                     .map(|pane| pane.pane)
                     .collect();
                 self.groups.reconcile(&here);
+                // A list that agrees with us has caught up and can be trusted
+                // again; one that does not spends a life. Only fresh lists get
+                // here — an identical one returned early above — so this cannot
+                // run out while nothing is happening.
+                self.showing = match self.showing {
+                    Some((pane, lives)) => {
+                        let agrees = self.panes.iter().any(|other| {
+                            other.session == self.current_session
+                                && other.pane == pane
+                                && !other.suppressed
+                        });
+                        match agrees {
+                            true => None,
+                            false => lives.checked_sub(1).map(|left| (pane, left)),
+                        }
+                    }
+                    None => None,
+                };
                 self.fill_first_row(&here);
                 self.tab = snapshot::own_tab(&sessions, self.plugin_id).or(self.tab);
                 if self.own_url.is_none() {
@@ -798,6 +827,7 @@ impl Sidebar {
                     // Joins the row you were on, like `a` does: it took that
                     // row's place on screen, so `v` gets you back.
                     if let Some(PaneId::Terminal(opened)) = opened {
+                        self.took_slot(opened);
                         if let Some(visible) = visible {
                             self.groups.add(visible, opened);
                         }
@@ -1060,6 +1090,7 @@ impl Sidebar {
         if let Some(target) = successor.filter(|_| emptied) {
             self.groups.show(target);
             actions::show_in_slot(target, None);
+            self.took_slot(target);
         }
     }
 
@@ -1701,7 +1732,20 @@ impl Sidebar {
 
     /// The pane on screen in our tab, which is the one the slot holds.
     fn slot(&self) -> Option<u32> {
-        panes::visible_terminal(&self.panes, &self.current_session, self.tab?)
+        panes::slot(
+            &self.panes,
+            &self.current_session,
+            self.tab?,
+            self.showing.map(|(pane, _)| pane),
+        )
+    }
+
+    /// Records the pane we just put on screen, so the next keypress does not have
+    /// to wait a second for the pane list to agree.
+    fn took_slot(&mut self, pane: u32) {
+        // Four updates is well past the one or two that arrive stale around a
+        // show, and short enough that a show which never landed corrects itself.
+        self.showing = Some((pane, 4));
     }
 
     /// Shows one particular pane of a row, rather than whichever the row was
@@ -1720,6 +1764,7 @@ impl Sidebar {
 
         self.groups.show(pane);
         actions::show_in_slot(pane, slot);
+        self.took_slot(pane);
     }
 
     /// Opens a row here on the same code, leaving the agent where it is.
@@ -1750,6 +1795,7 @@ impl Sidebar {
 
         let slot = self.slot();
         if let Some(PaneId::Terminal(opened)) = actions::open_at(&cwd, slot, self.config.solo) {
+            self.took_slot(opened);
             self.selected = Some(Selection::Row {
                 session: self.current_session.clone(),
                 pane: opened,
@@ -1785,6 +1831,7 @@ impl Sidebar {
             pane: primary,
         });
         actions::show_in_slot(target, slot);
+        self.took_slot(target);
     }
 
     /// Shows the next pane in the row currently on screen.
@@ -1796,6 +1843,7 @@ impl Sidebar {
 
         self.groups.show(target);
         actions::show_in_slot(target, Some(visible));
+        self.took_slot(target);
     }
 
     /// Opens a pane in the row that is on screen, parking what was there.
@@ -1824,6 +1872,7 @@ impl Sidebar {
             actions::open_row(&self.panes, &self.current_session, self.config.solo, &[]);
         if let Some(opened) = opened {
             self.groups.add(visible, opened);
+            self.took_slot(opened);
         }
     }
 
@@ -1881,6 +1930,7 @@ impl Sidebar {
             self.groups.add(head, companion);
         }
         self.groups.show(head);
+        self.took_slot(head);
     }
 
     /// A pane of its own: reconciliation turns anything ungrouped into a row.
@@ -1903,6 +1953,7 @@ impl Sidebar {
         // `add` leaves the last companion as the member on screen and that one is
         // parked; what you are looking at is the head.
         self.groups.show(pane);
+        self.took_slot(pane);
 
         // Follow it. Otherwise the cursor stays on the row you left while the
         // screen shows the one you just made, and the next key goes somewhere

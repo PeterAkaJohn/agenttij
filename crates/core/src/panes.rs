@@ -33,6 +33,31 @@ pub fn visible_terminal(panes: &[PaneSnapshot], session: &str, tab: usize) -> Op
         .map(|pane| pane.pane)
 }
 
+/// What is in the slot: the pane we put there ourselves, or failing that
+/// whatever the pane list says is on screen.
+///
+/// A `PaneManifest` is up to a second old, and every key that shows a pane
+/// changes the screen *now* — so one keypress later the list still names the
+/// pane we just parked. Believing it then is what put two panes on screen: the
+/// hide is a no-op because that pane is already parked, and the show
+/// un-suppresses its neighbour beside whatever you are actually looking at. What
+/// we did ourselves is not a guess, so it wins until the list catches up; it
+/// still has to be a live pane in this tab, or a closed one would haunt the slot.
+pub fn slot(
+    panes: &[PaneSnapshot],
+    session: &str,
+    tab: usize,
+    showing: Option<u32>,
+) -> Option<u32> {
+    showing
+        .filter(|showing| {
+            panes
+                .iter()
+                .any(|pane| pane.session == session && pane.tab == tab && pane.pane == *showing)
+        })
+        .or_else(|| visible_terminal(panes, session, tab))
+}
+
 /// Drops agents that no longer have anything running behind them.
 ///
 /// Liveness is judged at two different resolutions, because that is all Zellij
@@ -217,6 +242,26 @@ mod tests {
             suppressed: true,
             ..self::pane(session, tab, pane, title)
         }
+    }
+
+    /// The pane list is a second old, so what we last showed beats what it says.
+    #[test]
+    fn the_slot_believes_what_we_put_there_over_a_stale_list() {
+        // Reality: 2 is on screen. The list still says 1 is, from before the
+        // cycle that parked it.
+        let stale = vec![
+            pane("main", 0, 1, "was on screen"),
+            parked("main", 0, 2, "is on screen"),
+        ];
+
+        assert_eq!(slot(&stale, "main", 0, Some(2)), Some(2));
+        // Nothing of our own to go on: the list is all there is.
+        assert_eq!(slot(&stale, "main", 0, None), Some(1));
+        // A pane that has gone does not hold the slot for ever.
+        assert_eq!(slot(&stale, "main", 0, Some(99)), Some(1));
+        // Nor does one in another tab or session.
+        assert_eq!(slot(&stale, "main", 1, Some(2)), None);
+        assert_eq!(slot(&stale, "other", 0, Some(2)), None);
     }
 
     fn agent(session: &str, pane: u32) -> Agent {
