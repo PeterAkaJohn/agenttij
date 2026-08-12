@@ -18,6 +18,10 @@ pub struct Group {
     /// The member last on screen, so returning to a row puts you back where you
     /// were rather than always on the agent.
     pub current: u32,
+    /// The member on screen before that one, so two of them can be flipped
+    /// between without walking past the rest — the agent and its editor is the
+    /// pair people actually alternate all day.
+    previous: Option<u32>,
 }
 
 impl Group {
@@ -25,7 +29,16 @@ impl Group {
         Self {
             members: vec![pane],
             current: pane,
+            previous: None,
         }
+    }
+
+    /// Records the member now on screen, keeping the one it replaced.
+    fn showing(&mut self, pane: u32) {
+        if self.current != pane {
+            self.previous = Some(self.current);
+        }
+        self.current = pane;
     }
 
     pub fn primary(&self) -> u32 {
@@ -39,11 +52,21 @@ impl Group {
     /// The member after `pane`, wrapping. `None` when there is nothing to cycle
     /// to, which is the common case of an agent on its own.
     fn after(&self, pane: u32) -> Option<u32> {
+        self.step(pane, 1)
+    }
+
+    /// The member before `pane`, wrapping. One press back is worth as much as one
+    /// press on: a row of five is two presses from anywhere with both.
+    fn before(&self, pane: u32) -> Option<u32> {
+        self.step(pane, self.members.len() - 1)
+    }
+
+    fn step(&self, pane: u32, by: usize) -> Option<u32> {
         if self.members.len() < 2 {
             return None;
         }
         let at = self.members.iter().position(|member| *member == pane)?;
-        Some(self.members[(at + 1) % self.members.len()])
+        Some(self.members[(at + by) % self.members.len()])
     }
 }
 
@@ -87,6 +110,9 @@ impl Groups {
             if !group.members.contains(&group.current) {
                 group.current = group.primary();
             }
+            group.previous = group
+                .previous
+                .filter(|previous| group.members.contains(previous));
         }
 
         for pane in live {
@@ -106,7 +132,7 @@ impl Groups {
                 if !group.holds(pane) {
                     group.members.push(pane);
                 }
-                group.current = pane;
+                group.showing(pane);
             }
             // Nothing holds `beside` yet: a row being *built*, rather than one
             // being added to. A layout's group template opens every pane of a
@@ -117,6 +143,7 @@ impl Groups {
                 self.groups.push(Group {
                     members: vec![beside, pane],
                     current: pane,
+                    previous: Some(beside),
                 });
                 // Also unseen, for the same reason `pane` is. A `beside` that is
                 // already alive leaves the list on the next reconcile anyway.
@@ -136,8 +163,27 @@ impl Groups {
     /// Records which member of a group is on screen.
     pub fn show(&mut self, pane: u32) {
         if let Some(group) = self.groups.iter_mut().find(|group| group.holds(pane)) {
-            group.current = pane;
+            group.showing(pane);
         }
+    }
+
+    /// The member to cycle *back* to within the group holding `pane`.
+    pub fn before(&self, pane: u32) -> Option<u32> {
+        self.group_of(pane)?.before(pane)
+    }
+
+    /// The `index`-th member of the row holding `pane`, counting from 1 — the
+    /// same number the pane frame shows as `2/5`, so what you read is what you
+    /// press. `None` past the end, which is what a row of three does with a 7.
+    pub fn member_at(&self, pane: u32, index: usize) -> Option<u32> {
+        let group = self.group_of(pane)?;
+        group.members.get(index.checked_sub(1)?).copied()
+    }
+
+    /// The member that was on screen before the one that is, for flipping
+    /// between two of them. `None` until something has been swapped.
+    pub fn flip_of(&self, pane: u32) -> Option<u32> {
+        self.group_of(pane)?.previous
     }
 
     pub fn group_of(&self, pane: u32) -> Option<&Group> {
@@ -236,6 +282,62 @@ mod tests {
         // agent on the update that arrives before the panes exist.
         groups.reconcile(&[]);
         assert_eq!(groups.rows().collect::<Vec<_>>(), vec![(3, 3)]);
+    }
+
+    #[test]
+    fn a_row_can_be_walked_in_either_direction() {
+        let mut groups = Groups::default();
+        groups.reconcile(&[1]);
+        groups.add(1, 2);
+        groups.add(1, 3);
+
+        assert_eq!(groups.next_after(1), Some(2));
+        assert_eq!(groups.before(1), Some(3), "wraps to the end");
+        assert_eq!(groups.before(3), Some(2));
+        // An agent on its own has nowhere to go, either way.
+        groups.reconcile(&[1, 2, 3, 9]);
+        assert_eq!(groups.before(9), None);
+        assert_eq!(groups.next_after(9), None);
+    }
+
+    /// The number in a pane's frame (`2/3`) is the number you press.
+    #[test]
+    fn a_member_can_be_reached_by_its_position() {
+        let mut groups = Groups::default();
+        groups.reconcile(&[4]);
+        groups.add(4, 7);
+        groups.add(4, 5);
+
+        assert_eq!(groups.member_at(4, 1), Some(4));
+        assert_eq!(groups.member_at(4, 2), Some(7));
+        assert_eq!(groups.member_at(4, 3), Some(5));
+        assert_eq!(groups.member_at(4, 4), None, "past the end of the row");
+        assert_eq!(groups.member_at(4, 0), None, "rows are counted from one");
+        // Any member of the row answers for the row, not just the primary.
+        assert_eq!(groups.member_at(5, 2), Some(7));
+        assert_eq!(groups.member_at(99, 1), None);
+    }
+
+    #[test]
+    fn a_row_remembers_the_member_before_the_one_on_screen() {
+        let mut groups = Groups::default();
+        groups.reconcile(&[1]);
+        groups.add(1, 2);
+        groups.add(1, 3);
+        assert_eq!(groups.current_of(1), Some(3));
+        assert_eq!(groups.flip_of(1), Some(2));
+
+        groups.show(1);
+        assert_eq!(groups.flip_of(1), Some(3), "flipping is between two");
+        groups.show(3);
+        assert_eq!(groups.flip_of(1), Some(1));
+        // Showing what is already on screen is not a swap.
+        groups.show(3);
+        assert_eq!(groups.flip_of(1), Some(1));
+
+        // And a closed pane is not somewhere to flip back to.
+        groups.reconcile(&[2, 3]);
+        assert_eq!(groups.flip_of(3), None);
     }
 
     #[test]

@@ -31,7 +31,9 @@ screen — the same thing until you open a pane somewhere else.
 | `b` | flip back to the previous row (`Alt b` anywhere) |
 | `B` | back to the session you came from |
 | `o` | open a workspace here on that row's project |
-| `v` | cycle the panes *within* this row (`Alt v` anywhere) |
+| `v`, `V` | cycle the panes *within* this row, either way (`Alt v`, `Alt V`) |
+| `1`–`9` | straight to that pane of the row (`Alt 1`–`Alt 9`) |
+| `'` | flip to the pane you were on before this one (`Alt '`) |
 | `a` | add a pane to this row: an editor, a log, whatever (`Alt m`) |
 | `n` | new agent pane — a new row (`Alt g`) |
 | `d` `d` | close the row, the pane under it, or a whole project — asks first |
@@ -235,6 +237,12 @@ the row you are on — an editor next to the agent, a log next to that — and
 exactly one member is on screen at a time. Companions never get rows of their
 own: the row *is* the agent session. `Alt v` cycles through the row's panes from
 anywhere, including while you are typing at the agent, which is the point of it.
+
+Getting around a row is meant to take one press: `v` and `V` step forward and
+back through it, `1`–`9` go straight to a pane by the number its frame already
+shows (`· api 3/5`), and `'` flips between the two you have been alternating. All
+four have global twins — `Alt v`, `Alt V`, `Alt 1`–`Alt 9`, `Alt '` — since the
+usual moment for them is while the agent has the keyboard.
 
 Each row remembers which member you were last looking at. Every pane belongs to
 exactly one row, and a pane the sidebar does not recognise becomes a row of its

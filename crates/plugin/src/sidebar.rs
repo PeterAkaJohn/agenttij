@@ -328,6 +328,20 @@ impl ZellijPlugin for Sidebar {
         }
         match message.name.as_str() {
             "cycle" => self.cycle(),
+            "cycle-back" => self.cycle_back(),
+            "flip" => self.flip_pane(),
+            // Which pane, as the number on its frame. A payload rather than a
+            // configuration key: `payload` is a message field, so nine bindings
+            // stay one plugin instead of nine.
+            "pane" => {
+                if let Some(index) = message
+                    .payload
+                    .as_ref()
+                    .and_then(|raw| raw.trim().parse().ok())
+                {
+                    self.show_index(index);
+                }
+            }
             "back" => self.go_back(),
             "new" => self.new_row(),
             "add" => self.add_to_row(),
@@ -789,6 +803,17 @@ impl Sidebar {
 
         match bare_key {
             BareKey::Char('q') | BareKey::Esc => had_peek,
+            // Straight to a pane of the row on screen by the number its frame
+            // shows. Digits are free: Zellij only binds them inside its own tab
+            // mode, where the sidebar never has the keyboard.
+            BareKey::Char(digit) if digit.is_ascii_digit() && digit != '0' => {
+                self.show_index(digit as usize - '0' as usize);
+                false
+            }
+            BareKey::Char('\'') => {
+                self.flip_pane();
+                false
+            }
             BareKey::Down | BareKey::Char('j') => self.move_cursor(1),
             BareKey::Up | BareKey::Char('k') => self.move_cursor(-1),
             BareKey::Enter => {
@@ -944,6 +969,13 @@ impl Sidebar {
                     }
                     _ => self.cycle(),
                 }
+                false
+            }
+            // Backwards. Nothing remote: the controller over there cycles one
+            // way, and asking it to go back would need a second verb for a row
+            // whose panes you cannot see anyway.
+            BareKey::Char('V') => {
+                self.cycle_back();
                 false
             }
             // Add a pane to the selected row: an editor beside the agent, a log,
@@ -1836,8 +1868,32 @@ impl Sidebar {
 
     /// Shows the next pane in the row currently on screen.
     fn cycle(&mut self) {
+        self.walk(Groups::next_after);
+    }
+
+    /// And the one before it: on a row of five, forwards and backwards together
+    /// put every pane two presses away instead of four.
+    fn cycle_back(&mut self) {
+        self.walk(Groups::before);
+    }
+
+    /// Flips between the two panes of the row you have been alternating — the
+    /// agent and the editor beside it, whatever else the row holds.
+    fn flip_pane(&mut self) {
+        self.walk(Groups::flip_of);
+    }
+
+    /// Shows the `index`-th pane of the row on screen, counting from 1 — the
+    /// number its frame already shows as `2/5`.
+    fn show_index(&mut self, index: usize) {
+        self.walk(|groups, visible| groups.member_at(visible, index));
+    }
+
+    /// The shared half of cycling, flipping and jumping to a number: work out
+    /// which member of the row on screen to show, then show it.
+    fn walk(&mut self, pick: impl Fn(&Groups, u32) -> Option<u32>) {
         let Some(visible) = self.slot() else { return };
-        let Some(target) = self.groups.next_after(visible) else {
+        let Some(target) = pick(&self.groups, visible).filter(|target| *target != visible) else {
             return;
         };
 

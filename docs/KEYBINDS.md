@@ -23,6 +23,9 @@ working while the sidebar has focus.
 | `B` | back to the session you came from |
 | `o` | open a workspace here on that row's project |
 | `v` | cycle to the next pane *within* the row on screen |
+| `V` | and back the other way |
+| `1`–`9` | straight to that pane of the row — the number its frame shows |
+| `'` | flip to the pane you were on before this one |
 | `a` | add a pane to the row on screen |
 | `n` | new agent pane — a new row, or a whole one with `group` in the layout |
 | `d` `d` | close what the cursor is on — twice, it cannot be undone |
@@ -46,14 +49,28 @@ worst status inside it, so folding a project away never hides an agent that is
 waiting for you. `Tab` folds and unfolds, `[` and `]` step between projects, and
 `Enter` opens a folded one.
 
+### Getting around a row
+
+A row of five is a row you have to *navigate*, not just cycle. Three ways, all of
+them one press: `v` and `V` step forward and back, `1`–`9` go straight to a pane
+by the number its own frame shows (`· api 3/5`), and `'` flips between the two you
+have been alternating — the agent and its editor, whatever else the row holds.
+
+Each has a global twin, because the point is doing it while the *agent* has the
+keyboard: `Alt v`, `Alt V`, `Alt 1`–`Alt 9`, `Alt '`. The number keys are free in
+Zellij's own bindings; `1`–`9` mean "go to tab" only inside its tab mode, where
+the sidebar never has the keyboard anyway.
+
 ### A row from a template
 
 A layout can say what panes a row starts with — `group "claude; nvim .; lazygit"`
 in the sidebar's configuration — and then `n` opens all of them, the first on
 screen and the rest parked behind it on `v`. The row the session opens with gets
 them too. See the README for the whole of it, and one catch: `Alt g` has to carry
-the same `group` as the layout, or Zellij treats it as a different sidebar
-(`AGENTTIJ_GROUP="..." ./scripts/install.sh` writes it into the binds).
+the same `group` as the layout, or Zellij treats it as a different sidebar —
+`./scripts/install.sh` reads the line out of the layouts and writes it into the
+binds, so re-running it after editing a template is the whole of keeping them in
+step.
 
 `a` is deliberately not templated — it adds one plain pane, because that is what
 "one more" means.
@@ -114,7 +131,7 @@ Without a controller over there, `a` still works: the pane is opened with
 rest as title lines. It looks similar and is not the same thing, which is the
 argument for putting the controller on the machines you watch.
 
-### Machines### Machines
+### Machines
 
 `h` opens the list of machines to watch, prefilled with the ones already being
 watched, so adding and removing one are the same edit: type a comma-separated

@@ -28,6 +28,12 @@ END = "// agenttij:end"
 
 def block(url, summon, cycle, back, focus, new, add, jump, group, indent):
     """Our `shared_except` block, indented to sit inside a `keybinds` node."""
+    # Going back through a row, and flipping between two of its panes, live
+    # beside the cycle key rather than getting keys of their own: whatever
+    # modifier you cycle with, these are it with Shift and with a quote.
+    modifier, key = cycle.rsplit(" ", 1)
+    cycle_back = f"{modifier} {key.upper()}"
+    flip = f"{modifier} '"
     # What every binding that has to *find* the docked sidebar must repeat,
     # exactly as the layout writes it.
     matched = ['            scope "session"', '            solo "true"']
@@ -95,6 +101,37 @@ def block(url, summon, cycle, back, focus, new, add, jump, group, indent):
         *matched,
         "        }",
         "    }",
+        "    // Around the row on screen without going to the sidebar: back a",
+        "    // pane, flip to the one before, or straight to a numbered one — the",
+        "    // number each pane frame already shows as `2/5`.",
+        f'    bind "{cycle_back}" {{',
+        f'        MessagePlugin "{url}" {{',
+        '            name "cycle-back"',
+        "            launch_new false",
+        *matched,
+        "        }",
+        "    }",
+        f'    bind "{flip}" {{',
+        f'        MessagePlugin "{url}" {{',
+        '            name "flip"',
+        "            launch_new false",
+        *matched,
+        "        }",
+        "    }",
+        *[
+            line
+            for index in range(1, 10)
+            for line in (
+                f'    bind "Alt {index}" {{',
+                f'        MessagePlugin "{url}" {{',
+                '            name "pane"',
+                f'            payload "{index}"',
+                "            launch_new false",
+                *matched,
+                "        }",
+                "    }",
+            )
+        ],
         "    // Back to the row you were on before this one.",
         f'    bind "{back}" {{',
         f'        MessagePlugin "{url}" {{',

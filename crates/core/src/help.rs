@@ -4,7 +4,7 @@
 //! this, and a test checks it against nothing being forgotten.
 
 /// A key and what it does, in the order they are worth learning.
-pub const SIDEBAR_KEYS: [(&str, &str); 20] = [
+pub const SIDEBAR_KEYS: [(&str, &str); 22] = [
     ("j / k", "move"),
     ("Enter", "show this row"),
     ("Tab", "open a row, or fold a project"),
@@ -15,7 +15,9 @@ pub const SIDEBAR_KEYS: [(&str, &str); 20] = [
     ("b", "flip to the previous row"),
     ("B", "back to the session you came from"),
     ("o", "a workspace here on that project"),
-    ("v", "cycle panes in this row"),
+    ("v / V", "cycle panes in this row, either way"),
+    ("1 - 9", "straight to that pane of the row"),
+    ("'", "flip to the pane before this one"),
     ("a", "add a pane to this row"),
     ("n", "new row (new agent)"),
     ("/", "jump: everywhere you could go"),
@@ -30,9 +32,12 @@ pub const SIDEBAR_KEYS: [(&str, &str); 20] = [
 /// The Zellij-level bindings the installer writes. Shown with their defaults;
 /// a user who rebound them will see the default, which is the one honest
 /// limitation of listing them here at all.
-pub const GLOBAL_KEYS: [(&str, &str); 7] = [
+pub const GLOBAL_KEYS: [(&str, &str); 10] = [
     ("Alt s", "focus the sidebar"),
     ("Alt v", "cycle panes in this row"),
+    ("Alt V", "and back the other way"),
+    ("Alt 1-9", "straight to that pane of the row"),
+    ("Alt '", "flip to the pane before this one"),
     ("Alt b", "previous row"),
     ("Alt g", "new row"),
     ("Alt m", "add a pane to this row"),
