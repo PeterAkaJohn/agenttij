@@ -15,6 +15,8 @@ const ROW: &str = "r";
 const FOLDED: &str = "f";
 const NAMED: &str = "n";
 const HOST: &str = "h";
+/// One row's panes, so a reload does not cost you the grouping.
+const GROUP: &str = "g";
 
 /// How you left the sidebar: what order things were in, and what was folded away.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -29,6 +31,14 @@ pub struct Arrangement {
     /// roots under one name are one project — which is how a front end and a
     /// back end in separate repositories become the thing you actually work on.
     pub names: BTreeMap<String, String>,
+    /// Which panes make up each row, by the session they live in.
+    ///
+    /// A reload builds a `Groups` from nothing, and every pane then becomes a row
+    /// of its own — the panes are fine, the *arrangement* of them is gone. Pane
+    /// ids survive a reload, so writing the rows down is enough to put them back.
+    /// Per session for the same reason hosts are: a pane id only means something
+    /// alongside the session holding it.
+    pub groups: BTreeMap<String, Vec<Vec<u32>>>,
     /// Machines to watch, by the session they were added in.
     ///
     /// Per session, not per machine: which boxes you care about is part of what
@@ -58,6 +68,12 @@ pub fn encode(arrangement: &Arrangement) -> String {
     }
     for (root, name) in &arrangement.names {
         out.push_str(&format!("{NAMED}\t{root}\t{name}\n"));
+    }
+    for (session, rows) in &arrangement.groups {
+        for members in rows.iter().filter(|members| members.len() > 1) {
+            let members: Vec<String> = members.iter().map(u32::to_string).collect();
+            out.push_str(&format!("{GROUP}\t{session}\t{}\n", members.join(",")));
+        }
     }
     for (session, hosts) in &arrangement.hosts {
         for host in hosts {
@@ -98,6 +114,23 @@ pub fn decode(text: &str) -> Arrangement {
                         .entry(session.to_owned())
                         .or_default()
                         .push(host.to_owned());
+                }
+            }
+            Some(GROUP) => {
+                let (Some(session), Some(members)) = (fields.next(), fields.next()) else {
+                    continue;
+                };
+                // A row of one is not a row; a member that is not a number takes
+                // its own line down and nothing else.
+                let members: Vec<u32> = members
+                    .split(',')
+                    .filter_map(|member| member.trim().parse().ok())
+                    .collect();
+                if !session.is_empty() && members.len() > 1 {
+                    out.groups
+                        .entry(session.to_owned())
+                        .or_default()
+                        .push(members);
                 }
             }
             Some(NAMED) => {
@@ -198,9 +231,31 @@ mod tests {
                 "main".to_owned(),
                 vec!["dev1".to_owned(), "build2".to_owned()],
             )]),
+            groups: BTreeMap::from([("main".to_owned(), vec![vec![3, 4, 9]])]),
         };
 
         assert_eq!(decode(&encode(&arrangement)), arrangement);
+    }
+
+    /// A reload is the ordinary way to lose a grouping, so the file has to be
+    /// the thing that puts it back.
+    #[test]
+    fn a_rows_panes_are_remembered_per_session() {
+        let arrangement = decode("g\tmain\t3,4,9\ng\tother\t1,2\ng\tmain\t5\ng\t\t7,8\n");
+
+        assert_eq!(arrangement.groups["main"], vec![vec![3, 4, 9]]);
+        assert_eq!(arrangement.groups["other"], vec![vec![1, 2]]);
+        assert_eq!(
+            arrangement.groups.len(),
+            2,
+            "a row of one is not a row, and a row with no session is nobody's"
+        );
+        // A row of one is not written either, so it cannot come back as one.
+        let mut only_singletons = Arrangement::default();
+        only_singletons
+            .groups
+            .insert("main".to_owned(), vec![vec![3]]);
+        assert_eq!(encode(&only_singletons), "");
     }
 
     #[test]

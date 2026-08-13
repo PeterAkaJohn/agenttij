@@ -6,8 +6,10 @@
 //! is one row, not three. Companions never get a row of their own.
 //!
 //! Every pane belongs to exactly one group. A pane the sidebar has not been told
-//! about becomes a group of its own, which is what keeps a reload cheap: it costs
-//! you the grouping, never access to a pane.
+//! about becomes a group of its own, which is what keeps a reload cheap: it can
+//! only ever cost you the arrangement, never access to a pane. Even that is
+//! written down now — see [`Groups::remember`] and [`Groups::restore`], and the
+//! `g` lines in `order`.
 
 /// One row's worth of panes.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -90,6 +92,15 @@ impl Groups {
     /// members are dropped, empty groups disappear, and anything unrecognised
     /// becomes its own group.
     pub fn reconcile(&mut self, live: &[u32]) {
+        // Nothing known is not nothing alive — the same stance `panes::reconcile`
+        // takes about agents, and for the same reason. A list that arrives empty
+        // (before the first real one, or from a session whose panes have not been
+        // published yet) would otherwise take every row apart in one update, and
+        // the panes would come back as rows of their own.
+        if live.is_empty() {
+            return;
+        }
+
         // Anything seen alive is no longer waiting to be seen; anything still
         // waiting spends one of its lives.
         self.unseen.retain(|(pane, _)| !live.contains(pane));
@@ -153,6 +164,44 @@ impl Groups {
         // Ten updates is a second or so of slack — far more than the two or
         // three that arrive around a pane being created.
         self.unseen.push((pane, 10));
+    }
+
+    /// Puts back a grouping remembered from a previous run of the plugin.
+    ///
+    /// A reload starts with no groups at all, so every pane becomes a row of its
+    /// own — which is the whole grouping gone for something as ordinary as
+    /// picking up a new build. The panes themselves are untouched by a reload and
+    /// keep their ids, so the rows can simply be built again.
+    ///
+    /// Members are taken out of whatever singleton rows they landed in first.
+    /// Anything that is not alive any more is the next reconcile's business.
+    pub fn restore(&mut self, remembered: &[Vec<u32>]) {
+        for members in remembered.iter().filter(|members| members.len() > 1) {
+            for group in &mut self.groups {
+                group.members.retain(|member| !members.contains(member));
+            }
+            self.groups.retain(|group| !group.members.is_empty());
+            self.groups.push(Group {
+                members: members.clone(),
+                current: members[0],
+                previous: None,
+            });
+        }
+
+        for group in &mut self.groups {
+            if !group.members.contains(&group.current) {
+                group.current = group.primary();
+            }
+        }
+        self.groups.sort_by_key(Group::primary);
+    }
+
+    /// Every row as its panes, for writing down.
+    pub fn remember(&self) -> Vec<Vec<u32>> {
+        self.groups
+            .iter()
+            .map(|group| group.members.clone())
+            .collect()
     }
 
     /// The next member to cycle to within the group holding `pane`.
@@ -282,6 +331,46 @@ mod tests {
         // agent on the update that arrives before the panes exist.
         groups.reconcile(&[]);
         assert_eq!(groups.rows().collect::<Vec<_>>(), vec![(3, 3)]);
+    }
+
+    /// What a reload does, and what putting it back has to survive.
+    #[test]
+    fn a_grouping_can_be_written_down_and_put_back() {
+        let mut groups = Groups::default();
+        groups.reconcile(&[1]);
+        groups.add(1, 2);
+        groups.add(1, 3);
+        groups.reconcile(&[1, 2, 3, 8]);
+        let remembered = groups.remember();
+        assert_eq!(remembered, vec![vec![1, 2, 3], vec![8]]);
+
+        // A reload: the panes are all still there, each one a row of its own.
+        let mut fresh = Groups::default();
+        fresh.reconcile(&[1, 2, 3, 8]);
+        assert_eq!(fresh.rows().count(), 4);
+
+        fresh.restore(&remembered);
+        assert_eq!(fresh.rows().collect::<Vec<_>>(), vec![(1, 3), (8, 1)]);
+        assert_eq!(fresh.members_of(1), &[1, 2, 3]);
+        assert_eq!(fresh.current_of(1), Some(1), "back on the agent");
+
+        // A pane that did not survive is the next reconcile's business, and the
+        // row is still a row without it.
+        fresh.reconcile(&[1, 3, 8]);
+        assert_eq!(fresh.members_of(1), &[1, 3]);
+    }
+
+    /// An empty list is a list that has not arrived, not a session with nothing
+    /// in it — believing it took every row apart at once.
+    #[test]
+    fn nothing_known_is_not_nothing_alive() {
+        let mut groups = Groups::default();
+        groups.reconcile(&[1]);
+        groups.add(1, 2);
+        groups.reconcile(&[1, 2]);
+
+        groups.reconcile(&[]);
+        assert_eq!(groups.members_of(1), &[1, 2]);
     }
 
     #[test]

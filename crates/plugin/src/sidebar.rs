@@ -115,6 +115,12 @@ pub struct Sidebar {
     arrangement: order::Arrangement,
     /// Whether the remembered arrangement has been asked for yet.
     order_read: bool,
+    /// Whether it has arrived. Nothing is written back before it has, or a
+    /// sidebar that started a second ago would save its blank slate over it.
+    order_loaded: bool,
+    /// Whether the grouping it remembers has been put back — once per run, since
+    /// after that the live grouping is the truth.
+    groups_restored: bool,
     /// What the input line is collecting, and what has been typed so far.
     typing: Option<(Field, String)>,
     /// Which git roots each project holds, from before folding hid any of them —
@@ -288,7 +294,9 @@ impl ZellijPlugin for Sidebar {
                     }
                     None => None,
                 };
+                self.restore_groups(&here);
                 self.fill_first_row(&here);
+                self.remember_groups();
                 self.tab = snapshot::own_tab(&sessions, self.plugin_id).or(self.tab);
                 if self.own_url.is_none() {
                     self.own_url = snapshot::own_url(&sessions, self.plugin_id);
@@ -554,6 +562,10 @@ impl Sidebar {
     fn absorb_scan(&mut self, stdout: &[u8], context: &BTreeMap<String, String>) -> bool {
         if context.get(scan::CONTEXT_KEY).map(String::as_str) == Some(scan::CONTEXT_ORDER) {
             self.arrangement = order::decode(&String::from_utf8_lossy(stdout));
+            // Nothing is written back before this point: an arrangement saved
+            // from the default one would take the file's projects, names and
+            // rows with it.
+            self.order_loaded = true;
             self.rebuild();
             return true;
         }
@@ -1353,6 +1365,61 @@ impl Sidebar {
         self.save_order();
         self.rebuild();
         true
+    }
+
+    /// Puts back the grouping the file remembers, once, when both it and a real
+    /// pane list have arrived.
+    ///
+    /// Here rather than where the file lands, because a remembered id means
+    /// nothing without the panes to check it against — and `here` is the only
+    /// moment those are true.
+    fn restore_groups(&mut self, here: &[u32]) {
+        if !self.order_loaded || self.groups_restored || here.is_empty() {
+            return;
+        }
+        self.groups_restored = true;
+
+        let Some(remembered) = self.arrangement.groups.get(&self.current_session) else {
+            return;
+        };
+        // Only around panes this session actually has: an id from a session that
+        // is gone would otherwise drag a stranger into a row.
+        let live: Vec<Vec<u32>> = remembered
+            .iter()
+            .map(|members| {
+                members
+                    .iter()
+                    .copied()
+                    .filter(|member| here.contains(member))
+                    .collect()
+            })
+            .collect();
+        self.groups.restore(&live);
+    }
+
+    /// Keeps the written-down grouping in step with the live one.
+    ///
+    /// Here rather than at every place that changes a row, because reconciling
+    /// is the moment the grouping is *true* — and it writes only when the answer
+    /// changed, which is when a pane is added or closed rather than every tick.
+    fn remember_groups(&mut self) {
+        if !self.order_loaded {
+            return;
+        }
+        let rows = self.groups.remember();
+        let remembered = self.arrangement.groups.get(&self.current_session);
+        if remembered == Some(&rows) {
+            return;
+        }
+        self.arrangement
+            .groups
+            .insert(self.current_session.clone(), rows);
+        // A session that is gone takes its rows with it: pane ids mean nothing
+        // without it, and otherwise the file grows a block per session forever.
+        self.arrangement.groups.retain(|session, _| {
+            *session == self.current_session || self.live_sessions.contains(session)
+        });
+        self.save_order();
     }
 
     /// Writes the arrangement out, so a reload does not lose it. Only on a move,

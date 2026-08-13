@@ -18,7 +18,17 @@ sh scripts/press-keys.sh test layouts/agenttij-workspace.kdl 8:'\033h' 4:p 6:q
 ```
 
 Fast loop when iterating on the plugin: build, copy the wasm over the installed
-one, then `zellij -s <session> action start-or-reload-plugin "file:$HOME/.config/zellij/plugins/agenttij.wasm"`.
+one, then reload it *with its configuration*:
+
+```sh
+zellij -s <session> action start-or-reload-plugin \
+    -c "scope=session,solo=true" "file:$HOME/.config/zellij/plugins/agenttij.wasm"
+```
+
+Without `-c`, that command does not reload the sidebar you are looking at — it
+starts a *second* one in a new pane, because a plugin's identity is its url plus
+its configuration. Measured: `plugin_3`, titled "agents", beside the first. The
+`-c` has to say everything the layout says, `group` included.
 
 ## Structure
 
@@ -73,10 +83,11 @@ keep `crates/plugin` to wiring, host calls and drawing.
   panes and focus, which is the only way to see what a key actually did:
   `scripts/press-keys.sh test layouts/agenttij-workspace.kdl 7:'\033h' 3:p 6:q`.
   Two traps it exists to avoid: `zellij action send-keys` bypasses keybind
-  resolution, and `write-chars` does not reach command panes at all — their
-  stdin is `/dev/null`, and even a real keypress to a focused command pane is
-  not readable from `/dev/tty`. Move focus from inside the keystream (`\033h` is
-  Alt+h, focus left); an external `focus-pane-id` gets overridden on startup.
+  resolution, and `write-chars` does not reach command panes at all — a real
+  keypress does, which is the difference this harness exists to exercise. Move
+  focus from inside the keystream (`\033h` is Alt+h, focus left); an external
+  `focus-pane-id` gets overridden on startup. And `printf %b` reads `\0333` as one
+  octal byte rather than Esc then 3, so Alt and a digit has to be written `\e3`.
 - **`zellij setup --check` proves a config parses, not that it works.** A second
   `keybinds` block passes the check and is then ignored.
 - **`dump-layout` prints the live layout *and* the templates.** Cut at the first
@@ -132,6 +143,12 @@ Each of these cost a debugging round already:
   a rail you chose stays a rail. Constraining that first layout by pane count
   does not work: suppressing a pane relayouts too (`extract_pane`), and in solo
   mode that drops the count straight back down.
+- **A reload keeps the panes and loses nothing else either, now.** Grouping used
+  to go with it — a reload built a `Groups` from nothing, every pane became a row
+  of its own, and a row of five came apart into five. The rows are written into
+  `~/.cache/agenttij/order` (`g` lines, per session) and put back around the panes
+  that are still there. Which also means the arrangement file must not be written
+  before it has been read: a sidebar that started a second ago has a blank one.
 - **A plugin's identity is its url *plus* its configuration.** A pipe, message or
   `LaunchOrFocusPlugin` whose configuration differs launches a *second* instance
   instead of reaching the one running. Layout configuration and anything
