@@ -77,8 +77,10 @@ pub enum Kind {
     /// An agent, or a pane standing in for one until something reports.
     #[default]
     Row,
-    /// One pane of a row, listed underneath it while the row is open.
-    Pane,
+    /// One pane of a row, listed underneath it while the row is open. `last`
+    /// closes the branch off — the difference between `├` and `└`, which is what
+    /// tells you where a row ends without counting.
+    Pane { last: bool },
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -219,7 +221,7 @@ mod tests {
         let rows = [
             row("here", 1, Kind::Row),
             row("here", 2, Kind::Row),
-            row("here", 7, Kind::Pane), // a pane of row 2, not a row of its own
+            row("here", 7, Kind::Pane { last: true }), // a pane of row 2, not a row of its own
             row("here", 3, Kind::Row),
             row("other", 4, Kind::Row), // another session cannot take our slot
         ];

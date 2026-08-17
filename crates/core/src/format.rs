@@ -32,7 +32,7 @@ pub fn row_parts(agent: &Agent, now: u64, width: usize, current_session: &str) -
         // A pane listed under its row has no status of its own. Its mark is not
         // here but in the indent, where it lines up under the label of the row
         // it belongs to — see `indent`.
-        Kind::Pane => ' ',
+        Kind::Pane { .. } => ' ',
         Kind::Row => agent.status.glyph(),
     };
 
@@ -80,7 +80,11 @@ pub fn row_parts(agent: &Agent, now: u64, width: usize, current_session: &str) -
     let indent = match agent.kind {
         // One level goes to the mark itself, so the branch sits under the label
         // of the row it belongs to rather than a column further out.
-        Kind::Pane => format!("{}├ ", " ".repeat(agent.depth.saturating_sub(1))),
+        Kind::Pane { last } => format!(
+            "{}{} ",
+            " ".repeat(agent.depth.saturating_sub(1)),
+            if last { '└' } else { '├' }
+        ),
         _ => " ".repeat(agent.depth),
     };
 
@@ -234,10 +238,18 @@ mod tests {
         let mut child = agent(Status::Pane, 0, "");
         child.title = "nvim".into();
         child.depth = 1;
-        child.kind = Kind::Pane;
+        child.kind = Kind::Pane { last: false };
 
         let row = row(&child, 1_020, 20, "sess");
         assert_eq!(row, "  ├ nvim           -", "a branch off the row above it");
+
+        // The last one closes the branch, so a row's end reads without counting.
+        child.kind = Kind::Pane { last: true };
+        // `super::` because the line above shadows the function with its output.
+        assert_eq!(
+            super::row(&child, 1_020, 20, "sess"),
+            "  └ nvim           -"
+        );
         assert_eq!(row.chars().count(), 20);
     }
 

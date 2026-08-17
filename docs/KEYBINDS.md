@@ -14,7 +14,7 @@ working while the sidebar has focus.
 | `j`, `↓` | next row |
 | `k`, `↑` | previous row |
 | `Enter` | show the selected row, or the pane under it |
-| `Tab` | open a row: its panes underneath it, marked `├` — or fold a project |
+| `Tab` | open a row: its panes underneath it, `├` and `└` — or fold a project |
 | `[`, `]` | previous / next project |
 | `J`, `K` | move this project, or this row inside its project |
 | `r` | name a project — two with the same name are one |

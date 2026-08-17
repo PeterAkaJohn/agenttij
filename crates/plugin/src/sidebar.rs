@@ -900,7 +900,7 @@ impl Sidebar {
 
                 // One pane of a row on another machine: that machine shows it,
                 // and if we are already attached the change is simply there.
-                if !agent.host.is_empty() && agent.kind == Kind::Pane {
+                if !agent.host.is_empty() && matches!(agent.kind, Kind::Pane { .. }) {
                     actions::ask(&agent.host, &agent.session, "show", Some(agent.pane));
                     return false;
                 }
@@ -925,7 +925,7 @@ impl Sidebar {
                 }
 
                 let here = agent.session == self.current_session;
-                if self.config.solo && here && agent.kind == Kind::Pane {
+                if self.config.solo && here && matches!(agent.kind, Kind::Pane { .. }) {
                     self.show_pane(agent.pane);
                 } else if self.config.solo && here {
                     self.switch_to_row(agent.pane);
@@ -967,7 +967,7 @@ impl Sidebar {
                         self.rebuild();
                         return true;
                     }
-                    let row = if agent.kind == Kind::Pane {
+                    let row = if matches!(agent.kind, Kind::Pane { .. }) {
                         self.groups
                             .group_of(agent.pane)
                             .map(|group| group.primary())
@@ -1141,7 +1141,7 @@ impl Sidebar {
                 .flat_map(|row| self.groups.closing(*row, true))
                 .collect(),
             Kind::Row => self.groups.closing(agent.pane, true),
-            Kind::Pane => vec![agent.pane],
+            Kind::Pane { .. } => vec![agent.pane],
         };
         if closing.is_empty() {
             return;
@@ -1180,7 +1180,7 @@ impl Sidebar {
         // The cursor follows the slot rather than jumping to the top; the next
         // rebuild repairs it if what it lands on is gone too.
         self.selected = successor
-            .filter(|_| agent.kind != Kind::Pane)
+            .filter(|_| !matches!(agent.kind, Kind::Pane { .. }))
             .map(|pane| Selection::Row {
                 session: self.current_session.clone(),
                 pane,
@@ -1238,7 +1238,7 @@ impl Sidebar {
     fn interrupting(&self, agent: &Agent) -> Vec<u32> {
         match agent.kind {
             Kind::Project { .. } => self.rows_of(project::key(agent, &self.arrangement.names)),
-            Kind::Row | Kind::Pane => vec![agent.pane],
+            Kind::Row | Kind::Pane { .. } => vec![agent.pane],
         }
     }
 
@@ -1247,7 +1247,7 @@ impl Sidebar {
     /// the first row that is not going with it.
     fn successor(&self, agent: &Agent, closing: &[u32]) -> Option<u32> {
         let row = match agent.kind {
-            Kind::Pane => {
+            Kind::Pane { .. } => {
                 return self
                     .groups
                     .group_of(agent.pane)
@@ -1417,7 +1417,7 @@ impl Sidebar {
             }
             // A pane's place in its row is the order it joined in, which is the
             // only thing `v` can cycle through predictably.
-            Kind::Pane => return false,
+            Kind::Pane { .. } => return false,
         }
 
         self.save_order();
@@ -1587,7 +1587,7 @@ impl Sidebar {
                 .map(|row| self.groups.closing(*row, true).len())
                 .sum(),
             Kind::Row => self.groups.closing(agent.pane, true).len(),
-            Kind::Pane => 1,
+            Kind::Pane { .. } => 1,
         };
         Some(match panes {
             0 | 1 => format!("close {}? d", agent.label()),
@@ -1855,7 +1855,15 @@ impl Sidebar {
                     .collect()
             };
 
-            for member in members.into_iter().filter(|member| *member != row.pane) {
+            let members: Vec<u32> = members
+                .into_iter()
+                .filter(|member| *member != row.pane)
+                .collect();
+            // Which one closes the branch, worked out before the loop: the row's
+            // primary is filtered out above, so "the last member" is not
+            // necessarily the last of the group.
+            let last = members.len().saturating_sub(1);
+            for (at, member) in members.into_iter().enumerate() {
                 // What is running in it, not the pane title: a shell's title is
                 // its prompt, which is the row's own name three times over.
                 // From the cache `group_rows` filled a moment ago — asking the
@@ -1879,7 +1887,7 @@ impl Sidebar {
                     // Explicitly, not inherited: `..row.clone()` made every pane
                     // under a row another row, which is what `Enter`, the glyph
                     // and every remote member were reading.
-                    kind: Kind::Pane,
+                    kind: Kind::Pane { last: at == last },
                     ..row.clone()
                 });
             }

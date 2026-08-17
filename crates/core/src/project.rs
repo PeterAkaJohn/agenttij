@@ -85,7 +85,7 @@ pub fn group(
             match row.kind {
                 Kind::Row => inside = key(row, names) == project,
                 // Belongs to whatever row it was listed under.
-                Kind::Pane => {}
+                Kind::Pane { .. } => {}
                 Kind::Project { .. } => continue,
             }
             if inside {
@@ -216,7 +216,7 @@ mod tests {
     #[test]
     fn folding_a_project_hides_its_rows_and_their_panes() {
         let mut pane = row("/home/pp/api", 9, Status::Pane);
-        pane.kind = Kind::Pane;
+        pane.kind = Kind::Pane { last: true };
         let rows = vec![
             row("/home/pp/api", 1, Status::Running),
             pane,

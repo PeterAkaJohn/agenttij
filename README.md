@@ -10,9 +10,9 @@ jump to it.
 │ ▾ agenttij      2  │  ⚠ needs input     ◐ running
 │ ⚠ agenttij  3  2m  │  ✓ done            ○ idle
 │   ├ nvim        -  │  ? unknown         · a pane, no agent
-│   ├ lazygit     -  │
+│   └ lazygit     -  │
 │ ✓ docs-fix     5m  │  ▾ ▸ a project, open or folded
-│ ▸ dotfiles      4  │  ├   a pane of the row above it
+│ ▸ dotfiles      4  │  ├ └ panes of the row above
 │                    │  "3" = the row owns
 │ j/k ↵ n a v b d    │  three panes
 └────────────────────┘
