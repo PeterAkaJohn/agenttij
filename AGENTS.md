@@ -113,6 +113,17 @@ Each of these cost a debugging round already:
   Adding one to `request_permission` means adding it to
   `scripts/grant-permissions.py` too, or users get a prompt they cannot see in a
   narrow pane.
+- **A command issued in `load` is dropped, silently.** The permission grant has
+  not landed yet, so `run_command` there does nothing at all — measured with the
+  directory picker: it asked twice in `load` and zoxide was never started, no
+  error, no output, no clue. The first moment a command of yours can run is
+  `PermissionRequestResult`; the tick is the backstop.
+- **A plugin's command does not inherit `$HOME`.** zoxide could not find its own
+  database and printed nothing; paths came back unshortened because the home to
+  shorten against was empty too. Read it out of the passwd entry instead
+  (`getent passwd "$(id -u)" | cut -d: -f6`) and hand it to whatever needs it.
+  The command otherwise runs fine with no environment at all — verified with
+  `env -i`.
 - **A denied permission is remembered as an empty grant, and everything then
   fails silently.** Zellij's prompt is answered with `y`/`n` — so a `press-keys`
   run that types `n` into a session whose plugin is *waiting* on that prompt

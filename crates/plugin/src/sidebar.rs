@@ -180,6 +180,9 @@ pub struct Sidebar {
     /// and the home directory they are shortened against.
     frecent: Vec<String>,
     home: String,
+    /// How many times the list has been asked for, so a machine that answers
+    /// with nothing is asked a few times and then left alone.
+    dirs_asked: u8,
     /// What this controller last told the world about its rows, so it only says
     /// so again when the answer changed.
     published: (Vec<scan::Row>, Vec<scan::Member>),
@@ -248,17 +251,9 @@ impl ZellijPlugin for Sidebar {
             set_timeout(TICK_SECONDS);
         }
 
-        // Asked once: the list is a ranking of where you have been, and it does
-        // not change while a picker is open for a few seconds.
         if self.config.dirs {
             self.palette.verb("open a row here");
             self.palette.takes_a_path();
-            let command = scan::dirs_command();
-            let words: Vec<&str> = command.iter().map(String::as_str).collect();
-            run_command(
-                &words,
-                BTreeMap::from([(scan::CONTEXT_KEY.to_owned(), scan::CONTEXT_DIRS.to_owned())]),
-            );
         }
     }
 
@@ -336,6 +331,13 @@ impl ZellijPlugin for Sidebar {
                     PermissionStatus::Granted => Permissions::Granted,
                     PermissionStatus::Denied => Permissions::Denied,
                 };
+                // Not in `load`: a command run before the grant lands is dropped
+                // and nothing says so — measured, the picker asked twice there
+                // and zoxide was never started. This is the first moment a
+                // command of ours can run.
+                if self.config.dirs && self.permissions == Permissions::Granted {
+                    self.ask_for_dirs();
+                }
 
                 self.name_self();
                 true
@@ -458,6 +460,13 @@ impl Sidebar {
             return;
         }
         set_timeout(TICK_SECONDS);
+
+        // Whatever the permission event did or did not do: while the picker has
+        // no list, keep asking. Bounded, so a machine with no zoxide is asked
+        // three times and then left alone.
+        if self.config.dirs && self.home.is_empty() {
+            self.ask_for_dirs();
+        }
 
         // One pane per tick rather than everything at once: the answers go stale
         // slowly (a `cd`, a program starting), and a burst of round-trips is
@@ -2148,6 +2157,22 @@ impl Sidebar {
             session: self.current_session.clone(),
             pane,
         });
+    }
+
+    /// Asks where you have been. Its answer carries the home directory too,
+    /// because a plugin's command does not inherit `$HOME`.
+    fn ask_for_dirs(&mut self) {
+        if self.dirs_asked >= 3 {
+            return;
+        }
+        self.dirs_asked += 1;
+
+        let command = scan::dirs_command();
+        let words: Vec<&str> = command.iter().map(String::as_str).collect();
+        run_command(
+            &words,
+            BTreeMap::from([(scan::CONTEXT_KEY.to_owned(), scan::CONTEXT_DIRS.to_owned())]),
+        );
     }
 
     /// Fills the palette with whichever list it is: everywhere you could go, or

@@ -195,12 +195,16 @@ pub fn dirs_command() -> [String; 3] {
     [
         "sh".to_owned(),
         "-c".to_owned(),
-        // `$HOME` on the first line, because a plugin cannot read the
-        // environment — `get_session_environment_variables()` *panics* — and a
-        // column of `/home/someone/...` is a column of the same eleven
-        // characters. zoxide's failure is swallowed: no zoxide, no list, and the
-        // picker still has everywhere this machine is working.
-        "printf '%s\\n' \"$HOME\"; zoxide query -l 2>/dev/null".to_owned(),
+        // `$HOME` is not in the environment a plugin's command inherits —
+        // measured: the first line came back empty and every path was drawn
+        // unshortened — so it is read out of the passwd entry instead, and
+        // handed to zoxide, which otherwise cannot find its own database.
+        // `getent` is glibc's; the tilde is the fallback for anything without it.
+        "home=\"${HOME:-$(getent passwd \"$(id -u)\" 2>/dev/null | cut -d: -f6)}\"; \
+         home=\"${home:-$(cd ~ 2>/dev/null && pwd)}\"; \
+         printf '%s\\n' \"$home\"; \
+         HOME=\"$home\" zoxide query -l 2>/dev/null; true"
+            .to_owned(),
     ]
 }
 
