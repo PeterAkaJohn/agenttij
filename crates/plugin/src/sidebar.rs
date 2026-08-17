@@ -1435,6 +1435,11 @@ impl Sidebar {
         if !self.order_loaded || self.groups_restored || here.is_empty() {
             return;
         }
+        // Same reason as `remember_groups`: these instances have a grouping
+        // because every instance reconciles one, not because they use it.
+        if self.config.jump || self.config.bar || self.config.help {
+            return;
+        }
         self.groups_restored = true;
 
         let Some(remembered) = self.arrangement.groups.get(&self.current_session) else {
@@ -1461,7 +1466,11 @@ impl Sidebar {
     /// is the moment the grouping is *true* — and it writes only when the answer
     /// changed, which is when a pane is added or closed rather than every tick.
     fn remember_groups(&mut self) {
-        if !self.order_loaded {
+        // Only an instance that *manages* rows may write them down. A palette, a
+        // peek, the keybind list and a bar all run this same update path with a
+        // grouping they never use — and whichever of them wrote last would be
+        // what a reload restored.
+        if !self.order_loaded || self.config.jump || self.config.bar || self.config.help {
             return;
         }
         let rows = self.groups.remember();
