@@ -23,6 +23,14 @@ pub enum Act {
 #[derive(Default)]
 pub struct Jump {
     typed: String,
+    /// What `Enter` does here, since one palette goes somewhere and the other
+    /// starts something.
+    verb: Option<&'static str>,
+    /// Whether a path typed out in full is an answer in itself. The directory
+    /// picker lists the places you go to, which is not the same as every place
+    /// there is — so an absolute path beats the list rather than being filtered
+    /// against it.
+    literal: bool,
     /// Everything, in the order the list was built.
     entries: Vec<jump::Entry>,
     /// Indices into `entries` that match what has been typed, best first.
@@ -31,6 +39,14 @@ pub struct Jump {
 }
 
 impl Jump {
+    pub fn verb(&mut self, verb: &'static str) {
+        self.verb = Some(verb);
+    }
+
+    pub fn takes_a_path(&mut self) {
+        self.literal = true;
+    }
+
     /// Replaces the list without losing your place: what you are pointing at is
     /// remembered by what it is, not by where it was, because the list is
     /// rebuilt under you every second.
@@ -54,10 +70,15 @@ impl Jump {
         match key {
             BareKey::Esc => return Act::Close,
             BareKey::Enter => {
+                if self.literal && (self.typed.starts_with('/') || self.typed.starts_with('~')) {
+                    return Act::Go(jump::Target::Dir {
+                        path: self.typed.clone(),
+                    });
+                }
                 return match self.selected() {
                     Some(entry) => Act::Go(entry.target.clone()),
                     None => Act::Close,
-                }
+                };
             }
             BareKey::Down | BareKey::Tab => self.move_cursor(1),
             BareKey::Up => self.move_cursor(-1),
@@ -95,13 +116,18 @@ impl Jump {
             );
         }
 
-        let count = if self.matching.is_empty() {
+        let typing_a_path =
+            self.literal && (self.typed.starts_with('/') || self.typed.starts_with('~'));
+        let count = if typing_a_path {
+            format!("↵ {}  esc close", self.verb.unwrap_or("go"))
+        } else if self.matching.is_empty() {
             "nothing matches".to_owned()
         } else {
             format!(
-                "{} of {}  ↵ go  esc close",
+                "{} of {}  ↵ {}  esc close",
                 self.matching.len(),
-                self.entries.len()
+                self.entries.len(),
+                self.verb.unwrap_or("go")
             )
         };
         render::line_at(&count, rows - 1, cols);

@@ -52,7 +52,50 @@ pub fn go_to_target(
             switch_session_with_focus(name, None, None);
         }
         Target::Session { .. } => {}
+        // Not here: a directory is not somewhere to go, and the sidebar is the
+        // one that owns the template and the slot. See `ask_for_row`.
+        Target::Dir { .. } => {}
     }
+}
+
+/// Asks the sidebar in this session to open a row in `path`.
+///
+/// Through a file on the scan rather than a message: `pipe_message_to_plugin`
+/// needs `MessageAndLaunchOtherPlugins`, which this plugin does not request —
+/// an ungranted permission means a prompt in a pane too narrow to read it, and
+/// a sidebar that silently does nothing.
+pub fn ask_for_row(session: &str, now: u64, path: &str) {
+    let command = agenttij_core::scan::open_at_command(session, now, path);
+    let words: Vec<&str> = command.iter().map(String::as_str).collect();
+    run_command(&words, BTreeMap::new());
+}
+
+/// Takes the request back off the pile, once the row exists.
+pub fn clear_row_request() {
+    let command = agenttij_core::scan::clear_open_command();
+    let words: Vec<&str> = command.iter().map(String::as_str).collect();
+    run_command(&words, BTreeMap::new());
+}
+
+/// Opens the directory picker: this plugin again, floating, listing places to
+/// start rather than places to go.
+pub fn pick_dir(own_url: &str) -> Option<PaneId> {
+    // Exactly what the `Alt G` binding says, or that binding would open a second
+    // picker instead of this one.
+    let configuration = BTreeMap::from([
+        ("dirs".to_owned(), "true".to_owned()),
+        ("pane_title".to_owned(), "open in".to_owned()),
+    ]);
+    let coordinates = FloatingPaneCoordinates::new(
+        Some("20%".to_owned()),
+        Some("15%".to_owned()),
+        Some("60%".to_owned()),
+        Some("60%".to_owned()),
+        None,
+        None,
+    );
+
+    open_plugin_pane_floating(own_url, configuration, coordinates, BTreeMap::new())
 }
 
 /// Opens a terminal in a directory, taking the slot like anything else.
@@ -105,13 +148,19 @@ pub fn open_row(
     session: &str,
     solo: bool,
     template: &[String],
+    at: Option<&str>,
 ) -> (Option<u32>, Vec<u32>) {
     let tab = get_focused_pane_info().ok().map(|(tab, _)| tab);
     let slot = tab.and_then(|tab| panes::visible_terminal(all_panes, session, tab));
 
-    let cwd = slot
-        .and_then(|slot| get_pane_cwd(PaneId::Terminal(slot)).ok())
-        .unwrap_or_else(own_cwd);
+    // Where the row works: the directory you picked, or the one the row on
+    // screen is in — a new row is nearly always more of the same work.
+    let cwd = match at {
+        Some(at) => PathBuf::from(at),
+        None => slot
+            .and_then(|slot| get_pane_cwd(PaneId::Terminal(slot)).ok())
+            .unwrap_or_else(own_cwd),
+    };
 
     let Some(head) = spawn(
         template.first().map(String::as_str).unwrap_or_default(),

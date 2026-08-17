@@ -29,11 +29,64 @@ pub const STATE_DIR: &str = "/tmp/agenttij";
 /// which is the normal case with no agents running — and is also why the
 /// directory is not created here: the hook makes it when it has something to
 /// write, and a `mkdir` per tick is a fork per tick for nothing.
-const SCAN_SCRIPT: &str =
-    "date +%s; cat /tmp/agenttij/from 2>/dev/null; cat /tmp/agenttij/*.state 2>/dev/null; true";
+const SCAN_SCRIPT: &str = "date +%s; cat /tmp/agenttij/from 2>/dev/null; \
+     cat /tmp/agenttij/open-at 2>/dev/null; cat /tmp/agenttij/*.state 2>/dev/null; true";
 
 /// Marks the session you jumped away from, in the scan output.
 const FROM_PREFIX: &str = "from=";
+
+/// A directory picker asking for a row: `at=<session>\t<unix>\t<path>`.
+///
+/// A file rather than a message, because messaging another plugin needs
+/// `MessageAndLaunchOtherPlugins` — a permission this plugin does not ask for,
+/// and an ungranted one leaves a prompt too wide to read in a sidebar. The scan
+/// already carries `from=` between instances the same way, so this costs no fork
+/// of its own.
+const OPEN_PREFIX: &str = "at=";
+/// The file that carries it, beside the state files.
+pub const OPEN_FILE: &str = "open-at";
+
+/// What a picker asked for, if anything.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Opening {
+    /// The session whose sidebar should do it — the file is machine-wide, and a
+    /// row belongs to the session the picker was opened in.
+    pub session: String,
+    /// When it was asked, on the same host clock the scan reads.
+    pub asked_at: u64,
+    pub path: String,
+}
+
+/// Asks the sidebar in `session` for a row in `path`.
+pub fn open_at_command(session: &str, now: u64, path: &str) -> [String; 4] {
+    [
+        "sh".to_owned(),
+        "-c".to_owned(),
+        format!("mkdir -p {STATE_DIR} && printf '%s' \"$0\" > {STATE_DIR}/{OPEN_FILE}"),
+        format!("{OPEN_PREFIX}{session}\t{now}\t{path}\n"),
+    ]
+}
+
+/// Takes it back off the pile, once it has been done.
+pub fn clear_open_command() -> [String; 3] {
+    [
+        "rm".to_owned(),
+        "-f".to_owned(),
+        format!("{STATE_DIR}/{OPEN_FILE}"),
+    ]
+}
+
+fn parse_opening(line: &str) -> Option<Opening> {
+    let mut fields = line.split('\t');
+    let session = fields.next()?.trim();
+    let asked_at = fields.next()?.trim().parse().ok()?;
+    let path = fields.next()?.trim();
+    (!session.is_empty() && path.starts_with('/')).then(|| Opening {
+        session: session.to_owned(),
+        asked_at,
+        path: path.to_owned(),
+    })
+}
 
 /// A row published by a controller: `row <session> <primary> <current> <count>`.
 const ROW_PREFIX: &str = "row=";
@@ -132,6 +185,38 @@ fn parse_row(line: &str) -> Option<Row> {
 /// directory. It rides along on the scan that already runs, so reading it costs
 /// nothing, and the session name goes as an argument rather than inside the
 /// script.
+/// The directories you actually go to, best first.
+///
+/// zoxide keeps that list and ranks it by how often and how recently you were
+/// there, which is a better answer than anything the sidebar could work out — and
+/// when it is not installed the command fails, the list is empty, and the picker
+/// still has every directory this machine is already working in.
+pub fn dirs_command() -> [String; 3] {
+    [
+        "sh".to_owned(),
+        "-c".to_owned(),
+        // `$HOME` on the first line, because a plugin cannot read the
+        // environment — `get_session_environment_variables()` *panics* — and a
+        // column of `/home/someone/...` is a column of the same eleven
+        // characters. zoxide's failure is swallowed: no zoxide, no list, and the
+        // picker still has everywhere this machine is working.
+        "printf '%s\\n' \"$HOME\"; zoxide query -l 2>/dev/null".to_owned(),
+    ]
+}
+
+/// Splits that answer into the home directory and the directories themselves.
+pub fn parse_dirs(stdout: &str) -> (String, Vec<String>) {
+    let mut lines = stdout.lines().map(str::trim);
+    let home = lines.next().unwrap_or_default().to_owned();
+    (
+        home,
+        lines
+            .filter(|line| line.starts_with('/'))
+            .map(str::to_owned)
+            .collect(),
+    )
+}
+
 pub fn remember_command(session: &str) -> [String; 4] {
     [
         "sh".to_owned(),
@@ -306,6 +391,8 @@ pub const CONTEXT_PANE: &str = "pane";
 pub const MARKER: &str = ".agenttij";
 pub const CONTEXT_SCAN: &str = "scan";
 pub const CONTEXT_PEEK: &str = "peek";
+/// The directories worth offering, from zoxide.
+pub const CONTEXT_DIRS: &str = "dirs";
 
 pub fn command() -> [&'static str; 3] {
     ["sh", "-c", SCAN_SCRIPT]
@@ -373,6 +460,8 @@ pub struct Scan {
     pub agents: Vec<Agent>,
     /// The session someone jumped away from, if anyone has.
     pub from: Option<String>,
+    /// A row someone asked a picker for, if anyone has.
+    pub opening: Option<Opening>,
     /// Rows a controller published, when this scan read a machine that has one.
     pub rows: Vec<Row>,
     /// The panes those rows hold.
@@ -388,6 +477,7 @@ pub fn parse(stdout: &[u8]) -> Option<Scan> {
     let now = lines.next()?.trim().parse().ok()?;
 
     let mut from = None;
+    let mut opening = None;
     let mut agents = Vec::new();
     let mut rows = Vec::new();
     let mut members = Vec::new();
@@ -396,6 +486,8 @@ pub fn parse(stdout: &[u8]) -> Option<Scan> {
             rows.extend(parse_row(row));
         } else if let Some(member) = line.strip_prefix(MEMBER_PREFIX) {
             members.extend(parse_member(member));
+        } else if let Some(asked) = line.strip_prefix(OPEN_PREFIX) {
+            opening = parse_opening(asked);
         } else if let Some(session) = line.strip_prefix(FROM_PREFIX) {
             if !session.trim().is_empty() {
                 from = Some(session.trim().to_owned());
@@ -409,6 +501,7 @@ pub fn parse(stdout: &[u8]) -> Option<Scan> {
         now,
         agents,
         from,
+        opening,
         rows,
         members,
     })
@@ -454,6 +547,19 @@ mod tests {
     /// Two places resolve a project — the hook for agents, the plugin for panes
     /// nobody reports on — and they have to agree, or a marker would group one
     /// and not the other.
+    #[test]
+    fn the_directories_come_back_with_the_home_they_are_shortened_against() {
+        let (home, dirs) = parse_dirs("/home/pp\n/home/pp/personal/agenttij\n/tmp\n");
+        assert_eq!(home, "/home/pp");
+        assert_eq!(dirs, vec!["/home/pp/personal/agenttij", "/tmp"]);
+
+        // No zoxide is not an error, it is an empty list.
+        assert_eq!(parse_dirs("/home/pp\n"), ("/home/pp".to_owned(), vec![]));
+        // And anything that is not a path is not a directory.
+        let (_, dirs) = parse_dirs("/home/pp\nzsh: command not found: zoxide\n/tmp\n");
+        assert_eq!(dirs, vec!["/tmp"]);
+    }
+
     #[test]
     fn the_hook_and_the_plugin_look_for_the_same_file() {
         let hook = include_str!("../../../hooks/agenttij-state.sh");
@@ -511,6 +617,27 @@ mod tests {
             scan.agents.is_empty(),
             "and none of it is mistaken for an agent"
         );
+    }
+
+    #[test]
+    fn a_picked_directory_rides_along_the_same_way() {
+        let scan = parse(b"1700000000\nat=main\t1699999990\t/home/pp/api\n").unwrap();
+        let opening = scan.opening.unwrap();
+
+        assert_eq!(opening.session, "main");
+        assert_eq!(opening.asked_at, 1699999990);
+        assert_eq!(opening.path, "/home/pp/api");
+        // The scan reads it, so the script has to.
+        assert!(SCAN_SCRIPT.contains(OPEN_FILE));
+        assert!(open_at_command("main", 17, "/tmp")[3].starts_with(OPEN_PREFIX));
+
+        // Half a line, or a path that is not one, asks for nothing.
+        assert!(parse(b"1\nat=main\n").unwrap().opening.is_none());
+        assert!(parse(b"1\nat=main\t2\trelative\n")
+            .unwrap()
+            .opening
+            .is_none());
+        assert!(parse(b"1\n").unwrap().opening.is_none());
     }
 
     #[test]

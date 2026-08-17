@@ -28,6 +28,7 @@ working while the sidebar has focus.
 | `'` | flip to the pane you were on before this one |
 | `a` | add a pane to the row on screen |
 | `n` | new agent pane — a new row, or a whole one with `group` in the layout |
+| `G` | the same row, in a directory you pick |
 | `d` `d` | close what the cursor is on — twice, it cannot be undone |
 | `c` `c` | interrupt what it is running — twice, same reason |
 | `!` | only what needs you |
@@ -60,6 +61,24 @@ Each has a global twin, because the point is doing it while the *agent* has the
 keyboard: `Alt v`, `Alt V`, `Alt 1`–`Alt 9`, `Alt '`. The number keys are free in
 Zellij's own bindings; `1`–`9` mean "go to tab" only inside its tab mode, where
 the sidebar never has the keyboard anyway.
+
+### A row somewhere else
+
+`n` starts a row where the row on screen already is, which is right until the
+work is somewhere else. `G` — `Alt G` from anywhere — opens a picker instead: the
+directories zoxide knows you go to, best first, plus every directory this machine
+is already working in. Three letters and `Enter` builds the row there, template
+and all. Type an absolute path (or one starting with `~`) and that wins over the
+list, so a directory you have never visited is still one keystroke away.
+
+The directory decides where the panes *start*; which project the row files under
+is still the hook's answer — `.agenttij`, then the git root — so opening a row in
+`crates/core` puts it beside the rows already on that repository rather than in a
+project of its own.
+
+No zoxide is not an error: the list is then just the directories in use. And a
+path under `/tmp` is the one thing this cannot honour — Zellij rewrites paths a
+plugin hands it when they start with `/tmp`, `/host`, `/data` or `/cache`.
 
 ### A row from a template
 

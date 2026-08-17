@@ -32,6 +32,12 @@ const SESSION_TICKS: u8 = 5;
 /// see `agenttij_core::scan` for why we shell out at all.
 const TICK_SECONDS: f64 = 1.0;
 
+/// How long a picked directory stays worth acting on. Long enough for the scan
+/// that carries it (a second), short enough that a request nobody answered —
+/// no sidebar in that session, or one that was not running yet — cannot open a
+/// row much later.
+const OPENING_SECONDS: u64 = 15;
+
 #[derive(Default, PartialEq, Eq)]
 enum Permissions {
     #[default]
@@ -170,6 +176,10 @@ pub struct Sidebar {
     peeked: Vec<String>,
     /// The palette, when this instance is one.
     palette: Jump,
+    /// Directories from zoxide, best first, when this instance is the picker,
+    /// and the home directory they are shortened against.
+    frecent: Vec<String>,
+    home: String,
     /// What this controller last told the world about its rows, so it only says
     /// so again when the answer changed.
     published: (Vec<scan::Row>, Vec<scan::Member>),
@@ -236,6 +246,19 @@ impl ZellijPlugin for Sidebar {
         // The keybind list never changes, so it has nothing to wake up for.
         if !self.config.help {
             set_timeout(TICK_SECONDS);
+        }
+
+        // Asked once: the list is a ranking of where you have been, and it does
+        // not change while a picker is open for a few seconds.
+        if self.config.dirs {
+            self.palette.verb("open a row here");
+            self.palette.takes_a_path();
+            let command = scan::dirs_command();
+            let words: Vec<&str> = command.iter().map(String::as_str).collect();
+            run_command(
+                &words,
+                BTreeMap::from([(scan::CONTEXT_KEY.to_owned(), scan::CONTEXT_DIRS.to_owned())]),
+            );
         }
     }
 
@@ -337,6 +360,7 @@ impl ZellijPlugin for Sidebar {
         match message.name.as_str() {
             "cycle" => self.cycle(),
             "cycle-back" => self.cycle_back(),
+
             "flip" => self.flip_pane(),
             // Which pane, as the number on its frame. A payload rather than a
             // configuration key: `payload` is a message field, so nine bindings
@@ -569,6 +593,13 @@ impl Sidebar {
             self.rebuild();
             return true;
         }
+        if context.get(scan::CONTEXT_KEY).map(String::as_str) == Some(scan::CONTEXT_DIRS) {
+            let (home, frecent) = scan::parse_dirs(&String::from_utf8_lossy(stdout));
+            self.home = home;
+            self.frecent = frecent;
+            self.refresh_palette();
+            return true;
+        }
         if context.get(scan::CONTEXT_KEY).map(String::as_str) == Some(scan::CONTEXT_PROJECT) {
             let project = String::from_utf8_lossy(stdout).trim().to_owned();
             let pane = context
@@ -601,25 +632,22 @@ impl Sidebar {
 
         let before = std::mem::replace(&mut self.reported, result.agents);
         if self.config.jump {
-            // Panes nothing reports on are places you go to as much as agents
-            // are — a shell you left `cd`ed somewhere is exactly the thing you
-            // cannot otherwise find.
-            let mut everything = self.reported.clone();
-            for agents in self.remote.values() {
-                everything.extend(agents.iter().cloned());
-            }
-            everything.extend(panes::list_panes(
-                &self.panes,
-                &everything,
-                &self.current_session,
-            ));
-            self.palette.refresh(agenttij_core::jump::entries(
-                &everything,
-                &self.live_sessions,
-                &self.dead_sessions,
-                &self.current_session,
-            ));
+            self.refresh_palette();
             return true;
+        }
+
+        // A picker somewhere asked for a row. Only this session's sidebar can
+        // answer — the file is machine-wide — and only while the ask is fresh, so
+        // one that nobody was there to hear cannot open a row tomorrow morning.
+        if let Some(opening) = result.opening.filter(|opening| {
+            opening.session == self.current_session
+                && self.config.solo
+                && !self.config.bar
+                && !self.config.remote
+                && result.now.saturating_sub(opening.asked_at) <= OPENING_SECONDS
+        }) {
+            actions::clear_row_request();
+            self.start_row(Some(&opening.path));
         }
         self.rebuild();
 
@@ -776,6 +804,19 @@ impl Sidebar {
                 Act::Stay => true,
                 Act::Close => {
                     close_self();
+                    false
+                }
+                Act::Go(agenttij_core::jump::Target::Dir { path }) => {
+                    // `~` is the shell's, not the kernel's: nothing downstream
+                    // would understand it, and the picker is the only place that
+                    // knows what it stands for.
+                    let path = match path.strip_prefix('~') {
+                        Some(rest) => format!("{}{rest}", self.home),
+                        None => path,
+                    };
+                    actions::ask_for_row(&self.current_session, self.now, &path);
+                    self.leaving = true;
+                    set_timeout(0.1);
                     false
                 }
                 Act::Go(target) => {
@@ -980,6 +1021,14 @@ impl Sidebar {
                         actions::ask(&agent.host, &agent.session, "cycle", None);
                     }
                     _ => self.cycle(),
+                }
+                false
+            }
+            // A row somewhere else entirely: pick the directory first, and the
+            // row is built there with everything the template asks for.
+            BareKey::Char('G') => {
+                if let Some(url) = self.own_url.clone() {
+                    actions::pick_dir(&url);
                 }
                 false
             }
@@ -1991,8 +2040,13 @@ impl Sidebar {
         }
         // One plain pane, deliberately: `a` means "one more", and the template
         // describes a whole row rather than the next pane of one.
-        let (opened, _) =
-            actions::open_row(&self.panes, &self.current_session, self.config.solo, &[]);
+        let (opened, _) = actions::open_row(
+            &self.panes,
+            &self.current_session,
+            self.config.solo,
+            &[],
+            None,
+        );
         if let Some(opened) = opened {
             self.groups.add(visible, opened);
             self.took_slot(opened);
@@ -2060,11 +2114,20 @@ impl Sidebar {
     /// With a `group` template in the layout it is a whole row — the same one
     /// you would have built by hand with `a`, without building it.
     fn new_row(&mut self) {
+        self.start_row(None);
+    }
+
+    /// The same row, in a directory you picked rather than the one on screen.
+    /// Whether that directory *is* the project is not decided here: the head
+    /// pane starts there, and the same resolver the hook uses (`.agenttij`, then
+    /// the git root) files the row where the rest of that repository already is.
+    fn start_row(&mut self, at: Option<&str>) {
         let (head, parked) = actions::open_row(
             &self.panes,
             &self.current_session,
             self.config.solo,
             &self.config.group,
+            at,
         );
         let Some(pane) = head else {
             return;
@@ -2085,6 +2148,36 @@ impl Sidebar {
             session: self.current_session.clone(),
             pane,
         });
+    }
+
+    /// Fills the palette with whichever list it is: everywhere you could go, or
+    /// everywhere you could start.
+    fn refresh_palette(&mut self) {
+        if self.config.dirs {
+            let entries =
+                agenttij_core::jump::directories(&self.frecent, &self.reported, &self.home);
+            self.palette.refresh(entries);
+            return;
+        }
+
+        // Panes nothing reports on are places you go to as much as agents
+        // are — a shell you left `cd`ed somewhere is exactly the thing you
+        // cannot otherwise find.
+        let mut everything = self.reported.clone();
+        for agents in self.remote.values() {
+            everything.extend(agents.iter().cloned());
+        }
+        everything.extend(panes::list_panes(
+            &self.panes,
+            &everything,
+            &self.current_session,
+        ));
+        self.palette.refresh(agenttij_core::jump::entries(
+            &everything,
+            &self.live_sessions,
+            &self.dead_sessions,
+            &self.current_session,
+        ));
     }
 
     fn close_peek(&mut self) {

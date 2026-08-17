@@ -235,6 +235,12 @@ Each of these cost a debugging round already:
   often, not faster. `SessionUpdate` arrives every second whether or not a pane
   moved, and rebuilding and redrawing on all of them doubled the bill for
   nothing — compare the pane list and return early.
+- **A path a plugin hands Zellij is read in the plugin's filesystem, not
+  yours.** `translate_plugin_path` (`plugins/zellij_exports.rs`) rewrites
+  anything starting with `/tmp`, `/host`, `/data` or `/cache` — so opening a pane
+  in `/tmp/x` lands it in `$ZELLIJ_TMP_DIR/x`. Measured with the directory
+  picker: `/tmp` became `/tmp/zellij-1000`. Every other absolute path passes
+  through untouched.
 - **`PaneManifest.panes` is a `HashMap`.** Sort anything derived from it, or rows
   shuffle between updates.
 - **Resizing from a plugin is coarse and asynchronous.** Stepping towards a

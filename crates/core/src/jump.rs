@@ -19,6 +19,9 @@ pub enum Target {
     /// A session on another machine. Nothing to switch to — Zellij cannot show a
     /// pane it does not own — so going there means a pane here attached to it.
     Remote { host: String, session: String },
+    /// A directory to start a row in. The one entry that is not somewhere to go
+    /// but somewhere to *begin*: the row is opened there, template and all.
+    Dir { path: String },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -37,6 +40,63 @@ pub struct Entry {
 /// A live session, and one that can be brought back.
 const SESSION: char = '⊙';
 const DEAD: char = '⊗';
+/// A directory.
+const DIR: char = '▸';
+
+/// Where a new row could be started: the directories you actually go to, and
+/// the ones already being worked in.
+///
+/// `frecent` is zoxide's list, best first, and it stays in that order — it has
+/// already done the ranking that matters before anything is typed. Directories
+/// an agent is in come after, since a place with a row in it is a place you can
+/// reach through the sidebar anyway.
+pub fn directories(frecent: &[String], agents: &[Agent], home: &str) -> Vec<Entry> {
+    let mut paths: Vec<(String, &str)> = frecent
+        .iter()
+        .map(|path| (path.trim_end_matches('/').to_owned(), "recent"))
+        .collect();
+
+    for agent in agents.iter().filter(|agent| agent.host.is_empty()) {
+        let root = match (agent.root.is_empty(), agent.cwd.is_empty()) {
+            (false, _) => &agent.root,
+            (true, false) => &agent.cwd,
+            _ => continue,
+        };
+        paths.push((root.trim_end_matches('/').to_owned(), "in use"));
+    }
+
+    let mut seen: Vec<String> = Vec::new();
+    paths
+        .into_iter()
+        .filter(|(path, _)| path.starts_with('/'))
+        .filter(|(path, _)| {
+            let fresh = !seen.contains(path);
+            if fresh {
+                seen.push(path.clone());
+            }
+            fresh
+        })
+        .map(|(path, why)| Entry {
+            glyph: DIR,
+            label: shorten(&path, home),
+            context: why.to_owned(),
+            // The whole path, so typing part of a parent finds it even when the
+            // label has been shortened.
+            search: path.clone(),
+            target: Target::Dir { path },
+        })
+        .collect()
+}
+
+/// `~` for the home directory, because a list of absolute paths is a column of
+/// the same eleven characters.
+fn shorten(path: &str, home: &str) -> String {
+    match path.strip_prefix(home).filter(|_| !home.is_empty()) {
+        Some("") => "~".to_owned(),
+        Some(rest) if rest.starts_with('/') => format!("~{rest}"),
+        _ => path.to_owned(),
+    }
+}
 
 /// The whole list, in the order it is worth seeing before anything is typed:
 /// agents that want you, then the rest, then sessions, then the dead.
@@ -169,6 +229,7 @@ pub fn status(entry: &Entry) -> Status {
         glyph if glyph == Status::Done.glyph() => Status::Done,
         glyph if glyph == Status::Idle.glyph() => Status::Idle,
         SESSION => Status::Unknown,
+        DIR => Status::Idle,
         _ => Status::Pane,
     }
 }
@@ -176,6 +237,49 @@ pub fn status(entry: &Entry) -> Status {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn directories_come_from_zoxide_first_and_then_the_work() {
+        let frecent = vec![
+            "/home/pp/personal/agenttij".to_owned(),
+            "/home/pp/work/api/".to_owned(),
+            "not/absolute".to_owned(),
+        ];
+        let agents = vec![
+            agent("main", 1, "/home/pp/personal/agenttij", Status::Running),
+            agent("main", 2, "/home/pp/scratch", Status::Idle),
+        ];
+
+        let entries = directories(&frecent, &agents, "/home/pp");
+        let labels: Vec<&str> = entries.iter().map(|entry| entry.label.as_str()).collect();
+        assert_eq!(
+            labels,
+            vec!["~/personal/agenttij", "~/work/api", "~/scratch"],
+            "zoxide's order kept, a trailing slash is the same place, \
+             a directory already worked in comes after, and a relative line is not a path"
+        );
+        assert_eq!(entries[0].context, "recent");
+        assert_eq!(entries[2].context, "in use");
+        assert_eq!(
+            entries[1].target,
+            Target::Dir {
+                path: "/home/pp/work/api".to_owned()
+            }
+        );
+        // Typing a piece of the path still finds it, label or no label.
+        assert!(score(&entries[0].search, "personal").is_some());
+    }
+
+    #[test]
+    fn a_home_relative_label_is_only_for_home() {
+        let frecent = vec!["/etc/nginx".to_owned(), "/home/pp".to_owned()];
+        let entries = directories(&frecent, &[], "/home/pp");
+
+        assert_eq!(entries[0].label, "/etc/nginx");
+        assert_eq!(entries[1].label, "~");
+        // No home to speak of leaves paths alone rather than eating the front.
+        assert_eq!(directories(&frecent, &[], "")[0].label, "/etc/nginx");
+    }
 
     fn agent(session: &str, pane: u32, cwd: &str, status: Status) -> Agent {
         Agent {

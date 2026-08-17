@@ -36,6 +36,7 @@ screen — the same thing until you open a pane somewhere else.
 | `'` | flip to the pane you were on before this one (`Alt '`) |
 | `a` | add a pane to this row: an editor, a log, whatever (`Alt m`) |
 | `n` | new agent pane — a new row (`Alt g`) |
+| `G` | a new row in a directory you pick, template and all (`Alt G`) |
 | `d` `d` | close the row, the pane under it, or a whole project — asks first |
 | `c` `c` | interrupt the agent, without going to it — asks first |
 | `!` | only what needs you |

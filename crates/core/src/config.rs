@@ -62,6 +62,9 @@ pub struct Config {
     /// Set on a jump instance: this one is the palette — everywhere you could
     /// go, filtered by typing.
     pub jump: bool,
+    /// Set on the *other* palette: directories rather than destinations, for
+    /// starting a row somewhere instead of going to one.
+    pub dirs: bool,
     /// Name each pane in a row `<row> <n>/<total>`, so a pane says where it sits
     /// without the sidebar being on screen. On unless turned off.
     pub position: bool,
@@ -87,6 +90,7 @@ impl Default for Config {
             peek: None,
             help: false,
             jump: false,
+            dirs: false,
             position: true,
             solo: false,
         }
@@ -116,7 +120,10 @@ impl Config {
         let solo = configuration.get("solo").map(|raw| raw.trim()) == Some("true")
             || configuration.get("remote").map(|raw| raw.trim()) == Some("true");
         let help = configuration.get("help").map(|raw| raw.trim()) == Some("true");
-        let jump = configuration.get("jump").map(|raw| raw.trim()) == Some("true");
+        let dirs = configuration.get("dirs").map(|raw| raw.trim()) == Some("true");
+        // A directory picker is a palette with a different list in it, so it
+        // takes the same plumbing: one floating instance, typing, ranking.
+        let jump = configuration.get("jump").map(|raw| raw.trim()) == Some("true") || dirs;
         let bar = configuration.get("bar").map(|raw| raw.trim()) == Some("true");
         // A controller is a sidebar with no screen, and solo is what it is for:
         // one pane of a row visible, the rest parked.
@@ -200,6 +207,7 @@ impl Config {
             peek,
             help,
             jump,
+            dirs,
             position,
             solo,
         }
@@ -354,6 +362,14 @@ mod tests {
     fn the_jump_palette_is_a_mode_like_the_others() {
         assert!(!Config::from_map(&map(&[])).jump);
         assert!(Config::from_map(&map(&[("jump", "true")])).jump);
+    }
+
+    #[test]
+    fn the_directory_picker_is_the_palette_with_another_list() {
+        let picker = Config::from_map(&map(&[("dirs", "true")]));
+        assert!(picker.dirs);
+        assert!(picker.jump, "it is a palette, and takes the same plumbing");
+        assert!(!Config::from_map(&map(&[("jump", "true")])).dirs);
     }
 
     #[test]

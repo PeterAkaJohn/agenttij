@@ -34,6 +34,9 @@ def block(url, summon, cycle, back, focus, new, add, jump, group, indent):
     modifier, key = cycle.rsplit(" ", 1)
     cycle_back = f"{modifier} {key.upper()}"
     flip = f"{modifier} '"
+    # A new row somewhere you choose is the new-row key with Shift.
+    new_modifier, new_key = new.rsplit(" ", 1)
+    pick = f"{new_modifier} {new_key.upper()}"
     # What every binding that has to *find* the docked sidebar must repeat,
     # exactly as the layout writes it.
     matched = ['            scope "session"', '            solo "true"']
@@ -50,6 +53,20 @@ def block(url, summon, cycle, back, focus, new, add, jump, group, indent):
         f'        LaunchOrFocusPlugin "{url}" {{',
         '            jump "true"',
         '            pane_title "jump"',
+        "            floating true",
+        "            move_to_focused_tab true",
+        "        }",
+        "    }",
+        "}",
+        "// A new row in a directory you pick: zoxide's list and everywhere this",
+        "// machine is already working, filtered by typing. It carries no `group`",
+        "// and no `scope`: the picker only chooses, and the sidebar does the",
+        "// opening, so this configuration is the whole of its identity.",
+        f'shared_except "locked" {{',
+        f'    bind "{pick}" {{',
+        f'        LaunchOrFocusPlugin "{url}" {{',
+        '            dirs "true"',
+        '            pane_title "open in"',
         "            floating true",
         "            move_to_focused_tab true",
         "        }",
