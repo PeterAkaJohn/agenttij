@@ -7,10 +7,12 @@ jump to it.
 
 ```
 ┌ agents ────────────┐
-│ ⚠ agenttij     2m  │  ⚠ needs input     ◐ running
-│ ◐ api-refactor 12s │  ✓ done            ○ idle
-│ ✓ docs-fix   3 5m  │  ? unknown         · a pane, no agent
-│ ○ scratch      1h  │
+│ ▾ agenttij      2  │  ⚠ needs input     ◐ running
+│ ⚠ agenttij  3  2m  │  ✓ done            ○ idle
+│   ├ nvim        -  │  ? unknown         · a pane, no agent
+│   ├ lazygit     -  │
+│ ✓ docs-fix     5m  │  ▾ ▸ a project, open or folded
+│ ▸ dotfiles      4  │  ├   a pane of the row above it
 │                    │  "3" = the row owns
 │ j/k ↵ n a v b d    │  three panes
 └────────────────────┘

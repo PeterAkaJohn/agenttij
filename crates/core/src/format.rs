@@ -29,8 +29,9 @@ pub fn row_parts(agent: &Agent, now: u64, width: usize, current_session: &str) -
         // thing inside it — folding a blocked agent away must still show yellow.
         Kind::Project { folded: true } => '▸',
         Kind::Project { folded: false } => '▾',
-        // A pane listed under its row carries no status of its own — the indent
-        // already says what it is, and a glyph there just adds noise.
+        // A pane listed under its row has no status of its own. Its mark is not
+        // here but in the indent, where it lines up under the label of the row
+        // it belongs to — see `indent`.
         Kind::Pane => ' ',
         Kind::Row => agent.status.glyph(),
     };
@@ -72,9 +73,16 @@ pub fn row_parts(agent: &Agent, now: u64, width: usize, current_session: &str) -
     } else {
         String::new()
     };
-    // A pane listed under its row is indented, so the two read as a tree rather
-    // than as siblings.
-    let indent = " ".repeat(agent.depth);
+    // A pane listed under its row is indented, and marked: the indent alone left
+    // it one space away from a folded project (`▸ name 3`), and the two read as
+    // the same kind of thing. A branch says whose it is and nothing else in the
+    // list looks like it.
+    let indent = match agent.kind {
+        // One level goes to the mark itself, so the branch sits under the label
+        // of the row it belongs to rather than a column further out.
+        Kind::Pane => format!("{}├ ", " ".repeat(agent.depth.saturating_sub(1))),
+        _ => " ".repeat(agent.depth),
+    };
 
     // glyph, its space, the elsewhere marker, the count, the gap before the age,
     // and the age itself.
@@ -229,7 +237,7 @@ mod tests {
         child.kind = Kind::Pane;
 
         let row = row(&child, 1_020, 20, "sess");
-        assert_eq!(row, "   nvim            -", "no glyph, just the indent");
+        assert_eq!(row, "  ├ nvim           -", "a branch off the row above it");
         assert_eq!(row.chars().count(), 20);
     }
 
