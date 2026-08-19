@@ -22,6 +22,9 @@ pub enum Target {
     /// A directory to start a row in. The one entry that is not somewhere to go
     /// but somewhere to *begin*: the row is opened there, template and all.
     Dir { path: String },
+    /// A session's rows as they were written down, to be built again. What a
+    /// restart takes away and this puts back.
+    Workspace { session: String },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -42,6 +45,38 @@ const SESSION: char = '⊙';
 const DEAD: char = '⊗';
 /// A directory.
 const DIR: char = '▸';
+/// A workspace waiting to be built again.
+const WORK: char = '⊞';
+
+/// Workspaces worth offering: the rows a session had written down, by name.
+///
+/// The count is what the file remembers, not what is missing — deciding that
+/// needs the directories of the rows currently open, which only the sidebar
+/// holds. It skips the ones already there when it rebuilds, so restoring twice
+/// is not twice the panes.
+pub fn workspaces(remembered: &[(String, usize)]) -> Vec<Entry> {
+    remembered
+        .iter()
+        .filter(|(session, rows)| !session.is_empty() && *rows > 0)
+        .map(|(session, missing)| Entry {
+            glyph: WORK,
+            label: session.clone(),
+            context: match missing {
+                1 => "1 row".to_owned(),
+                many => format!("{many} rows"),
+            },
+            // The verb first, because a workspace and the session it came from
+            // share a name — and on that name the session wins, every time: the
+            // same match with a shorter string behind it. Typing `restore` is
+            // therefore the way to these, and typing the name is the way to the
+            // session, which is the right way round.
+            search: format!("restore {session} workspace rows"),
+            target: Target::Workspace {
+                session: session.clone(),
+            },
+        })
+        .collect()
+}
 
 /// Where a new row could be started: the directories you actually go to, and
 /// the ones already being worked in.
@@ -230,6 +265,7 @@ pub fn status(entry: &Entry) -> Status {
         glyph if glyph == Status::Idle.glyph() => Status::Idle,
         SESSION => Status::Unknown,
         DIR => Status::Idle,
+        WORK => Status::Unknown,
         _ => Status::Pane,
     }
 }
@@ -271,6 +307,36 @@ mod tests {
     }
 
     #[test]
+    fn a_workspace_is_offered_by_name_and_size() {
+        let entries = workspaces(&[
+            ("api".to_owned(), 3),
+            ("here".to_owned(), 0),
+            ("one".to_owned(), 1),
+            (String::new(), 2),
+        ]);
+
+        assert_eq!(entries.len(), 2, "not the empty one, nor the nameless");
+        assert_eq!(entries[0].label, "api");
+        assert_eq!(entries[0].context, "3 rows");
+        assert_eq!(entries[1].context, "1 row");
+        assert_eq!(
+            entries[0].target,
+            Target::Workspace {
+                session: "api".to_owned()
+            }
+        );
+        // The verb finds workspaces and nothing else; the name still finds the
+        // session, which is what someone typing a session name wants.
+        assert!(score(&entries[0].search, "restore").is_some());
+        assert!(score(&entries[0].search, "api").is_some());
+        let session = entries_for_session("api");
+        assert!(
+            score(&session.search, "restore").is_none(),
+            "a session is not somewhere to restore"
+        );
+    }
+
+    #[test]
     fn a_home_relative_label_is_only_for_home() {
         let frecent = vec!["/etc/nginx".to_owned(), "/home/pp".to_owned()];
         let entries = directories(&frecent, &[], "/home/pp");
@@ -279,6 +345,14 @@ mod tests {
         assert_eq!(entries[1].label, "~");
         // No home to speak of leaves paths alone rather than eating the front.
         assert_eq!(directories(&frecent, &[], "")[0].label, "/etc/nginx");
+    }
+
+    /// The palette's own entry for a live session, for comparing against.
+    fn entries_for_session(name: &str) -> Entry {
+        entries(&[], &[name.to_owned()], &[], "elsewhere")
+            .into_iter()
+            .next()
+            .expect("a live session is always an entry")
     }
 
     fn agent(session: &str, pane: u32, cwd: &str, status: Status) -> Agent {

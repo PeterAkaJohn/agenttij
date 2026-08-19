@@ -80,6 +80,21 @@ No zoxide is not an error: the list is then just the directories in use. And a
 path under `/tmp` is the one thing this cannot honour — Zellij rewrites paths a
 plugin hands it when they start with `/tmp`, `/host`, `/data` or `/cache`.
 
+### Bringing a workspace back
+
+`Alt t` and type `restore`: every workspace the machine remembers is in the
+palette, marked `⊞`, with how many rows it had. `Enter` builds them again — one
+row a second, each in its own directory with its own panes.
+
+The verb is the way in on purpose. A workspace and the session it came from share
+a name, and on that name the session always wins the match (the same letters with
+a shorter string behind them), which is the right way round: typing a name goes to
+the session, typing `restore` gets you the rows.
+
+Needs `session_serialization true` in your Zellij config to be worth much — that
+is what lets a session survive a reboot at all. See the README for what each half
+brings back.
+
 ### A row from a template
 
 A layout can say what panes a row starts with — `group "claude; nvim .; lazygit"`

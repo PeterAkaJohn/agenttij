@@ -43,8 +43,22 @@ const FROM_PREFIX: &str = "from=";
 /// already carries `from=` between instances the same way, so this costs no fork
 /// of its own.
 const OPEN_PREFIX: &str = "at=";
-/// The file that carries it, beside the state files.
+/// A palette asking for a whole workspace back: `rs=<session>\t<unix>\t<which>`.
+/// The sidebar holds the arrangement already, so the name of the workspace is the
+/// whole message.
+const RESTORE_PREFIX: &str = "rs=";
+/// The file that carries either request, beside the state files.
 pub const OPEN_FILE: &str = "open-at";
+
+/// Asks the sidebar in `session` to build `workspace` again.
+pub fn restore_command(session: &str, now: u64, workspace: &str) -> [String; 4] {
+    [
+        "sh".to_owned(),
+        "-c".to_owned(),
+        format!("mkdir -p {STATE_DIR} && printf '%s' \"$0\" > {STATE_DIR}/{OPEN_FILE}"),
+        format!("{RESTORE_PREFIX}{session}\t{now}\t{workspace}\n"),
+    ]
+}
 
 /// What a picker asked for, if anything.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -74,6 +88,20 @@ pub fn clear_open_command() -> [String; 3] {
         "-f".to_owned(),
         format!("{STATE_DIR}/{OPEN_FILE}"),
     ]
+}
+
+fn parse_restoring(line: &str) -> Option<Opening> {
+    let mut fields = line.split('\t');
+    let session = fields.next()?.trim();
+    let asked_at = fields.next()?.trim().parse().ok()?;
+    let workspace = fields.next()?.trim();
+    (!session.is_empty() && !workspace.is_empty()).then(|| Opening {
+        session: session.to_owned(),
+        asked_at,
+        // The field is a path for `at=` and a session name here; both are "what
+        // was asked for", and a second struct for one string is not worth it.
+        path: workspace.to_owned(),
+    })
 }
 
 fn parse_opening(line: &str) -> Option<Opening> {
@@ -185,6 +213,20 @@ fn parse_row(line: &str) -> Option<Row> {
 /// directory. It rides along on the scan that already runs, so reading it costs
 /// nothing, and the session name goes as an argument rather than inside the
 /// script.
+/// Which boot this is.
+///
+/// A workspace written down *this* boot is the live state of a session that is
+/// still running; one from an earlier boot is a snapshot worth restoring. Pane
+/// ids are the same story, one boot at a time. Linux keeps this in a file; a
+/// system without it gets an empty string, and everything is then treated as
+/// this boot, which is what the plugin did before any of this existed.
+pub fn boot_command() -> [String; 2] {
+    [
+        "cat".to_owned(),
+        "/proc/sys/kernel/random/boot_id".to_owned(),
+    ]
+}
+
 /// The directories you actually go to, best first.
 ///
 /// zoxide keeps that list and ranks it by how often and how recently you were
@@ -397,6 +439,8 @@ pub const CONTEXT_SCAN: &str = "scan";
 pub const CONTEXT_PEEK: &str = "peek";
 /// The directories worth offering, from zoxide.
 pub const CONTEXT_DIRS: &str = "dirs";
+/// Which boot this is.
+pub const CONTEXT_BOOT: &str = "boot";
 
 pub fn command() -> [&'static str; 3] {
     ["sh", "-c", SCAN_SCRIPT]
@@ -466,6 +510,8 @@ pub struct Scan {
     pub from: Option<String>,
     /// A row someone asked a picker for, if anyone has.
     pub opening: Option<Opening>,
+    /// A workspace someone asked the palette to build again.
+    pub restoring: Option<Opening>,
     /// Rows a controller published, when this scan read a machine that has one.
     pub rows: Vec<Row>,
     /// The panes those rows hold.
@@ -482,6 +528,7 @@ pub fn parse(stdout: &[u8]) -> Option<Scan> {
 
     let mut from = None;
     let mut opening = None;
+    let mut restoring = None;
     let mut agents = Vec::new();
     let mut rows = Vec::new();
     let mut members = Vec::new();
@@ -492,6 +539,10 @@ pub fn parse(stdout: &[u8]) -> Option<Scan> {
             members.extend(parse_member(member));
         } else if let Some(asked) = line.strip_prefix(OPEN_PREFIX) {
             opening = parse_opening(asked);
+        } else if let Some(asked) = line.strip_prefix(RESTORE_PREFIX) {
+            // The same three fields, and the last one is a session name rather
+            // than a path — so it is not held to `starts_with('/')`.
+            restoring = parse_restoring(asked);
         } else if let Some(session) = line.strip_prefix(FROM_PREFIX) {
             if !session.trim().is_empty() {
                 from = Some(session.trim().to_owned());
@@ -506,6 +557,7 @@ pub fn parse(stdout: &[u8]) -> Option<Scan> {
         agents,
         from,
         opening,
+        restoring,
         rows,
         members,
     })
@@ -642,6 +694,24 @@ mod tests {
             .opening
             .is_none());
         assert!(parse(b"1\n").unwrap().opening.is_none());
+    }
+
+    #[test]
+    fn a_workspace_to_rebuild_rides_the_same_file() {
+        let scan = parse(b"1700000000\nrs=main\t1699999999\tapi\n").unwrap();
+        let asked = scan.restoring.unwrap();
+
+        assert_eq!(
+            (asked.session.as_str(), asked.path.as_str()),
+            ("main", "api")
+        );
+        assert_eq!(asked.asked_at, 1699999999);
+        assert!(
+            scan.opening.is_none(),
+            "the two requests are not each other"
+        );
+        assert!(restore_command("main", 17, "api")[3].starts_with(RESTORE_PREFIX));
+        assert!(parse(b"1\nrs=main\t2\n").unwrap().restoring.is_none());
     }
 
     #[test]

@@ -86,6 +86,43 @@ are. It never takes focus, the way a status bar should not, and it works with or
 without a sidebar — including `notify`, so a bar is also how you get desktop
 notifications in a session that has no sidebar at all.
 
+## After a restart
+
+Two halves, because they answer different questions.
+
+Zellij's own serialization brings a *session* back: turn on `session_serialization
+true` and a machine that reboots leaves its sessions listed as `EXITED - attach to
+resurrect`. `zellij attach <name>` rebuilds the tab, and every pane that was on
+screen comes back in its directory, with its command, suspended until you press
+Enter — measured, including the sidebar with its own configuration.
+
+What it cannot bring back is what was parked. Zellij serializes tiled and floating
+panes; a pane suppressed to keep a row to one pane at a time is not in the file at
+all. In solo mode that means one row per tab survives, and its companions are then
+refilled by the layout's `group`.
+
+So agenttij writes its rows down itself, as something a restart cannot invalidate:
+per row, the directory it worked in and the programs its panes ran. `Alt t`, type
+`restore`, and every remembered workspace is in the list with its size:
+
+```
+⊞ contentchef      4 rows
+⊞ agenttij         2 rows
+```
+
+Picking one rebuilds those rows — a row per second, in their own directories, with
+their own panes, skipping any whose directory is already open so restoring twice
+is not twice the panes. Program *arguments* are not kept, because a pane only
+reports the program it runs: `nvim` comes back, `nvim +42 file` comes back as
+`nvim`.
+
+The snapshots are stamped with the boot that wrote them, which is what keeps a
+session's own sidebar from overwriting the thing it is meant to restore: this
+boot's entry for a session is the live record of it, every earlier one is a
+snapshot, and only the earlier ones are offered. Pane ids are treated the same way
+and thrown away across a restart — Zellij hands the same numbers out again, and
+grouping strangers is worse than losing the grouping.
+
 ## Another machine
 
 Agents on a dev box show up in the sidebar next to the local ones, marked `⇥`

@@ -38,6 +38,10 @@ const TICK_SECONDS: f64 = 1.0;
 /// row much later.
 const OPENING_SECONDS: u64 = 15;
 
+/// How many remembered workspaces to keep. Enough for the sessions of a couple
+/// of restarts, few enough that the palette stays a list you read.
+const SNAPSHOTS: usize = 16;
+
 #[derive(Default, PartialEq, Eq)]
 enum Permissions {
     #[default]
@@ -127,6 +131,8 @@ pub struct Sidebar {
     /// Whether the grouping it remembers has been put back — once per run, since
     /// after that the live grouping is the truth.
     groups_restored: bool,
+    /// Rows of a remembered workspace still to be opened, one per tick.
+    restoring: Vec<order::Workspace>,
     /// What the input line is collecting, and what has been typed so far.
     typing: Option<(Field, String)>,
     /// Which git roots each project holds, from before folding hid any of them —
@@ -176,6 +182,9 @@ pub struct Sidebar {
     peeked: Vec<String>,
     /// The palette, when this instance is one.
     palette: Jump,
+    /// Which boot this is, so a snapshot of this session's rows is told apart
+    /// from the live record of them. Empty until the answer lands.
+    boot: String,
     /// Directories from zoxide, best first, when this instance is the picker,
     /// and the home directory they are shortened against.
     frecent: Vec<String>,
@@ -335,8 +344,19 @@ impl ZellijPlugin for Sidebar {
                 // and nothing says so — measured, the picker asked twice there
                 // and zoxide was never started. This is the first moment a
                 // command of ours can run.
-                if self.config.dirs && self.permissions == Permissions::Granted {
-                    self.ask_for_dirs();
+                if self.permissions == Permissions::Granted {
+                    if self.config.dirs {
+                        self.ask_for_dirs();
+                    }
+                    let command = scan::boot_command();
+                    let words: Vec<&str> = command.iter().map(String::as_str).collect();
+                    run_command(
+                        &words,
+                        BTreeMap::from([(
+                            scan::CONTEXT_KEY.to_owned(),
+                            scan::CONTEXT_BOOT.to_owned(),
+                        )]),
+                    );
                 }
 
                 self.name_self();
@@ -460,6 +480,9 @@ impl Sidebar {
             return;
         }
         set_timeout(TICK_SECONDS);
+
+        // A workspace being rebuilt, a row at a time.
+        self.restore_next_row();
 
         // Whatever the permission event did or did not do: while the picker has
         // no list, keep asking. Bounded, so a machine with no zoxide is asked
@@ -602,6 +625,10 @@ impl Sidebar {
             self.rebuild();
             return true;
         }
+        if context.get(scan::CONTEXT_KEY).map(String::as_str) == Some(scan::CONTEXT_BOOT) {
+            self.boot = String::from_utf8_lossy(stdout).trim().to_owned();
+            return false;
+        }
         if context.get(scan::CONTEXT_KEY).map(String::as_str) == Some(scan::CONTEXT_DIRS) {
             let (home, frecent) = scan::parse_dirs(&String::from_utf8_lossy(stdout));
             self.home = home;
@@ -648,6 +675,17 @@ impl Sidebar {
         // A picker somewhere asked for a row. Only this session's sidebar can
         // answer — the file is machine-wide — and only while the ask is fresh, so
         // one that nobody was there to hear cannot open a row tomorrow morning.
+        if let Some(asked) = result.restoring.filter(|asked| {
+            asked.session == self.current_session
+                && self.config.solo
+                && !self.config.bar
+                && !self.config.remote
+                && result.now.saturating_sub(asked.asked_at) <= OPENING_SECONDS
+        }) {
+            actions::clear_row_request();
+            self.restore_workspace(&asked.path);
+        }
+
         if let Some(opening) = result.opening.filter(|opening| {
             opening.session == self.current_session
                 && self.config.solo
@@ -813,6 +851,12 @@ impl Sidebar {
                 Act::Stay => true,
                 Act::Close => {
                     close_self();
+                    false
+                }
+                Act::Go(agenttij_core::jump::Target::Workspace { session }) => {
+                    actions::ask_for_workspace(&self.current_session, self.now, &session);
+                    self.leaving = true;
+                    set_timeout(0.1);
                     false
                 }
                 Act::Go(agenttij_core::jump::Target::Dir { path }) => {
@@ -1435,6 +1479,15 @@ impl Sidebar {
         if !self.order_loaded || self.groups_restored || here.is_empty() {
             return;
         }
+        // Pane ids are a boot's business. A file written before the machine
+        // restarted describes panes that no longer exist, and Zellij hands the
+        // same numbers out again — restoring from it would bundle three
+        // unrelated agents into one row. The workspaces above are the part that
+        // survives a restart, by not being ids.
+        if self.boot.is_empty() || self.arrangement.boot != self.boot {
+            self.groups_restored = true;
+            return;
+        }
         // Same reason as `remember_groups`: these instances have a grouping
         // because every instance reconciles one, not because they use it.
         if self.config.jump || self.config.bar || self.config.help {
@@ -1474,19 +1527,133 @@ impl Sidebar {
             return;
         }
         let rows = self.groups.remember();
-        let remembered = self.arrangement.groups.get(&self.current_session);
-        if remembered == Some(&rows) {
+        let workspace = self.workspace();
+        let mine = |snapshot: &&order::Snapshot| {
+            snapshot.boot == self.boot && snapshot.session == self.current_session
+        };
+        let same = self.arrangement.groups.get(&self.current_session) == Some(&rows)
+            && self
+                .arrangement
+                .workspaces
+                .iter()
+                .find(mine)
+                .is_some_and(|snapshot| snapshot.rows == workspace);
+        if same {
             return;
         }
+        self.arrangement.boot = self.boot.clone();
         self.arrangement
             .groups
             .insert(self.current_session.clone(), rows);
+
+        // This boot's entry for this session is the *live* record and is replaced;
+        // every other boot's is a snapshot of a session that is no longer running
+        // that way, and is left alone. That separation is the whole point: a
+        // sidebar that started after a restart must not overwrite the rows it is
+        // there to bring back.
+        self.arrangement
+            .workspaces
+            .retain(|snapshot| !mine(&snapshot));
+        if !workspace.is_empty() {
+            self.arrangement.workspaces.push(order::Snapshot {
+                boot: self.boot.clone(),
+                session: self.current_session.clone(),
+                stamp: self.now,
+                rows: workspace,
+            });
+        }
+        // Newest first, and only a few: boot ids cannot be put in order, so the
+        // stamp is what says which restart was which, and a machine restarts a
+        // lot more often than anyone wants to scroll.
+        self.arrangement
+            .workspaces
+            .sort_by_key(|snapshot| std::cmp::Reverse(snapshot.stamp));
+        self.arrangement.workspaces.truncate(SNAPSHOTS);
         // A session that is gone takes its rows with it: pane ids mean nothing
         // without it, and otherwise the file grows a block per session forever.
         self.arrangement.groups.retain(|session, _| {
             *session == self.current_session || self.live_sessions.contains(session)
         });
         self.save_order();
+    }
+
+    /// Queues the rows a workspace remembers, skipping the ones already here.
+    ///
+    /// Skipping by directory: restoring twice should not be twice the panes, and
+    /// after a restart the rows that Zellij itself brought back are exactly the
+    /// ones whose directory is already open.
+    fn restore_workspace(&mut self, workspace: &str) {
+        // Sorted newest first when written, so the first match is the most
+        // recent — and another boot's snapshot beats this boot's live record,
+        // which is the one the session already has on screen.
+        let snapshot = self
+            .arrangement
+            .workspaces
+            .iter()
+            .find(|snapshot| snapshot.session == workspace && snapshot.boot != self.boot)
+            .or_else(|| {
+                self.arrangement
+                    .workspaces
+                    .iter()
+                    .find(|snapshot| snapshot.session == workspace)
+            });
+        let Some(rows) = snapshot.map(|snapshot| snapshot.rows.clone()) else {
+            return;
+        };
+        let here: Vec<String> = self.workspace().into_iter().map(|row| row.cwd).collect();
+
+        self.restoring
+            .extend(rows.into_iter().filter(|row| !here.contains(&row.cwd)));
+    }
+
+    /// One row per tick. Nine panes in a single event is a burst of opens and
+    /// hides against a pane list that only refreshes once a second — which is
+    /// how the workspace ended up split between two rows the last time
+    /// something opened panes faster than Zellij reported them.
+    fn restore_next_row(&mut self) {
+        if self.restoring.is_empty() {
+            return;
+        }
+        let row = self.restoring.remove(0);
+        self.build_row(Some(&row.cwd), &row.panes);
+    }
+
+    /// This session's rows as something a restart cannot invalidate: per row, the
+    /// directory it worked in and the programs its panes ran.
+    ///
+    /// A pane whose program is not known yet falls back to the layout's template
+    /// at the same position — which is the right answer for the rows that came
+    /// out of that template, and a plain shell for the rest.
+    fn workspace(&self) -> Vec<order::Workspace> {
+        self.groups
+            .rows()
+            .filter_map(|(primary, _)| {
+                let members = self.groups.members_of(primary).to_vec();
+                let cwd = self
+                    .agents
+                    .iter()
+                    .find(|agent| agent.pane == primary && agent.kind == Kind::Row)
+                    .map(|agent| agent.cwd.clone())
+                    .filter(|cwd| cwd.starts_with('/'))
+                    .or_else(|| self.cwds.get(&primary).cloned())
+                    .filter(|cwd| cwd.starts_with('/'))?;
+
+                let panes = members
+                    .iter()
+                    .enumerate()
+                    .map(|(at, member)| {
+                        self.programs
+                            .get(member)
+                            .filter(|program| !program.is_empty())
+                            .cloned()
+                            .unwrap_or_else(|| {
+                                self.config.group.get(at).cloned().unwrap_or_default()
+                            })
+                    })
+                    .collect();
+                Some(order::Workspace { cwd, panes })
+            })
+            .collect()
     }
 
     /// Writes the arrangement out, so a reload does not lose it. Only on a move,
@@ -2148,11 +2315,18 @@ impl Sidebar {
     /// pane starts there, and the same resolver the hook uses (`.agenttij`, then
     /// the git root) files the row where the rest of that repository already is.
     fn start_row(&mut self, at: Option<&str>) {
+        let template = self.config.group.clone();
+        self.build_row(at, &template);
+    }
+
+    /// A row from a template that is not the layout's — what restoring a
+    /// workspace opens, where each row remembers its own panes.
+    fn build_row(&mut self, at: Option<&str>, template: &[String]) {
         let (head, parked) = actions::open_row(
             &self.panes,
             &self.current_session,
             self.config.solo,
-            &self.config.group,
+            template,
             at,
         );
         let Some(pane) = head else {
@@ -2214,12 +2388,26 @@ impl Sidebar {
             &everything,
             &self.current_session,
         ));
-        self.palette.refresh(agenttij_core::jump::entries(
+        let mut entries = agenttij_core::jump::entries(
             &everything,
             &self.live_sessions,
             &self.dead_sessions,
             &self.current_session,
-        ));
+        );
+        // Last, because a workspace is the thing you want when nothing else in
+        // the list is there any more.
+        // Only other boots': this boot's entry for a session is the live record of
+        // a session that is still arranged that way, so "restore" would be a
+        // no-op — and the one you want after a restart is the one from before it.
+        let remembered: Vec<(String, usize)> = self
+            .arrangement
+            .workspaces
+            .iter()
+            .filter(|snapshot| snapshot.boot != self.boot)
+            .map(|snapshot| (snapshot.session.clone(), snapshot.rows.len()))
+            .collect();
+        entries.extend(agenttij_core::jump::workspaces(&remembered));
+        self.palette.refresh(entries);
     }
 
     fn close_peek(&mut self) {

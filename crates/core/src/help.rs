@@ -43,7 +43,10 @@ pub const GLOBAL_KEYS: [(&str, &str); 11] = [
     ("Alt g", "new row"),
     ("Alt G", "new row in a directory you pick"),
     ("Alt m", "add a pane to this row"),
-    ("Alt t", "jump, from anywhere"),
+    (
+        "Alt t",
+        "jump, from anywhere — type `restore` for a workspace",
+    ),
     ("Alt ]", "fold the sidebar to a rail"),
 ];
 

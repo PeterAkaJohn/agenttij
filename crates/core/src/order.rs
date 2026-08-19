@@ -17,6 +17,11 @@ const NAMED: &str = "n";
 const HOST: &str = "h";
 /// One row's panes, so a reload does not cost you the grouping.
 const GROUP: &str = "g";
+/// Which boot the file was written in.
+const BOOT: &str = "b";
+/// One row as something a *restart* cannot invalidate: where it worked and what
+/// ran in it, rather than which pane ids it happened to have.
+const WORK: &str = "w";
 
 /// How you left the sidebar: what order things were in, and what was folded away.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -31,6 +36,10 @@ pub struct Arrangement {
     /// roots under one name are one project — which is how a front end and a
     /// back end in separate repositories become the thing you actually work on.
     pub names: BTreeMap<String, String>,
+    /// The boot this file was last written in. The `groups` below are pane ids,
+    /// which only mean anything within one — a sidebar that reads a file from an
+    /// earlier boot throws them away rather than grouping strangers.
+    pub boot: String,
     /// Which panes make up each row, by the session they live in.
     ///
     /// A reload builds a `Groups` from nothing, and every pane then becomes a row
@@ -39,6 +48,20 @@ pub struct Arrangement {
     /// Per session for the same reason hosts are: a pane id only means something
     /// alongside the session holding it.
     pub groups: BTreeMap<String, Vec<Vec<u32>>>,
+    /// What each session was working on, durably: per row, the directory it was
+    /// in and the programs its panes ran, in order.
+    ///
+    /// The `groups` above are pane ids, which mean nothing once a machine has
+    /// been restarted — Zellij hands out new ones. This is the same rows written
+    /// as something that can be *rebuilt*: open a row there, run those, park the
+    /// rest. A program's arguments are not kept, because a pane only reports the
+    /// program it is running.
+    ///
+    /// Stamped with the boot it was written in, because a session's own sidebar
+    /// keeps its entry up to date — and after a restart, "up to date" is one row
+    /// where there used to be four. The snapshot to restore is the one from
+    /// *before*, so the two must not be the same record.
+    pub workspaces: Vec<Snapshot>,
     /// Machines to watch, by the session they were added in.
     ///
     /// Per session, not per machine: which boxes you care about is part of what
@@ -48,6 +71,28 @@ pub struct Arrangement {
     pub hosts: BTreeMap<String, Vec<String>>,
 }
 
+/// One session's rows, as they were during one boot.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Snapshot {
+    /// The boot it was written in. Empty means "no idea", which counts as now.
+    pub boot: String,
+    pub session: String,
+    /// When it was last written, for keeping the newest few and dropping the rest
+    /// — boot ids cannot be put in order, and a machine restarts a lot.
+    pub stamp: u64,
+    pub rows: Vec<Workspace>,
+}
+
+/// One row of a remembered workspace.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Workspace {
+    /// Where the row worked. The head opens here and the rest follow it.
+    pub cwd: String,
+    /// What ran in each pane, in the order they sat in the row. An empty entry is
+    /// a plain shell, the same as in a layout's `group`.
+    pub panes: Vec<String>,
+}
+
 /// The order, as a file.
 ///
 /// Line based and tab separated like the state files, for the same reason: it is
@@ -55,6 +100,9 @@ pub struct Arrangement {
 /// skipped rather than throwing the rest away.
 pub fn encode(arrangement: &Arrangement) -> String {
     let mut out = String::new();
+    if !arrangement.boot.is_empty() {
+        out.push_str(&format!("{BOOT}\t{}\n", arrangement.boot));
+    }
     for project in &arrangement.projects {
         out.push_str(&format!("{PROJECT}\t{project}\n"));
     }
@@ -73,6 +121,18 @@ pub fn encode(arrangement: &Arrangement) -> String {
         for members in rows.iter().filter(|members| members.len() > 1) {
             let members: Vec<String> = members.iter().map(u32::to_string).collect();
             out.push_str(&format!("{GROUP}\t{session}\t{}\n", members.join(",")));
+        }
+    }
+    for snapshot in &arrangement.workspaces {
+        for row in snapshot.rows.iter().filter(|row| !row.cwd.is_empty()) {
+            out.push_str(&format!(
+                "{WORK}\t{}\t{}\t{}\t{}\t{}\n",
+                snapshot.boot,
+                snapshot.stamp,
+                snapshot.session,
+                row.cwd,
+                row.panes.join("\t")
+            ));
         }
     }
     for (session, hosts) in &arrangement.hosts {
@@ -114,6 +174,39 @@ pub fn decode(text: &str) -> Arrangement {
                         .entry(session.to_owned())
                         .or_default()
                         .push(host.to_owned());
+                }
+            }
+            Some(BOOT) => {
+                out.boot = fields.next().unwrap_or_default().trim().to_owned();
+            }
+            Some(WORK) => {
+                let (Some(boot), Some(stamp), Some(session), Some(cwd)) =
+                    (fields.next(), fields.next(), fields.next(), fields.next())
+                else {
+                    continue;
+                };
+                // Every remaining field is a pane. A row with none is a row that
+                // cannot be rebuilt, so it is not one.
+                let panes: Vec<String> = fields.map(str::to_owned).collect();
+                if session.is_empty() || !cwd.starts_with('/') || panes.is_empty() {
+                    continue;
+                }
+                let row = Workspace {
+                    cwd: cwd.to_owned(),
+                    panes,
+                };
+                match out
+                    .workspaces
+                    .iter_mut()
+                    .find(|snapshot| snapshot.boot == boot && snapshot.session == session)
+                {
+                    Some(snapshot) => snapshot.rows.push(row),
+                    None => out.workspaces.push(Snapshot {
+                        boot: boot.to_owned(),
+                        session: session.to_owned(),
+                        stamp: stamp.trim().parse().unwrap_or_default(),
+                        rows: vec![row],
+                    }),
                 }
             }
             Some(GROUP) => {
@@ -231,7 +324,17 @@ mod tests {
                 "main".to_owned(),
                 vec!["dev1".to_owned(), "build2".to_owned()],
             )]),
+            boot: "b1".to_owned(),
             groups: BTreeMap::from([("main".to_owned(), vec![vec![3, 4, 9]])]),
+            workspaces: vec![Snapshot {
+                boot: "b1".to_owned(),
+                session: "main".to_owned(),
+                stamp: 1_700_000_000,
+                rows: vec![Workspace {
+                    cwd: "/home/pp/api".to_owned(),
+                    panes: vec!["claude".to_owned(), String::new(), "lazygit".to_owned()],
+                }],
+            }],
         };
 
         assert_eq!(decode(&encode(&arrangement)), arrangement);
@@ -239,6 +342,39 @@ mod tests {
 
     /// A reload is the ordinary way to lose a grouping, so the file has to be
     /// the thing that puts it back.
+    /// Pane ids do not survive a restart; a directory and what ran in it do.
+    #[test]
+    fn a_workspace_is_a_directory_and_what_ran_there() {
+        let arrangement = decode(
+            "w\tb1\t100\tmain\t/home/pp/api\tclaude\t\tlazygit\n\
+             w\tb1\t100\tmain\t/home/pp/web\tnvim\n\
+             w\tb1\t100\tmain\t/home/pp/nothing\n\
+             w\tb1\t100\tmain\trelative\tclaude\n\
+             w\tb1\t100\t\t/home/pp/api\tclaude\n\
+             w\tb2\t200\tmain\t/home/pp/api\tclaude\n",
+        );
+
+        let first = &arrangement.workspaces[0];
+        assert_eq!(
+            (first.boot.as_str(), first.session.as_str()),
+            ("b1", "main")
+        );
+        assert_eq!(first.stamp, 100);
+        assert_eq!(first.rows.len(), 2, "no panes and no path are not rows");
+        assert_eq!(first.rows[0].cwd, "/home/pp/api");
+        assert_eq!(first.rows[0].panes, vec!["claude", "", "lazygit"]);
+        assert_eq!(first.rows[1].panes, vec!["nvim"]);
+        // The same session in another boot is another snapshot, not more rows.
+        assert_eq!(arrangement.workspaces.len(), 2);
+        assert_eq!(arrangement.workspaces[1].boot, "b2");
+    }
+
+    #[test]
+    fn the_file_says_which_boot_wrote_it() {
+        assert_eq!(decode("b\t46eb51b9\n").boot, "46eb51b9");
+        assert!(decode("g\tmain\t1,2\n").boot.is_empty());
+    }
+
     #[test]
     fn a_rows_panes_are_remembered_per_session() {
         let arrangement = decode("g\tmain\t3,4,9\ng\tother\t1,2\ng\tmain\t5\ng\t\t7,8\n");

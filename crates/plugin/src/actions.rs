@@ -52,9 +52,9 @@ pub fn go_to_target(
             switch_session_with_focus(name, None, None);
         }
         Target::Session { .. } => {}
-        // Not here: a directory is not somewhere to go, and the sidebar is the
-        // one that owns the template and the slot. See `ask_for_row`.
-        Target::Dir { .. } => {}
+        // Neither of these is somewhere to *go*, and both need the template and
+        // the slot the sidebar owns. See `ask_for_row` and `ask_for_workspace`.
+        Target::Dir { .. } | Target::Workspace { .. } => {}
     }
 }
 
@@ -66,6 +66,16 @@ pub fn go_to_target(
 /// a sidebar that silently does nothing.
 pub fn ask_for_row(session: &str, now: u64, path: &str) {
     let command = agenttij_core::scan::open_at_command(session, now, path);
+    let words: Vec<&str> = command.iter().map(String::as_str).collect();
+    run_command(&words, BTreeMap::new());
+}
+
+/// Asks the sidebar in this session to build a remembered workspace again.
+///
+/// The name is the whole message: the sidebar holds the arrangement file, so it
+/// already knows which rows that workspace had and where they worked.
+pub fn ask_for_workspace(session: &str, now: u64, workspace: &str) {
+    let command = agenttij_core::scan::restore_command(session, now, workspace);
     let words: Vec<&str> = command.iter().map(String::as_str).collect();
     run_command(&words, BTreeMap::new());
 }

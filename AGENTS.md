@@ -154,6 +154,21 @@ Each of these cost a debugging round already:
   a rail you chose stays a rail. Constraining that first layout by pane count
   does not work: suppressing a pane relayouts too (`extract_pane`), and in solo
   mode that drops the count straight back down.
+- **Zellij does not serialize a parked pane.** `get_layout_metadata`
+  (`screen.rs`) walks tiled and floating panes and only touches the suppressed
+  ones to swap a scrollback editor back in, so a pane hidden with
+  `hide_pane_with_id` is absent from `session-layout.kdl`. Measured: a row of
+  three came back as its head alone (and the template refilled the rest).
+  Resurrected command panes carry `start_suspended true`, so an agent waits for
+  Enter rather than relaunching itself.
+- **A session's own sidebar overwrites the thing it should restore.** The rows a
+  session has are written to `~/.cache/agenttij/order` whenever they change — so
+  after a restart the sidebar in `work` replaces `work`'s four remembered rows
+  with the one row Zellij brought back, before anyone can ask for the other
+  three. Snapshots are therefore stamped with `/proc/sys/kernel/random/boot_id`:
+  this boot's entry for a session is live and replaceable, an earlier boot's is a
+  snapshot, and only earlier ones are offered for restoring. The same stamp is
+  what makes it safe to keep pane ids in that file at all.
 - **A reload keeps the panes and loses nothing else either, now.** Grouping used
   to go with it — a reload built a `Groups` from nothing, every pane became a row
   of its own, and a row of five came apart into five. The rows are written into
