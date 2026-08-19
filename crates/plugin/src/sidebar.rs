@@ -1551,6 +1551,13 @@ impl Sidebar {
         // that way, and is left alone. That separation is the whole point: a
         // sidebar that started after a restart must not overwrite the rows it is
         // there to bring back.
+        // Not before the clock has arrived: a snapshot stamped zero sorts last and
+        // is the first thing pruned, which is the opposite of what a snapshot
+        // written a second ago deserves. The ids above are stamped by the file.
+        if self.now == 0 {
+            self.save_order();
+            return;
+        }
         self.arrangement
             .workspaces
             .retain(|snapshot| !mine(&snapshot));
@@ -2396,14 +2403,18 @@ impl Sidebar {
         );
         // Last, because a workspace is the thing you want when nothing else in
         // the list is there any more.
-        // Only other boots': this boot's entry for a session is the live record of
-        // a session that is still arranged that way, so "restore" would be a
-        // no-op — and the one you want after a restart is the one from before it.
+        // What is *not* offered is the live record of a session that is still
+        // running as described: restoring that is a no-op. Everything else is
+        // fair game — a session from before a restart, and just as importantly a
+        // session that ended this morning without one, which is the case that
+        // does not need a reboot to matter.
         let remembered: Vec<(String, usize)> = self
             .arrangement
             .workspaces
             .iter()
-            .filter(|snapshot| snapshot.boot != self.boot)
+            .filter(|snapshot| {
+                snapshot.boot != self.boot || !self.live_sessions.contains(&snapshot.session)
+            })
             .map(|snapshot| (snapshot.session.clone(), snapshot.rows.len()))
             .collect();
         entries.extend(agenttij_core::jump::workspaces(&remembered));
