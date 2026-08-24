@@ -154,6 +154,12 @@ Each of these cost a debugging round already:
   a rail you chose stays a rail. Constraining that first layout by pane count
   does not work: suppressing a pane relayouts too (`extract_pane`), and in solo
   mode that drops the count straight back down.
+- **A pane keeps the session name it was born with.** `ZELLIJ_SESSION_NAME` is
+  set when the pane spawns and a `rename-session` does not reach it — measured
+  through `/proc/<pid>/environ`, before and after. The hook reads that variable,
+  so renaming a session orphans the state files of every agent already in it, and
+  `panes::reconcile` drops an agent whose session is not live. Name a session at
+  creation (`zellij -s`), never afterwards.
 - **Zellij does not serialize a parked pane.** `get_layout_metadata`
   (`screen.rs`) walks tiled and floating panes and only touches the suppressed
   ones to swap a scrollback editor back in, so a pane hidden with

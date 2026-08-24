@@ -138,7 +138,7 @@ fn shorten(path: &str, home: &str) -> String {
 pub fn entries(
     agents: &[Agent],
     live_sessions: &[String],
-    dead_sessions: &[String],
+    dead_sessions: &[(String, Vec<String>)],
     current_session: &str,
 ) -> Vec<Entry> {
     let mut agents: Vec<&Agent> = agents.iter().collect();
@@ -196,11 +196,18 @@ pub fn entries(
             },
         }
     }));
-    out.extend(dead_sessions.iter().map(|name| Entry {
+    // A dead session is a random name and nothing else — `quadratic-donkey` says
+    // nothing about which of yesterday's four it was. What it was *working on* is
+    // known (the rows were written down), so that is what it is labelled and
+    // found by: typing a project name finds the session that had it.
+    out.extend(dead_sessions.iter().map(|(name, projects)| Entry {
         glyph: DEAD,
         label: name.clone(),
-        context: "resurrect".to_owned(),
-        search: format!("{name} resurrect dead"),
+        context: match projects.is_empty() {
+            true => "resurrect".to_owned(),
+            false => projects.join(" "),
+        },
+        search: format!("{name} resurrect dead {}", projects.join(" ")),
         target: Target::Session {
             name: name.clone(),
             dead: true,
@@ -304,6 +311,29 @@ mod tests {
         );
         // Typing a piece of the path still finds it, label or no label.
         assert!(score(&entries[0].search, "personal").is_some());
+    }
+
+    /// A random name says nothing; what it was working on does.
+    #[test]
+    fn a_dead_session_is_labelled_with_its_projects() {
+        let dead = vec![(
+            "quadratic-donkey".to_owned(),
+            vec!["agenttij".to_owned(), "lara-app".to_owned()],
+        )];
+        let entry = entries(&[], &[], &dead, "here")
+            .into_iter()
+            .next()
+            .expect("a dead session is an entry");
+
+        assert_eq!(entry.label, "quadratic-donkey");
+        assert_eq!(entry.context, "agenttij lara-app");
+        // Which is how you find it again: by the work, not the animal.
+        assert!(score(&entry.search, "lara").is_some());
+        assert!(score(&entry.search, "donkey").is_some());
+
+        // Nothing remembered still resurrects, it just cannot say what it was.
+        let bare = entries(&[], &[], &[("old".to_owned(), vec![])], "here");
+        assert_eq!(bare[0].context, "resurrect");
     }
 
     #[test]
@@ -440,7 +470,7 @@ mod tests {
         let entries = entries(
             &[agent("main", 1, "/home/pp/api", Status::Idle)],
             &["main".to_owned()],
-            &["yesterday".to_owned()],
+            &[("yesterday".to_owned(), vec!["api".to_owned()])],
             "main",
         );
 

@@ -80,6 +80,14 @@ No zoxide is not an error: the list is then just the directories in use. And a
 path under `/tmp` is the one thing this cannot honour — Zellij rewrites paths a
 plugin hands it when they start with `/tmp`, `/host`, `/data` or `/cache`.
 
+### Finding a session that is gone
+
+`⊗` in the palette is a session Zellij can resurrect, labelled with the projects
+its rows were in rather than only its name — `⊗ quadratic-donkey  agenttij
+lara-app` — and searchable by them, since a week later the animal means nothing.
+The projects come from the same snapshot the workspace restore uses, so a session
+that died before any of that was written down still shows plainly as `resurrect`.
+
 ### Bringing a workspace back
 
 `Alt t` and type `restore`: every workspace the machine remembers is in the

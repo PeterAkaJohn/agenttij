@@ -2395,10 +2395,36 @@ impl Sidebar {
             &everything,
             &self.current_session,
         ));
+        // A dead session carries the projects its rows were in, from the snapshot
+        // it left behind — the only thing that makes `quadratic-donkey` tell you
+        // anything a week later.
+        let dead: Vec<(String, Vec<String>)> = self
+            .dead_sessions
+            .iter()
+            .map(|name| {
+                let projects = self
+                    .arrangement
+                    .workspaces
+                    .iter()
+                    .find(|snapshot| snapshot.session == *name)
+                    .map(|snapshot| {
+                        let mut seen: Vec<String> = Vec::new();
+                        for row in &snapshot.rows {
+                            let project = project::display(&row.cwd).to_owned();
+                            if !seen.contains(&project) {
+                                seen.push(project);
+                            }
+                        }
+                        seen
+                    })
+                    .unwrap_or_default();
+                (name.clone(), projects)
+            })
+            .collect();
         let mut entries = agenttij_core::jump::entries(
             &everything,
             &self.live_sessions,
-            &self.dead_sessions,
+            &dead,
             &self.current_session,
         );
         // Last, because a workspace is the thing you want when nothing else in

@@ -86,6 +86,39 @@ are. It never takes focus, the way a status bar should not, and it works with or
 without a sidebar — including `notify`, so a bar is also how you get desktop
 notifications in a session that has no sidebar at all.
 
+## A session per folder
+
+Zellij names a new session `quadratic-donkey`, which is fine until four of them
+are `EXITED` and you have to guess which was which. Name it after the folder when
+you *create* it, and the name is stable across restarts:
+
+```sh
+zj() {
+    name=${PWD##*/}
+    zellij attach "$name" 2>/dev/null || zellij -s "$name" -n agenttij-template
+}
+```
+
+Same folder, same session — attaching resurrects it if it died, and `attach -f`
+runs a resurrected session's commands straight away instead of leaving them
+suspended. A new folder gets a new session with the template.
+
+At creation, not later: a pane keeps the session name it was born with, so
+renaming a session leaves every agent in it reporting under the old name — and an
+agent whose session no longer exists is one the sidebar drops. Measured with
+`/proc/<pid>/environ`: after `rename-session`, the pane still said the old one.
+That is why the sidebar does not rename anything itself.
+
+For the sessions already sitting in `zellij ls` with animal names, the palette
+labels them with what they were working on rather than leaving you to guess:
+
+```
+⊗ quadratic-donkey    agenttij lara-app
+⊗ charming-orange     contentchef
+```
+
+So `Alt t` and `lara` finds the dead session that had it, and `Enter` resurrects.
+
 ## After a restart
 
 Two halves, because they answer different questions.
