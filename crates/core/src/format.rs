@@ -186,8 +186,12 @@ pub fn age(now: u64, reported_at: u64) -> String {
     if reported_at == 0 {
         return "-".to_string();
     }
+    span(now.saturating_sub(reported_at))
+}
 
-    let seconds = now.saturating_sub(reported_at);
+/// The same, for something that already knows how long ago it was — a
+/// resurrectable session carries its own age rather than a timestamp.
+pub fn span(seconds: u64) -> String {
     match seconds {
         0..=9 => "now".to_string(),
         s if s < 60 => format!("{s}s"),

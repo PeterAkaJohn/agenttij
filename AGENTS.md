@@ -167,6 +167,13 @@ Each of these cost a debugging round already:
   three came back as its head alone (and the template refilled the rest).
   Resurrected command panes carry `start_suspended true`, so an agent waits for
   Enter rather than relaunching itself.
+- **One file rewritten by every sidebar loses what belongs to a session.** The
+  arrangement is saved whole from whichever sidebar saved last, which is right
+  for an opinion about project order and wrong for a record *belonging* to a
+  session: measured with three sidebars up, a session's rows never survived to
+  the file at all. Shared things (`p`, `f`, `n`) stay in `order`; a session's own
+  (`b`, `g`, `w`, `h`) go to `sessions/<name>`, which only it writes. One `cat`
+  reads both.
 - **A session's own sidebar overwrites the thing it should restore.** The rows a
   session has are written to `~/.cache/agenttij/order` whenever they change — so
   after a restart the sidebar in `work` replaces `work`'s four remembered rows

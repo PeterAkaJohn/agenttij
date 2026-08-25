@@ -118,6 +118,14 @@ labels them with what they were working on rather than leaving you to guess:
 ```
 
 So `Alt t` and `lara` finds the dead session that had it, and `Enter` resurrects.
+Live sessions carry the same information, and everything that can say how long
+ago it was says that too:
+
+```
+⊙ contentchef-serverless   contentchef · session
+⊗ quadratic-donkey         agenttij lara-app · 3d
+⊞ contentchef              4 rows · 2h
+```
 
 ## After a restart
 
@@ -144,10 +152,16 @@ per row, the directory it worked in and the programs its panes ran. `Alt t`, typ
 ```
 
 Picking one rebuilds those rows — a row per second, in their own directories, with
-their own panes, skipping any whose directory is already open so restoring twice
-is not twice the panes. Program *arguments* are not kept, because a pane only
+their own panes. Rows already open are skipped, *counted* rather than merely
+matched: three rows on one project restore two when one of them is already there,
+which is what a project you work on from several angles looks like. Program *arguments* are not kept, because a pane only
 reports the program it runs: `nvim` comes back, `nvim +42 file` comes back as
 `nvim`.
+
+Each session writes its own file (`~/.cache/agenttij/sessions/<name>`) and reads
+everyone's: one shared file rewritten by whichever sidebar saved last is fine for
+the order of projects and hopeless for a record belonging to a session, which the
+next sidebar to save would erase.
 
 The snapshots are stamped with the boot that wrote them, which is what keeps a
 session's own sidebar from overwriting the thing it is meant to restore: this

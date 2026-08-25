@@ -38,9 +38,10 @@ const TICK_SECONDS: f64 = 1.0;
 /// row much later.
 const OPENING_SECONDS: u64 = 15;
 
-/// How many remembered workspaces to keep. Enough for the sessions of a couple
-/// of restarts, few enough that the palette stays a list you read.
-const SNAPSHOTS: usize = 16;
+/// How many snapshots to keep for one session: this boot's live record and the
+/// last few restarts' worth. Each session keeps its own, so this is a depth
+/// rather than a total.
+const SNAPSHOTS: usize = 4;
 
 #[derive(Default, PartialEq, Eq)]
 enum Permissions {
@@ -198,7 +199,7 @@ pub struct Sidebar {
     /// Rows and their panes as a machine elsewhere published them, by host.
     remote_rows: BTreeMap<String, (Vec<scan::Row>, Vec<scan::Member>)>,
     /// Sessions Zellij can bring back, for the palette to offer.
-    dead_sessions: Vec<String>,
+    dead_sessions: Vec<(String, u64)>,
     /// What each watched machine last told us, and when to ask it again.
     remote: BTreeMap<String, Vec<Agent>>,
     hosts_in: BTreeMap<String, u8>,
@@ -548,10 +549,12 @@ impl Sidebar {
                 // Only the palette offers these, and only it pays for keeping
                 // them: a dead session is not something to watch.
                 if self.config.jump {
+                    // The duration is how long ago it was last alive; without it
+                    // a list of dead animals says nothing about which is which.
                     self.dead_sessions = sessions
                         .resurrectable_sessions
                         .iter()
-                        .map(|(name, _)| name.clone())
+                        .map(|(name, since)| (name.clone(), since.as_secs()))
                         .collect();
                 }
             }
@@ -1575,7 +1578,16 @@ impl Sidebar {
         self.arrangement
             .workspaces
             .sort_by_key(|snapshot| std::cmp::Reverse(snapshot.stamp));
-        self.arrangement.workspaces.truncate(SNAPSHOTS);
+        // Only ours are ours to prune: the rest live in other sessions' files and
+        // are only in memory because they were read from them.
+        let mut kept = 0;
+        self.arrangement.workspaces.retain(|snapshot| {
+            if snapshot.session != self.current_session {
+                return true;
+            }
+            kept += 1;
+            kept <= SNAPSHOTS
+        });
         // A session that is gone takes its rows with it: pane ids mean nothing
         // without it, and otherwise the file grows a block per session forever.
         self.arrangement.groups.retain(|session, _| {
@@ -1607,10 +1619,24 @@ impl Sidebar {
         let Some(rows) = snapshot.map(|snapshot| snapshot.rows.clone()) else {
             return;
         };
-        let here: Vec<String> = self.workspace().into_iter().map(|row| row.cwd).collect();
+        // How many rows this session already has in each directory — not
+        // *whether* it has one. Three rows on one project is the ordinary shape
+        // of working on it, and "the directory is already open" skipped all
+        // three of them: the first row Zellij brought back covered the lot.
+        let mut here: BTreeMap<String, usize> = BTreeMap::new();
+        for row in self.workspace() {
+            *here.entry(row.cwd).or_default() += 1;
+        }
 
-        self.restoring
-            .extend(rows.into_iter().filter(|row| !here.contains(&row.cwd)));
+        let wanted = rows.into_iter().filter(|row| match here.get_mut(&row.cwd) {
+            // One of the remembered rows for this directory is that one.
+            Some(open) if *open > 0 => {
+                *open -= 1;
+                false
+            }
+            _ => true,
+        });
+        self.restoring.extend(wanted);
     }
 
     /// One row per tick. Nine panes in a single event is a burst of opens and
@@ -1667,8 +1693,19 @@ impl Sidebar {
     /// which is rare — and last writer wins, which is the right answer when two
     /// sidebars disagree about where a project belongs.
     fn save_order(&self) {
-        let text = order::encode(&self.arrangement);
-        let command = scan::write_order_command(&text);
+        let shared = order::encode(&self.arrangement);
+        let command = scan::write_order_command(&shared);
+        let words: Vec<&str> = command.iter().map(String::as_str).collect();
+        run_command(&words, BTreeMap::new());
+
+        // And this session's own half, which nobody else writes. Two forks on a
+        // save rather than one; a save happens when you move something or a row
+        // changes, not on a tick.
+        if self.current_session.is_empty() {
+            return;
+        }
+        let mine = order::encode_session(&self.arrangement, &self.current_session);
+        let command = scan::write_session_command(&self.current_session, &mine);
         let words: Vec<&str> = command.iter().map(String::as_str).collect();
         run_command(&words, BTreeMap::new());
     }
@@ -2398,10 +2435,10 @@ impl Sidebar {
         // A dead session carries the projects its rows were in, from the snapshot
         // it left behind — the only thing that makes `quadratic-donkey` tell you
         // anything a week later.
-        let dead: Vec<(String, Vec<String>)> = self
+        let dead: Vec<agenttij_core::jump::Dead> = self
             .dead_sessions
             .iter()
-            .map(|name| {
+            .map(|(name, since)| {
                 let projects = self
                     .arrangement
                     .workspaces
@@ -2418,7 +2455,11 @@ impl Sidebar {
                         seen
                     })
                     .unwrap_or_default();
-                (name.clone(), projects)
+                agenttij_core::jump::Dead {
+                    name: name.clone(),
+                    projects,
+                    age: agenttij_core::format::span(*since),
+                }
             })
             .collect();
         let mut entries = agenttij_core::jump::entries(
@@ -2434,14 +2475,18 @@ impl Sidebar {
         // fair game — a session from before a restart, and just as importantly a
         // session that ended this morning without one, which is the case that
         // does not need a reboot to matter.
-        let remembered: Vec<(String, usize)> = self
+        let remembered: Vec<agenttij_core::jump::Remembered> = self
             .arrangement
             .workspaces
             .iter()
             .filter(|snapshot| {
                 snapshot.boot != self.boot || !self.live_sessions.contains(&snapshot.session)
             })
-            .map(|snapshot| (snapshot.session.clone(), snapshot.rows.len()))
+            .map(|snapshot| agenttij_core::jump::Remembered {
+                session: snapshot.session.clone(),
+                rows: snapshot.rows.len(),
+                age: agenttij_core::format::age(self.now, snapshot.stamp),
+            })
             .collect();
         entries.extend(agenttij_core::jump::workspaces(&remembered));
         self.palette.refresh(entries);

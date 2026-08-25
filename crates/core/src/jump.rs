@@ -27,6 +27,24 @@ pub enum Target {
     Workspace { session: String },
 }
 
+/// A session that can be brought back, and what is known about it.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Dead {
+    pub name: String,
+    /// The projects its rows were in, from the snapshot it left behind.
+    pub projects: Vec<String>,
+    /// How long ago it was last alive, already formatted.
+    pub age: String,
+}
+
+/// A workspace waiting to be built again.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Remembered {
+    pub session: String,
+    pub rows: usize,
+    pub age: String,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Entry {
     pub glyph: char,
@@ -54,25 +72,31 @@ const WORK: char = '⊞';
 /// needs the directories of the rows currently open, which only the sidebar
 /// holds. It skips the ones already there when it rebuilds, so restoring twice
 /// is not twice the panes.
-pub fn workspaces(remembered: &[(String, usize)]) -> Vec<Entry> {
+pub fn workspaces(remembered: &[Remembered]) -> Vec<Entry> {
     remembered
         .iter()
-        .filter(|(session, rows)| !session.is_empty() && *rows > 0)
-        .map(|(session, missing)| Entry {
+        .filter(|workspace| !workspace.session.is_empty() && workspace.rows > 0)
+        .map(|workspace| Entry {
             glyph: WORK,
-            label: session.clone(),
-            context: match missing {
-                1 => "1 row".to_owned(),
-                many => format!("{many} rows"),
+            label: workspace.session.clone(),
+            context: {
+                let rows = match workspace.rows {
+                    1 => "1 row".to_owned(),
+                    many => format!("{many} rows"),
+                };
+                match workspace.age.is_empty() {
+                    true => rows,
+                    false => format!("{rows} · {}", workspace.age),
+                }
             },
             // The verb first, because a workspace and the session it came from
             // share a name — and on that name the session wins, every time: the
             // same match with a shorter string behind it. Typing `restore` is
             // therefore the way to these, and typing the name is the way to the
             // session, which is the right way round.
-            search: format!("restore {session} workspace rows"),
+            search: format!("restore {} workspace rows", workspace.session),
             target: Target::Workspace {
-                session: session.clone(),
+                session: workspace.session.clone(),
             },
         })
         .collect()
@@ -138,7 +162,7 @@ fn shorten(path: &str, home: &str) -> String {
 pub fn entries(
     agents: &[Agent],
     live_sessions: &[String],
-    dead_sessions: &[(String, Vec<String>)],
+    dead_sessions: &[Dead],
     current_session: &str,
 ) -> Vec<Entry> {
     let mut agents: Vec<&Agent> = agents.iter().collect();
@@ -180,16 +204,34 @@ pub fn entries(
         .collect();
 
     out.extend(live_sessions.iter().map(|name| {
+        // What is being worked on in it, from the agents already in this list —
+        // a session called `quadratic-donkey` is otherwise as anonymous alive as
+        // it is dead.
+        let mut projects: Vec<&str> = Vec::new();
+        for agent in agents.iter().filter(|agent| agent.session == *name) {
+            let project = crate::project::display(if agent.root.is_empty() {
+                &agent.cwd
+            } else {
+                &agent.root
+            });
+            if !project.is_empty() && !projects.contains(&project) {
+                projects.push(project);
+            }
+        }
+        let projects = projects.join(" ");
+        let here = if name == current_session {
+            "here"
+        } else {
+            "session"
+        };
         Entry {
             glyph: SESSION,
             label: name.clone(),
-            context: if name == current_session {
-                "here"
-            } else {
-                "session"
-            }
-            .to_owned(),
-            search: format!("{name} session"),
+            context: match projects.is_empty() {
+                true => here.to_owned(),
+                false => format!("{projects} · {here}"),
+            },
+            search: format!("{name} session {projects}"),
             target: Target::Session {
                 name: name.clone(),
                 dead: false,
@@ -200,18 +242,23 @@ pub fn entries(
     // nothing about which of yesterday's four it was. What it was *working on* is
     // known (the rows were written down), so that is what it is labelled and
     // found by: typing a project name finds the session that had it.
-    out.extend(dead_sessions.iter().map(|(name, projects)| Entry {
-        glyph: DEAD,
-        label: name.clone(),
-        context: match projects.is_empty() {
-            true => "resurrect".to_owned(),
-            false => projects.join(" "),
-        },
-        search: format!("{name} resurrect dead {}", projects.join(" ")),
-        target: Target::Session {
-            name: name.clone(),
-            dead: true,
-        },
+    out.extend(dead_sessions.iter().map(|dead| {
+        let projects = dead.projects.join(" ");
+        Entry {
+            glyph: DEAD,
+            label: dead.name.clone(),
+            context: match (projects.is_empty(), dead.age.is_empty()) {
+                (true, true) => "resurrect".to_owned(),
+                (true, false) => format!("resurrect · {}", dead.age),
+                (false, true) => projects.clone(),
+                (false, false) => format!("{projects} · {}", dead.age),
+            },
+            search: format!("{} resurrect dead {projects}", dead.name),
+            target: Target::Session {
+                name: dead.name.clone(),
+                dead: true,
+            },
+        }
     }));
     out
 }
@@ -316,38 +363,52 @@ mod tests {
     /// A random name says nothing; what it was working on does.
     #[test]
     fn a_dead_session_is_labelled_with_its_projects() {
-        let dead = vec![(
-            "quadratic-donkey".to_owned(),
-            vec!["agenttij".to_owned(), "lara-app".to_owned()],
-        )];
+        let dead = vec![Dead {
+            name: "quadratic-donkey".to_owned(),
+            projects: vec!["agenttij".to_owned(), "lara-app".to_owned()],
+            age: "3d".to_owned(),
+        }];
         let entry = entries(&[], &[], &dead, "here")
             .into_iter()
             .next()
             .expect("a dead session is an entry");
 
         assert_eq!(entry.label, "quadratic-donkey");
-        assert_eq!(entry.context, "agenttij lara-app");
+        assert_eq!(entry.context, "agenttij lara-app · 3d");
         // Which is how you find it again: by the work, not the animal.
         assert!(score(&entry.search, "lara").is_some());
         assert!(score(&entry.search, "donkey").is_some());
 
         // Nothing remembered still resurrects, it just cannot say what it was.
-        let bare = entries(&[], &[], &[("old".to_owned(), vec![])], "here");
+        let bare = entries(
+            &[],
+            &[],
+            &[Dead {
+                name: "old".to_owned(),
+                ..Dead::default()
+            }],
+            "here",
+        );
         assert_eq!(bare[0].context, "resurrect");
     }
 
     #[test]
     fn a_workspace_is_offered_by_name_and_size() {
+        let remembered = |session: &str, rows: usize, age: &str| Remembered {
+            session: session.to_owned(),
+            rows,
+            age: age.to_owned(),
+        };
         let entries = workspaces(&[
-            ("api".to_owned(), 3),
-            ("here".to_owned(), 0),
-            ("one".to_owned(), 1),
-            (String::new(), 2),
+            remembered("api", 3, "2h"),
+            remembered("here", 0, ""),
+            remembered("one", 1, ""),
+            remembered("", 2, ""),
         ]);
 
         assert_eq!(entries.len(), 2, "not the empty one, nor the nameless");
         assert_eq!(entries[0].label, "api");
-        assert_eq!(entries[0].context, "3 rows");
+        assert_eq!(entries[0].context, "3 rows · 2h");
         assert_eq!(entries[1].context, "1 row");
         assert_eq!(
             entries[0].target,
@@ -470,7 +531,11 @@ mod tests {
         let entries = entries(
             &[agent("main", 1, "/home/pp/api", Status::Idle)],
             &["main".to_owned()],
-            &[("yesterday".to_owned(), vec!["api".to_owned()])],
+            &[Dead {
+                name: "yesterday".to_owned(),
+                projects: vec!["api".to_owned()],
+                age: "1d".to_owned(),
+            }],
             "main",
         );
 
@@ -482,7 +547,10 @@ mod tests {
                 dead: true
             }
         );
-        assert_eq!(entries[1].context, "here", "the session you are in says so");
+        assert_eq!(
+            entries[1].context, "api · here",
+            "a live session says what is worked on in it, and that it is this one"
+        );
     }
 
     #[test]

@@ -98,11 +98,15 @@ pub struct Workspace {
 /// Line based and tab separated like the state files, for the same reason: it is
 /// read by `cat` and written by `printf`, and anything that cannot be read is
 /// skipped rather than throwing the rest away.
+/// What every sidebar shares: the order of projects, their names, what is folded.
+///
+/// Split from [`encode_session`] because this file is rewritten whole by whoever
+/// saves last. That is right for an opinion about project order — there is one
+/// list and the last word wins — and wrong for a record *belonging* to a session,
+/// which another session would erase by saving its own view a second later.
+/// Measured: three sidebars up, and a session's rows never survived to the file.
 pub fn encode(arrangement: &Arrangement) -> String {
     let mut out = String::new();
-    if !arrangement.boot.is_empty() {
-        out.push_str(&format!("{BOOT}\t{}\n", arrangement.boot));
-    }
     for project in &arrangement.projects {
         out.push_str(&format!("{PROJECT}\t{project}\n"));
     }
@@ -117,13 +121,28 @@ pub fn encode(arrangement: &Arrangement) -> String {
     for (root, name) in &arrangement.names {
         out.push_str(&format!("{NAMED}\t{root}\t{name}\n"));
     }
-    for (session, rows) in &arrangement.groups {
+    out
+}
+
+/// What belongs to one session: the boot its pane ids came from, its rows both
+/// ways, and the machines it watches. Its own file, so no other sidebar can
+/// write over it.
+pub fn encode_session(arrangement: &Arrangement, session: &str) -> String {
+    let mut out = String::new();
+    if !arrangement.boot.is_empty() {
+        out.push_str(&format!("{BOOT}\t{}\n", arrangement.boot));
+    }
+    if let Some(rows) = arrangement.groups.get(session) {
         for members in rows.iter().filter(|members| members.len() > 1) {
             let members: Vec<String> = members.iter().map(u32::to_string).collect();
             out.push_str(&format!("{GROUP}\t{session}\t{}\n", members.join(",")));
         }
     }
-    for snapshot in &arrangement.workspaces {
+    for snapshot in arrangement
+        .workspaces
+        .iter()
+        .filter(|snapshot| snapshot.session == session)
+    {
         for row in snapshot.rows.iter().filter(|row| !row.cwd.is_empty()) {
             out.push_str(&format!(
                 "{WORK}\t{}\t{}\t{}\t{}\t{}\n",
@@ -135,7 +154,7 @@ pub fn encode(arrangement: &Arrangement) -> String {
             ));
         }
     }
-    for (session, hosts) in &arrangement.hosts {
+    if let Some(hosts) = arrangement.hosts.get(session) {
         for host in hosts {
             out.push_str(&format!("{HOST}\t{session}\t{host}\n"));
         }
@@ -337,7 +356,22 @@ mod tests {
             }],
         };
 
-        assert_eq!(decode(&encode(&arrangement)), arrangement);
+        // The two halves are written to two files and read back as one thing.
+        let both = format!(
+            "{}{}",
+            encode(&arrangement),
+            encode_session(&arrangement, "main")
+        );
+        assert_eq!(decode(&both), arrangement);
+        // And what belongs to a session is not in the shared half, which every
+        // sidebar overwrites.
+        let shared = encode(&arrangement);
+        for kind in [GROUP, WORK, HOST, BOOT] {
+            assert!(
+                !shared.lines().any(|line| line.starts_with(kind)),
+                "{kind} belongs to a session"
+            );
+        }
     }
 
     /// A reload is the ordinary way to lose a grouping, so the file has to be

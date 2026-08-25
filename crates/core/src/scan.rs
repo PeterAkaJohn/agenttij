@@ -485,12 +485,28 @@ pub fn read_order_command() -> [String; 3] {
     [
         "sh".to_owned(),
         "-c".to_owned(),
-        format!("{ORDER_DIR}; cat \"$d/order\" 2>/dev/null; true"),
+        // Both halves in one fork: what every sidebar shares, and one file per
+        // session that only that session writes.
+        format!("{ORDER_DIR}; cat \"$d/order\" \"$d/sessions/\"* 2>/dev/null; true"),
     ]
 }
 
 /// The text goes as an *argument*, never inside the script: a project is a path,
 /// and a path may contain anything a shell would rather it did not.
+/// A session's own half, in a file named after it — so two sidebars saving a
+/// second apart cannot write over each other's rows.
+pub fn write_session_command(session: &str, text: &str) -> [String; 5] {
+    [
+        "sh".to_owned(),
+        "-c".to_owned(),
+        // The name goes as an argument too: it is a file name here, and a session
+        // may be called anything its user typed.
+        format!("{ORDER_DIR}; mkdir -p \"$d/sessions\" && printf '%s' \"$0\" > \"$d/sessions/$1\""),
+        text.to_owned(),
+        session.replace('/', "_"),
+    ]
+}
+
 pub fn write_order_command(text: &str) -> [String; 4] {
     [
         "sh".to_owned(),
@@ -614,6 +630,18 @@ mod tests {
         // And anything that is not a path is not a directory.
         let (_, dirs) = parse_dirs("/home/pp\nzsh: command not found: zoxide\n/tmp\n");
         assert_eq!(dirs, vec!["/tmp"]);
+    }
+
+    #[test]
+    fn a_session_writes_its_own_half_and_reads_every_half() {
+        let write = write_session_command("main", "g\tmain\t1,2\n");
+        assert!(write[2].contains("sessions/$1"), "named after the session");
+        assert_eq!(write[4], "main");
+        // A name is a file name here, and a `/` in one would be a directory.
+        assert_eq!(write_session_command("a/b", "")[4], "a_b");
+        // One read for both halves.
+        let read = read_order_command();
+        assert!(read[2].contains("$d/order") && read[2].contains("sessions/"));
     }
 
     #[test]
