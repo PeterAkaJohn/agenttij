@@ -155,11 +155,15 @@ Each of these cost a debugging round already:
   does not work: suppressing a pane relayouts too (`extract_pane`), and in solo
   mode that drops the count straight back down.
 - **A pane keeps the session name it was born with.** `ZELLIJ_SESSION_NAME` is
-  set when the pane spawns and a `rename-session` does not reach it — measured
+  set when the pane spawns and a `rename-session` does not reach it - measured
   through `/proc/<pid>/environ`, before and after. The hook reads that variable,
   so renaming a session orphans the state files of every agent already in it, and
-  `panes::reconcile` drops an agent whose session is not live. Name a session at
-  creation (`zellij -s`), never afterwards.
+  `panes::reconcile` drops an agent whose session is not live. That is why a
+  rename records the old name as an alias (`a` lines, per session) and `rebuild`
+  maps agents reporting under one onto this session: with it, a running agent
+  keeps its status across a rename; without it, the row degrades to a discovered
+  pane. Anything that renames a session goes through `Sidebar::rename_session`
+  for that reason.
 - **Zellij does not serialize a parked pane.** `get_layout_metadata`
   (`screen.rs`) walks tiled and floating panes and only touches the suppressed
   ones to swap a scrollback editor back in, so a pane hidden with

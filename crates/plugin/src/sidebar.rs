@@ -60,6 +60,8 @@ enum Field {
     /// The machines to watch, as a comma-separated list, so adding and removing
     /// one are the same edit.
     Hosts,
+    /// A new name for this session, prefilled with the one it has.
+    Session,
 }
 
 /// Something that cannot be undone, waiting for the second press that does it.
@@ -217,6 +219,8 @@ pub struct Sidebar {
     /// Whether the row this session started with has been filled out from the
     /// layout's `group` template.
     filled: bool,
+    /// Whether the folder-naming has had its one go.
+    folder_named: bool,
     /// Our own pane id. Read once: `get_plugin_ids` is a host round-trip, and it
     /// answers the same thing every time.
     plugin_id: u32,
@@ -488,6 +492,10 @@ impl Sidebar {
         }
         set_timeout(TICK_SECONDS);
 
+        // Once the session list has arrived, so a folder whose name is already
+        // taken gets a number rather than a silent failure.
+        self.name_after_folder();
+
         // A workspace being rebuilt, a row at a time.
         self.restore_next_row();
 
@@ -754,6 +762,15 @@ impl Sidebar {
                     panes: row.panes,
                     ..Agent::default()
                 });
+            }
+        }
+        // An agent that was running before this session was renamed still writes
+        // its state under the name it was born with.
+        if let Some(names) = self.arrangement.aliases.get(&self.current_session) {
+            for agent in reported.iter_mut().filter(|agent| agent.host.is_empty()) {
+                if names.contains(&agent.session) {
+                    agent.session = self.current_session.clone();
+                }
             }
         }
         let mut agents = panes::reconcile(reported, &self.panes, &self.live_sessions);
@@ -1091,6 +1108,12 @@ impl Sidebar {
                 }
                 false
             }
+            // Rename this session. Prefilled, because a rename is usually an edit
+            // of what is there rather than a fresh answer.
+            BareKey::Char('S') => {
+                self.typing = Some((Field::Session, self.current_session.clone()));
+                true
+            }
             // A row somewhere else entirely: pick the directory first, and the
             // row is built there with everything the template asks for.
             BareKey::Char('G') => {
@@ -1334,6 +1357,7 @@ impl Sidebar {
             BareKey::Enter => match &field {
                 Field::Project(project) => self.name_project(&project.clone(), typed.trim()),
                 Field::Hosts => self.watch_hosts(&typed),
+                Field::Session => self.rename_session(typed.trim()),
             },
             // Dropped: what was being typed was taken on the way in.
             BareKey::Esc => {}
@@ -1348,6 +1372,79 @@ impl Sidebar {
             _ => self.typing = Some((field, typed)),
         }
         true
+    }
+
+    /// Names the session after the folder it was started in, once.
+    ///
+    /// Only when Zellij made the name up: a session someone called `api` meant
+    /// it. Renaming is safe because of the alias `rename_session` keeps - the
+    /// agents already running keep reporting under the old name and are still
+    /// found.
+    fn name_after_folder(&mut self) {
+        if !self.config.folder_name || self.folder_named || self.current_session.is_empty() {
+            return;
+        }
+        self.folder_named = true;
+        if !scan::looks_generated(&self.current_session) {
+            return;
+        }
+
+        let cwd = get_plugin_ids().initial_cwd;
+        let Some(folder) = cwd
+            .file_name()
+            .map(|folder| folder.to_string_lossy().into_owned())
+            .filter(|folder| !folder.is_empty())
+        else {
+            return;
+        };
+
+        // A second session in the same folder is a second session, not a fight
+        // over the name.
+        let mut name = folder.clone();
+        for next in 2..10 {
+            if !self.live_sessions.contains(&name) {
+                break;
+            }
+            name = format!("{folder}-{next}");
+        }
+        self.rename_session(&name);
+    }
+
+    /// Renames this session, and remembers what it was called.
+    ///
+    /// The remembering is the whole trick. A pane's `ZELLIJ_SESSION_NAME` is
+    /// fixed when it spawns, so every agent already running keeps writing state
+    /// under the old name — and an agent whose session is not live is one
+    /// `panes::reconcile` drops. Keeping the old name as an alias is what lets
+    /// those files still count as this session's.
+    fn rename_session(&mut self, name: &str) {
+        let name = name.trim();
+        let taken = self.live_sessions.iter().any(|live| live == name);
+        if name.is_empty() || name == self.current_session || name.contains('/') || taken {
+            return;
+        }
+
+        let was = std::mem::replace(&mut self.current_session, name.to_owned());
+        // Everything this session was called, not just the last thing: rename
+        // twice and the first name's panes are still reporting.
+        let mut names = self.arrangement.aliases.remove(&was).unwrap_or_default();
+        names.push(was);
+        self.arrangement
+            .aliases
+            .insert(name.to_owned(), names.clone());
+
+        // The per-session records move with the name, or the rows would look
+        // like another session's the moment this one saved.
+        if let Some(rows) = self.arrangement.groups.remove(&names[names.len() - 1]) {
+            self.arrangement.groups.insert(name.to_owned(), rows);
+        }
+        if let Some(hosts) = self.arrangement.hosts.remove(&names[names.len() - 1]) {
+            self.arrangement.hosts.insert(name.to_owned(), hosts);
+        }
+
+        rename_session(name);
+        self.save_order();
+        self.rebuild();
     }
 
     /// Replaces the watched machines with the list as typed.
@@ -1796,6 +1893,7 @@ impl Sidebar {
             let what = match field {
                 Field::Project(_) => "name",
                 Field::Hosts => "hosts",
+                Field::Session => "session",
             };
             return Some(format!("{what}: {typed}▏"));
         }

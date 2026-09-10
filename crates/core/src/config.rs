@@ -71,6 +71,10 @@ pub struct Config {
     /// Show only the selected agent's pane, parking the others out of sight
     /// instead of leaving them on screen.
     pub solo: bool,
+    /// Name the session after the folder it was started in, once, if Zellij
+    /// generated its name. `session_name "folder"` in a layout; nothing else is
+    /// understood, because nothing else needs to be.
+    pub folder_name: bool,
 }
 
 impl Default for Config {
@@ -93,6 +97,7 @@ impl Default for Config {
             dirs: false,
             position: true,
             solo: false,
+            folder_name: false,
         }
     }
 }
@@ -129,6 +134,9 @@ impl Config {
         // one pane of a row visible, the rest parked.
         let remote = configuration.get("remote").map(|raw| raw.trim()) == Some("true");
         let position = configuration.get("position").map(|raw| raw.trim()) != Some("false");
+        // Not `name`: Zellij strips that key from a plugin's configuration
+        // (`PluginUserConfiguration::new`) and it never arrives.
+        let folder_name = configuration.get("session_name").map(|raw| raw.trim()) == Some("folder");
 
         // What each mode calls its pane when a layout does not say. Two panes
         // both called "agents" is only confusing in a pane list, since a bar is
@@ -210,6 +218,7 @@ impl Config {
             dirs,
             position,
             solo,
+            folder_name,
         }
     }
 }
@@ -379,6 +388,15 @@ mod tests {
             Config::from_map(&map(&[("hosts", " dev1, build2 ,")])).hosts,
             vec!["dev1", "build2"]
         );
+    }
+
+    #[test]
+    fn a_session_can_be_named_after_its_folder() {
+        assert!(!Config::from_map(&map(&[])).folder_name);
+        assert!(Config::from_map(&map(&[("session_name", "folder")])).folder_name);
+        assert!(!Config::from_map(&map(&[("session_name", "true")])).folder_name);
+        // `name` is Zellij's own and never reaches a plugin.
+        assert!(!Config::from_map(&map(&[("name", "folder")])).folder_name);
     }
 
     #[test]

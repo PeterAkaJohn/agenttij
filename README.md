@@ -103,11 +103,22 @@ Same folder, same session — attaching resurrects it if it died, and `attach -f
 runs a resurrected session's commands straight away instead of leaving them
 suspended. A new folder gets a new session with the template.
 
-At creation, not later: a pane keeps the session name it was born with, so
-renaming a session leaves every agent in it reporting under the old name — and an
-agent whose session no longer exists is one the sidebar drops. Measured with
-`/proc/<pid>/environ`: after `rename-session`, the pane still said the old one.
-That is why the sidebar does not rename anything itself.
+Or let the layout do it: `session_name "folder"` in the sidebar's configuration
+names the session after the directory it was started in, once, and only when
+Zellij made the name up - two lowercase words and a dash, the shape of its
+generator.
+A session you named yourself is left alone, and a folder whose name is already
+taken gets `-2`.
+
+`S` in the sidebar renames it by hand, prefilled with the current name.
+
+Renaming used to be the unsafe option and no longer is.
+A pane keeps the `ZELLIJ_SESSION_NAME` it was born with - measured through
+`/proc/<pid>/environ`, unchanged by `rename-session` - so every agent already
+running keeps writing state under the old name, and an agent whose session is not
+live is one the sidebar drops.
+The old name is kept as an alias, which is what makes those files still count:
+measured, a running agent kept its `◐` across a rename rather than vanishing.
 
 For the sessions already sitting in `zellij ls` with animal names, the palette
 says what each one was working on instead of leaving you to guess.

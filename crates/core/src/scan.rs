@@ -314,6 +314,21 @@ fn pane_project(title: &str) -> Option<String> {
     (!project.is_empty()).then(|| project.to_owned())
 }
 
+/// Whether Zellij made this name up, rather than someone choosing it.
+///
+/// Its generator joins two lowercase words with a dash (`sparkling-duck`), so a
+/// name of that shape is one nobody meant. A session started as `-s api-server`
+/// looks the same and would be renamed too, which is why naming after the folder
+/// is something a layout asks for rather than the default.
+pub fn looks_generated(name: &str) -> bool {
+    let Some((left, right)) = name.split_once('-') else {
+        return false;
+    };
+    let word =
+        |part: &str| !part.is_empty() && part.chars().all(|letter| letter.is_ascii_lowercase());
+    word(left) && word(right)
+}
+
 /// Which boot this is.
 ///
 /// A workspace written down *this* boot is the live state of a session that is
@@ -829,6 +844,16 @@ mod tests {
 
     /// Zellij's own layouts are the only record of a session that died before
     /// agenttij wrote anything down, which is most of them.
+    #[test]
+    fn a_generated_session_name_is_two_lowercase_words() {
+        assert!(looks_generated("sparkling-duck"));
+        assert!(looks_generated("quiet-apple"));
+        assert!(!looks_generated("agenttij"), "one word is a choice");
+        assert!(!looks_generated("Work-Thing"), "capitals are a choice");
+        assert!(!looks_generated("api-2"), "so are digits");
+        assert!(!looks_generated("-duck") && !looks_generated("duck-"));
+    }
+
     #[test]
     fn a_past_session_is_read_out_of_zellij_own_layout() {
         let text = "\

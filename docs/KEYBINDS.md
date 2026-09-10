@@ -18,6 +18,7 @@ working while the sidebar has focus.
 | `[`, `]` | previous / next project |
 | `J`, `K` | move this project, or this row inside its project |
 | `r` | name a project — two with the same name are one |
+| `S` | rename this session, prefilled with its name |
 | `h` | the machines to watch, over ssh |
 | `b` | flip back to the row you were on before |
 | `B` | back to the session you came from |
@@ -79,6 +80,33 @@ project of its own.
 No zoxide is not an error: the list is then just the directories in use. And a
 path under `/tmp` is the one thing this cannot honour — Zellij rewrites paths a
 plugin hands it when they start with `/tmp`, `/host`, `/data` or `/cache`.
+
+### Naming a session
+
+`S` renames the session, prefilled with the name it has.
+Renaming is safe here, which is not obvious: a pane keeps the `ZELLIJ_SESSION_NAME`
+it was born with, so every agent already running goes on writing state under the
+old name.
+The sidebar keeps that old name as an alias, so those files still count as this
+session's - measured, a running agent kept its `◐` through a rename instead of
+dropping out of the list.
+
+A layout can do it for you.
+`session_name "folder"` names the session after the directory it was started in,
+once, and only when Zellij made the name up (`sparkling-duck`, two lowercase words
+and a dash) - a session you called `api` yourself meant it.
+A folder whose name is taken by a live session gets `-2`.
+
+That is what makes a resurrectable session findable a week later, since the name
+is the thing Zellij lists.
+For attach-or-create by folder, a shell function is still the tighter fit:
+
+```sh
+zj() {
+    name=${PWD##*/}
+    zellij attach "$name" 2>/dev/null || zellij -s "$name" -n agenttij-template
+}
+```
 
 ### Finding a session that is gone
 

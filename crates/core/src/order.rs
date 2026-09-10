@@ -19,6 +19,9 @@ const HOST: &str = "h";
 const GROUP: &str = "g";
 /// Which boot the file was written in.
 const BOOT: &str = "b";
+/// A name this session used to have. Panes keep the one they were born with, so
+/// a renamed session has agents reporting under both.
+const ALIAS: &str = "a";
 /// One row as something a *restart* cannot invalidate: where it worked and what
 /// ran in it, rather than which pane ids it happened to have.
 const WORK: &str = "w";
@@ -48,6 +51,13 @@ pub struct Arrangement {
     /// Per session for the same reason hosts are: a pane id only means something
     /// alongside the session holding it.
     pub groups: BTreeMap<String, Vec<Vec<u32>>>,
+    /// The names a session had before, by its name now.
+    ///
+    /// A pane's `ZELLIJ_SESSION_NAME` is fixed when it spawns, so every agent
+    /// already running keeps writing state under the old name after a rename.
+    /// Without this they would look like agents of a session that no longer
+    /// exists, which is a thing the sidebar drops.
+    pub aliases: BTreeMap<String, Vec<String>>,
     /// What each session was working on, durably: per row, the directory it was
     /// in and the programs its panes ran, in order.
     ///
@@ -154,6 +164,11 @@ pub fn encode_session(arrangement: &Arrangement, session: &str) -> String {
             ));
         }
     }
+    if let Some(names) = arrangement.aliases.get(session) {
+        for was in names {
+            out.push_str(&format!("{ALIAS}\t{session}\t{was}\n"));
+        }
+    }
     if let Some(hosts) = arrangement.hosts.get(session) {
         for host in hosts {
             out.push_str(&format!("{HOST}\t{session}\t{host}\n"));
@@ -179,6 +194,17 @@ pub fn decode(text: &str) -> Arrangement {
                     out.folded.insert(project.to_owned());
                 } else {
                     out.projects.push(project.to_owned());
+                }
+            }
+            Some(ALIAS) => {
+                let (Some(session), Some(was)) = (fields.next(), fields.next()) else {
+                    continue;
+                };
+                if !session.is_empty() && !was.is_empty() && session != was {
+                    out.aliases
+                        .entry(session.to_owned())
+                        .or_default()
+                        .push(was.to_owned());
                 }
             }
             Some(HOST) => {
@@ -344,6 +370,7 @@ mod tests {
                 vec!["dev1".to_owned(), "build2".to_owned()],
             )]),
             boot: "b1".to_owned(),
+            aliases: BTreeMap::from([("main".to_owned(), vec!["sparkling-duck".to_owned()])]),
             groups: BTreeMap::from([("main".to_owned(), vec![vec![3, 4, 9]])]),
             workspaces: vec![Snapshot {
                 boot: "b1".to_owned(),
@@ -401,6 +428,19 @@ mod tests {
         // The same session in another boot is another snapshot, not more rows.
         assert_eq!(arrangement.workspaces.len(), 2);
         assert_eq!(arrangement.workspaces[1].boot, "b2");
+    }
+
+    /// A renamed session has agents reporting under the name they were born with.
+    #[test]
+    fn a_session_remembers_what_it_was_called() {
+        let arrangement = decode("a\tapi\tsparkling-duck\na\tapi\tquiet-lemur\na\tapi\tapi\n");
+
+        assert_eq!(
+            arrangement.aliases["api"],
+            vec!["sparkling-duck", "quiet-lemur"],
+            "its own name is not one of its aliases"
+        );
+        assert!(encode_session(&arrangement, "api").contains("sparkling-duck"));
     }
 
     #[test]

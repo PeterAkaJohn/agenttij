@@ -42,6 +42,10 @@ layout {
                 scope "session"
                 solo "true"
                 group "claude; nvim .; lazygit"
+                // Name the session after the folder it starts in, so a week
+                // later `zellij ls` says which one this was. Only when Zellij
+                // made the name up; `S` in the sidebar renames by hand.
+                // session_name "folder"
             }
         }
         // The head of the first row. A command pane reads the keyboard like any
