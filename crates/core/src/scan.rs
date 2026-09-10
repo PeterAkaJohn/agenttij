@@ -223,7 +223,10 @@ pub fn past_command() -> [String; 3] {
     [
         "sh".to_owned(),
         "-c".to_owned(),
-        "grep -HoE 'agenttij\\.wasm|name=\"[^\"]*\"|cwd=\"[^\"]*\"' \
+        "stat -c '%n:mtime=%Y' \
+         \"${XDG_CACHE_HOME:-$HOME/.cache}\"/zellij/*/session_info/*/session-layout.kdl \
+         2>/dev/null; \
+         grep -HoE 'agenttij\\.wasm|name=\"[^\"]*\"|cwd=\"[^\"]*\"' \
          \"${XDG_CACHE_HOME:-$HOME/.cache}\"/zellij/*/session_info/*/session-layout.kdl \
          2>/dev/null; true"
             .to_owned(),
@@ -240,6 +243,12 @@ pub struct Past {
     /// The projects it was working on, from the pane titles the sidebar wrote
     /// and any directory the layout kept.
     pub projects: Vec<String>,
+    /// When its layout was last written, as a unix time - which is the last
+    /// moment the session was doing anything. Zellij's own duration for a dead
+    /// session is the layout file's *creation* time (`find_resurrectable_sessions`,
+    /// `background_jobs.rs`), so a session made three weeks ago and worked in
+    /// until yesterday reads as three weeks old. 0 when nothing said.
+    pub seen_at: u64,
 }
 
 /// Reads that grep. Lines look like
@@ -272,6 +281,10 @@ pub fn parse_past(text: &str) -> Vec<Past> {
 
         if found.contains("agenttij.wasm") {
             out[at].ours = true;
+            continue;
+        }
+        if let Some(stamp) = found.strip_prefix("mtime=") {
+            out[at].seen_at = stamp.trim().parse().unwrap_or_default();
             continue;
         }
         let Some(value) = found
@@ -857,6 +870,7 @@ mod tests {
     #[test]
     fn a_past_session_is_read_out_of_zellij_own_layout() {
         let text = "\
+/home/pp/.cache/zellij/c1/session_info/quiet-apple/session-layout.kdl:mtime=1700000000\n\
 /home/pp/.cache/zellij/c1/session_info/quiet-apple/session-layout.kdl:agenttij.wasm\n\
 /home/pp/.cache/zellij/c1/session_info/quiet-apple/session-layout.kdl:name=\"agents\"\n\
 /home/pp/.cache/zellij/c1/session_info/quiet-apple/session-layout.kdl:name=\"Tab #1\"\n\
@@ -875,6 +889,10 @@ mod tests {
             vec!["wayfarers", "api"],
             "the project out of a title the sidebar wrote, and a directory"
         );
+        assert_eq!(
+            ours.seen_at, 1_700_000_000,
+            "when it was last written, which is when it was last used"
+        );
 
         let theirs = &past[1];
         assert_eq!(theirs.session, "someone-else");
@@ -886,6 +904,10 @@ mod tests {
 
         // And the grep has to look where Zellij actually writes.
         assert!(past_command()[2].contains("session_info"));
+        assert!(
+            past_command()[2].contains("mtime=%Y"),
+            "and when each was last written, to put them in order"
+        );
         assert!(past_command()[2].contains("session-layout.kdl"));
     }
 

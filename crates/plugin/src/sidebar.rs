@@ -187,6 +187,13 @@ pub struct Sidebar {
     /// of `Alt m` left panes in no row at all. The next pane list names the
     /// pane; this names the row it belongs to.
     orphan: Option<(u32, u8)>,
+    /// The request already answered: when it was asked and what it asked for.
+    ///
+    /// The `rm` that takes a request off the pile is a fork, and a scan that
+    /// read the file before it lands carries the request again - so one `Enter`
+    /// on a workspace of three rows restored it three times, nine panes in nine
+    /// rows. Measured in the wild, three copies of each of three directories.
+    answered: Option<(u64, String)>,
     /// The pane list before this one, so a pane the manifest drops for a single
     /// update is not read as a pane that closed. See `panes::still_alive`.
     previous_panes: Vec<PaneSnapshot>,
@@ -757,7 +764,9 @@ impl Sidebar {
                 && !self.config.bar
                 && !self.config.remote
                 && result.now.saturating_sub(asked.asked_at) <= OPENING_SECONDS
+                && !self.answered(asked.asked_at, &asked.path)
         }) {
+            self.answered = Some((asked.asked_at, asked.path.clone()));
             actions::clear_row_request();
             self.restore_workspace(&asked.path);
         }
@@ -768,7 +777,9 @@ impl Sidebar {
                 && !self.config.bar
                 && !self.config.remote
                 && result.now.saturating_sub(opening.asked_at) <= OPENING_SECONDS
+                && !self.answered(opening.asked_at, &opening.path)
         }) {
+            self.answered = Some((opening.asked_at, opening.path.clone()));
             actions::clear_row_request();
             self.start_row(Some(&opening.path));
         }
@@ -1774,6 +1785,13 @@ impl Sidebar {
         self.save_order();
     }
 
+    /// Whether this exact request has already been carried out.
+    fn answered(&self, asked_at: u64, path: &str) -> bool {
+        self.answered
+            .as_ref()
+            .is_some_and(|(when, what)| *when == asked_at && what == path)
+    }
+
     /// Queues the rows a workspace remembers, skipping the ones already here.
     ///
     /// Skipping by directory: restoring twice should not be twice the panes, and
@@ -1804,6 +1822,12 @@ impl Sidebar {
         let mut here: BTreeMap<String, usize> = BTreeMap::new();
         for row in self.workspace() {
             *here.entry(row.cwd).or_default() += 1;
+        }
+        // Rows waiting their turn count as here too. They are built one per
+        // tick, so a second ask arriving in between saw none of them and queued
+        // the lot again.
+        for row in &self.restoring {
+            *here.entry(row.cwd.clone()).or_default() += 1;
         }
 
         let wanted = rows.into_iter().filter(|row| match here.get_mut(&row.cwd) {
@@ -2726,22 +2750,41 @@ impl Sidebar {
                     .filter(|projects| !projects.is_empty())
                     .or_else(|| past.map(|past| past.projects.clone()))
                     .unwrap_or_default();
+                // How long since it was last *used*, not since it was made:
+                // Zellij dates a dead session by its layout file's creation
+                // time, so one created three weeks ago and worked in until
+                // yesterday reads as three weeks old. The layout's mtime is the
+                // last time it did anything.
+                let seen_at = past.map(|past| past.seen_at).unwrap_or_default();
+                let age = match seen_at {
+                    0 => agenttij_core::format::span(*since),
+                    seen_at => agenttij_core::format::age(self.now, seen_at),
+                };
                 agenttij_core::jump::Dead {
                     name: name.clone(),
                     projects,
-                    age: agenttij_core::format::span(*since),
+                    age,
                     ours: past.is_some_and(|past| past.ours),
                 }
             })
             .collect();
-        // Yours first, then the most recently alive: eighty animals in the order
-        // Zellij happens to list them is not a list anybody can read.
-        let recency: BTreeMap<&String, u64> =
+        // Yours first, then the most recently used: eighty animals in the order
+        // Zellij happens to list them is not a list anybody can read. Newest by
+        // when the session was last doing something (its layout's mtime), and
+        // only failing that by Zellij's own count, which is from when the
+        // session was created.
+        let seen: BTreeMap<&str, u64> = self
+            .past
+            .iter()
+            .map(|past| (past.session.as_str(), past.seen_at))
+            .collect();
+        let created: BTreeMap<&String, u64> =
             self.dead_sessions.iter().map(|(n, s)| (n, *s)).collect();
         dead.sort_by_key(|dead| {
             (
                 !dead.ours,
-                recency.get(&dead.name).copied().unwrap_or(u64::MAX),
+                std::cmp::Reverse(seen.get(dead.name.as_str()).copied().unwrap_or_default()),
+                created.get(&dead.name).copied().unwrap_or(u64::MAX),
             )
         });
         let mut entries = agenttij_core::jump::entries(
@@ -2757,13 +2800,20 @@ impl Sidebar {
         // fair game — a session from before a restart, and just as importantly a
         // session that ended this morning without one, which is the case that
         // does not need a reboot to matter.
-        let remembered: Vec<agenttij_core::jump::Remembered> = self
+        let mut snapshots: Vec<&order::Snapshot> = self
             .arrangement
             .workspaces
             .iter()
             .filter(|snapshot| {
                 snapshot.boot != self.boot || !self.live_sessions.contains(&snapshot.session)
             })
+            .collect();
+        // Newest first here too. Ours are written in that order, but the file
+        // holds other sessions' snapshots as well and they arrive in whatever
+        // order the `cat` found them.
+        snapshots.sort_by_key(|snapshot| std::cmp::Reverse(snapshot.stamp));
+        let remembered: Vec<agenttij_core::jump::Remembered> = snapshots
+            .into_iter()
             .map(|snapshot| agenttij_core::jump::Remembered {
                 session: snapshot.session.clone(),
                 rows: snapshot.rows.len(),
