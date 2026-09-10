@@ -282,6 +282,23 @@ Each of these cost a debugging round already:
   `add_to_row` goes further and prefers the *focused* terminal, because a screen
   split by Zellij's own `Alt n` has two of them and the list names whichever
   comes first.
+- **The pane list also goes *backwards*.** A pane that has been listed alive can
+  be absent from the next list and back in the one after - it happens as the
+  pane is suppressed. Traced through a burst of `Alt m`: `[0,1,2,3,4,5]`, then
+  `[0,1,2,3,4]`, then `[0,1,2,3,4,5]` again. One update was enough for
+  `Groups::reconcile` to take pane 5 out of its row and hand it back as a row of
+  its own, which is what "panes escape the group" was. So *every* member missing
+  from a list gets a grace, not only the ones that have never been seen
+  (`GRACE_MISSING`, three updates; a pane still being born gets `GRACE_NEW`,
+  ten). The cost is that a pane you close leaves its row a few updates late.
+- **An action that takes over a second answers with no pane id, and does it
+  anyway.** `route_action` waits `ACTION_COMPLETION_TIMEOUT` (one second,
+  `route.rs`) for the id and then returns `affected_pane_id: None`, while the
+  pane is still opened - so `open_terminal` can hand back `None` for a pane that
+  exists, which under a burst leaves a pane in no row at all with no id to put it
+  in one. `Sidebar::orphan` remembers the row instead, and `Groups::adopt` takes
+  in whatever stranger the next list names. Read in Zellij's source rather than
+  measured firing, so treat it as the belt and not the braces.
 - **Reconcile against fresh pane data only.** `PaneUpdate`/`SessionUpdate` is the
   only moment the pane list is true; reconciling group membership on a state-file
   tick deletes whatever was added since the last update.

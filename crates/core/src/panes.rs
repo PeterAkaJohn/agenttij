@@ -41,21 +41,22 @@ pub fn visible_terminal(panes: &[PaneSnapshot], session: &str, tab: usize) -> Op
 /// pane we just parked. Believing it then is what put two panes on screen: the
 /// hide is a no-op because that pane is already parked, and the show
 /// un-suppresses its neighbour beside whatever you are actually looking at. What
-/// we did ourselves is not a guess, so it wins until the list catches up; it
-/// still has to be a live pane in this tab, or a closed one would haunt the slot.
+/// we did ourselves is not a guess, so it wins outright.
+///
+/// It used to have to be a pane the list already knew, so that a closed one
+/// could not haunt the slot. That is the caller's countdown's job, and the
+/// filter failed in the one case that matters: a pane opened a keypress ago is
+/// alive and *not* in the list, and everything the list does know is parked, so
+/// the slot came back empty. `add_to_row` reads an empty slot as "no row to add
+/// to" and opens a whole new one, which is how spamming `Alt m` from the sidebar
+/// built rows of its own instead of filling the row on screen.
 pub fn slot(
     panes: &[PaneSnapshot],
     session: &str,
     tab: usize,
     showing: Option<u32>,
 ) -> Option<u32> {
-    showing
-        .filter(|showing| {
-            panes
-                .iter()
-                .any(|pane| pane.session == session && pane.tab == tab && pane.pane == *showing)
-        })
-        .or_else(|| visible_terminal(panes, session, tab))
+    showing.or_else(|| visible_terminal(panes, session, tab))
 }
 
 /// Drops agents that no longer have anything running behind them.
@@ -257,11 +258,20 @@ mod tests {
         assert_eq!(slot(&stale, "main", 0, Some(2)), Some(2));
         // Nothing of our own to go on: the list is all there is.
         assert_eq!(slot(&stale, "main", 0, None), Some(1));
-        // A pane that has gone does not hold the slot for ever.
-        assert_eq!(slot(&stale, "main", 0, Some(99)), Some(1));
-        // Nor does one in another tab or session.
-        assert_eq!(slot(&stale, "main", 1, Some(2)), None);
-        assert_eq!(slot(&stale, "other", 0, Some(2)), None);
+        // A pane opened a keypress ago is in no list yet, and it is still the
+        // pane on screen. The caller's countdown is what stops one that never
+        // arrives from holding the slot for ever.
+        assert_eq!(slot(&stale, "main", 0, Some(99)), Some(99));
+
+        // Every pane the list knows is parked, which is what a burst of shows
+        // looks like from behind. An empty slot here reads as "no row on screen"
+        // and opens a new one, so this is the case that must not return None.
+        let mid_burst = vec![
+            parked("main", 0, 1, "parked"),
+            parked("main", 0, 2, "parked"),
+        ];
+        assert_eq!(slot(&mid_burst, "main", 0, Some(3)), Some(3));
+        assert_eq!(slot(&mid_burst, "main", 0, None), None);
     }
 
     fn agent(session: &str, pane: u32) -> Agent {

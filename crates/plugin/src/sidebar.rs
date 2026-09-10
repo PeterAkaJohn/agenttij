@@ -179,6 +179,14 @@ pub struct Sidebar {
     /// a few updates, then let the list win, so a show that never landed cannot
     /// wedge the slot for ever.
     showing: Option<(u32, u8)>,
+    /// The row an add opened a pane for and never learned the id of, with the
+    /// same kind of countdown.
+    ///
+    /// Zellij answers with no pane id when the action outruns its one-second
+    /// completion timeout, and opens the pane regardless - which under a burst
+    /// of `Alt m` left panes in no row at all. The next pane list names the
+    /// pane; this names the row it belongs to.
+    orphan: Option<(u32, u8)>,
     /// The open peek pane, so `q` can close it and `p` never stacks two.
     peek: Option<PaneId>,
     /// Lines of the pane this instance is peeking at, when it is a peek.
@@ -310,6 +318,18 @@ impl ZellijPlugin for Sidebar {
                     .filter(|pane| pane.session == self.current_session)
                     .map(|pane| pane.pane)
                     .collect();
+                // Before reconciling, which is what turns an unknown pane into
+                // a row of its own: a pane we opened and lost the id of is in
+                // this list and in no row, and it belongs to the row it was
+                // opened for.
+                // The record lasts its full countdown rather than ending at
+                // the first pane it takes in: two adds can lose their panes in
+                // one burst and the panes turn up in different lists, and
+                // clearing on the first left the second a row of its own.
+                if let Some((beside, lives)) = self.orphan {
+                    self.groups.adopt(&here, beside);
+                    self.orphan = lives.checked_sub(1).map(|left| (beside, left));
+                }
                 self.groups.reconcile(&here);
                 // A list that agrees with us has caught up and can be trusted
                 // again; one that does not spends a life. Only fresh lists get
@@ -2437,12 +2457,29 @@ impl Sidebar {
             actions::add_remote_pane(&host, &session, cwd.as_deref());
             return;
         }
+        // Which row the pane joins and which pane it parks are two questions.
+        // While the last add is still missing its pane, the row is that add's
+        // row and the pane on screen is the pane whose id never came - so a
+        // second press keeps filling the same row instead of anchoring a new
+        // one on a pane nobody has heard of.
+        let beside = self.orphan.map(|(row, _)| row).unwrap_or(visible);
+
         // One plain pane, deliberately: `a` means "one more", and the template
         // describes a whole row rather than the next pane of one.
         let (opened, _) = actions::open_row(Some(visible), self.config.solo, &[], None);
-        if let Some(opened) = opened {
-            self.groups.add(visible, opened);
-            self.took_slot(opened);
+        match opened {
+            Some(opened) => {
+                self.groups.add(beside, opened);
+                self.took_slot(opened);
+            }
+            // Zellij opened a pane and did not say which: the action outran its
+            // one-second timeout. We do not know what is on screen any more
+            // either, so the list gets to say, and the pane joins this row when
+            // it turns up in one.
+            None => {
+                self.showing = None;
+                self.orphan = Some((beside, 3));
+            }
         }
     }
 
@@ -2527,6 +2564,13 @@ impl Sidebar {
             return;
         };
 
+        // A companion whose id never came back is the same story as an add's:
+        // Zellij opened the pane and let the action time out. It is alive, in no
+        // row, and not even parked - the hide needs the id too - so it joins
+        // this row when the next list names it.
+        if parked.len() + 1 < template.len() {
+            self.orphan = Some((pane, 3));
+        }
         for companion in parked {
             self.groups.add(pane, companion);
         }

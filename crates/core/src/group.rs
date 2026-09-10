@@ -72,18 +72,36 @@ impl Group {
     }
 }
 
+/// How many updates a pane may take to appear at all. A birth can be slow: the
+/// server answers an action it has not finished in a second by not answering,
+/// and several updates arrive in that time.
+const GRACE_NEW: u8 = 10;
+
+/// How many updates a member that *has* been seen may go missing for. Measured
+/// at one - the list drops a pane for a single update as it is suppressed - so
+/// three is slack, and short enough that a pane you close leaves its row while
+/// you are still looking at it.
+const GRACE_MISSING: u8 = 3;
+
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Groups {
     groups: Vec<Group>,
-    /// Members asked for but not yet seen alive, with the number of updates
-    /// they may still go unseen.
+    /// Members the latest pane list does not name, with the number of updates
+    /// they may still be missing for.
     ///
-    /// A pane joins a row the moment it is asked for, and several updates can
+    /// Two things put a member in here, and neither means the pane is gone. A
+    /// pane joins a row the moment it is asked for, and several updates can
     /// arrive before the one that proves it exists — a focus change alone
-    /// triggers one, carrying a pane list from before the pane was made. Without
-    /// this grace, reconciliation drops the new member and the row falls back to
-    /// singletons. The count is a bound, so a pane that never appears cannot
-    /// haunt a row forever.
+    /// triggers one, carrying a pane list from before the pane was made. And a
+    /// pane that has been seen can go missing again: the list drops one for an
+    /// update as it is suppressed. Traced through a burst of `Alt m`, live went
+    /// `[0,1,2,3,4,5]`, then `[0,1,2,3,4]`, then `[0,1,2,3,4,5]` again, and that
+    /// one update was enough to take pane 5 out of its row and hand it back as a
+    /// row of its own. Protecting only panes that had never been seen is what
+    /// left panes outside the row they were added to.
+    ///
+    /// The count is a bound, so a pane that is really gone cannot haunt a row
+    /// forever.
     unseen: Vec<(u32, u8)>,
 }
 
@@ -101,9 +119,19 @@ impl Groups {
             return;
         }
 
-        // Anything seen alive is no longer waiting to be seen; anything still
-        // waiting spends one of its lives.
+        // Anything the list names is alive and waiting for nothing. Anything it
+        // does not name is waiting, whether it has ever been seen or not, and
+        // spends one of its lives.
         self.unseen.retain(|(pane, _)| !live.contains(pane));
+        let missing: Vec<u32> = self
+            .groups
+            .iter()
+            .flat_map(|group| group.members.iter().copied())
+            .filter(|member| !live.contains(member))
+            .filter(|member| !self.unseen.iter().any(|(pane, _)| pane == member))
+            .collect();
+        self.unseen
+            .extend(missing.into_iter().map(|pane| (pane, GRACE_MISSING)));
         for (_, lives) in self.unseen.iter_mut() {
             *lives = lives.saturating_sub(1);
         }
@@ -158,12 +186,13 @@ impl Groups {
                 });
                 // Also unseen, for the same reason `pane` is. A `beside` that is
                 // already alive leaves the list on the next reconcile anyway.
-                self.unseen.push((beside, 10));
+                self.unseen.push((beside, GRACE_NEW));
             }
         }
-        // Ten updates is a second or so of slack — far more than the two or
-        // three that arrive around a pane being created.
-        self.unseen.push((pane, 10));
+        // A pane nobody has seen gets the longer grace; `reconcile` arms the
+        // short one for members that go missing after being seen, and only for
+        // those it has not already armed here.
+        self.unseen.push((pane, GRACE_NEW));
     }
 
     /// Moves a pane out of whatever row holds it and into the one holding
@@ -193,6 +222,30 @@ impl Groups {
             }),
         }
         self.groups.sort_by_key(Group::primary);
+    }
+
+    /// Takes in panes nobody has heard of as members of the row holding
+    /// `beside`.
+    ///
+    /// Zellij answers an action with no pane id when it outruns its own
+    /// one-second completion timeout (`ACTION_COMPLETION_TIMEOUT`,
+    /// `route.rs`) - and opens the pane anyway. So a pane we asked for can be
+    /// alive, on screen, and unknown to us, which is how spamming `Alt m` left
+    /// panes outside the row they were opened for. The next pane list names it,
+    /// and the row it was opened for is the row it belongs to.
+    ///
+    /// Only ever before `reconcile`, which is what makes a stranger mean a pane
+    /// nobody has seen rather than an ordinary row of one.
+    pub fn adopt(&mut self, live: &[u32], beside: u32) -> bool {
+        let strangers: Vec<u32> = live
+            .iter()
+            .copied()
+            .filter(|pane| !self.groups.iter().any(|group| group.holds(*pane)))
+            .collect();
+        for pane in &strangers {
+            self.join(*pane, beside);
+        }
+        !strangers.is_empty()
     }
 
     /// Puts back a grouping remembered from a previous run of the plugin.
@@ -394,6 +447,31 @@ mod tests {
         assert_eq!(groups.members_of(4), &[4, 3]);
     }
 
+    /// Zellij opens the pane and answers "no id" when it outruns its own
+    /// one-second timeout, so a pane can be alive and unheard of.
+    #[test]
+    fn a_pane_whose_id_never_came_back_still_joins_the_row_it_was_opened_for() {
+        let mut groups = Groups::default();
+        groups.reconcile(&[1]);
+        groups.add(1, 2);
+
+        // 7 is the pane we opened and never got the id of; 1 and 2 are the row
+        // it was for. Before reconcile, being in no group is what makes it new.
+        assert!(groups.adopt(&[1, 2, 7], 1));
+        assert_eq!(groups.members_of(1), &[1, 2, 7]);
+        assert_eq!(
+            groups.current_of(1),
+            Some(2),
+            "adopting is not asking to look at it"
+        );
+
+        // Nothing unheard of, nothing to do - and an ordinary row of one is not
+        // a stranger, so a second call leaves it where it is.
+        groups.reconcile(&[1, 2, 7, 9]);
+        assert!(!groups.adopt(&[1, 2, 7, 9], 1));
+        assert_eq!(groups.members_of(9), &[9]);
+    }
+
     /// What a reload does, and what putting it back has to survive.
     #[test]
     fn a_grouping_can_be_written_down_and_put_back() {
@@ -415,9 +493,11 @@ mod tests {
         assert_eq!(fresh.members_of(1), &[1, 2, 3]);
         assert_eq!(fresh.current_of(1), Some(1), "back on the agent");
 
-        // A pane that did not survive is the next reconcile's business, and the
-        // row is still a row without it.
-        fresh.reconcile(&[1, 3, 8]);
+        // A pane that did not survive is the next few reconciles' business, and
+        // the row is still a row without it.
+        for _ in 0..3 {
+            fresh.reconcile(&[1, 3, 8]);
+        }
         assert_eq!(fresh.members_of(1), &[1, 3]);
     }
 
@@ -486,7 +566,9 @@ mod tests {
         assert_eq!(groups.flip_of(1), Some(1));
 
         // And a closed pane is not somewhere to flip back to.
-        groups.reconcile(&[2, 3]);
+        for _ in 0..3 {
+            groups.reconcile(&[2, 3]);
+        }
         assert_eq!(groups.flip_of(3), None);
     }
 
@@ -540,15 +622,25 @@ mod tests {
         );
     }
 
-    /// Once a pane has been seen, it is held to the normal rule again.
+    /// A pane that has been seen and goes missing keeps a shorter grace: one
+    /// list without it is how suppressing a pane looks, and it used to be enough
+    /// to take the pane out of its row and hand it back as a row of its own.
     #[test]
-    fn a_member_seen_once_is_dropped_as_soon_as_it_goes() {
+    fn a_member_missing_from_one_list_stays_in_its_row() {
         let mut groups = Groups::default();
         groups.reconcile(&[3]);
         groups.add(3, 4);
-
         groups.reconcile(&[3, 4]);
+
         groups.reconcile(&[3]);
+        assert_eq!(groups.members_of(3), &[3, 4], "suppressed, not gone");
+        groups.reconcile(&[3, 4]);
+        assert_eq!(groups.members_of(3), &[3, 4], "and back again");
+
+        // Gone for good, though, is gone.
+        for _ in 0..3 {
+            groups.reconcile(&[3]);
+        }
         assert_eq!(groups.rows().collect::<Vec<_>>(), vec![(3, 1)]);
     }
 
@@ -578,7 +670,9 @@ mod tests {
         groups.reconcile(&[3]);
         groups.add(3, 4);
         groups.reconcile(&[3, 4]); // seen
-        groups.reconcile(&[3]); // and now gone
+        for _ in 0..3 {
+            groups.reconcile(&[3]); // and now gone
+        }
 
         assert_eq!(groups.rows().collect::<Vec<_>>(), vec![(3, 1)]);
         assert_eq!(
@@ -595,7 +689,9 @@ mod tests {
         groups.reconcile(&[3]);
         groups.add(3, 4);
         groups.reconcile(&[3, 4]); // seen
-        groups.reconcile(&[4]); // the agent closes
+        for _ in 0..3 {
+            groups.reconcile(&[4]); // the agent closes
+        }
 
         assert_eq!(groups.rows().collect::<Vec<_>>(), vec![(4, 1)]);
     }
@@ -608,7 +704,9 @@ mod tests {
         assert_eq!(groups.current_of(3), Some(4));
 
         groups.reconcile(&[3, 4]); // seen
-        groups.reconcile(&[3]); // and now gone
+        for _ in 0..3 {
+            groups.reconcile(&[3]); // and now gone
+        }
         assert_eq!(groups.current_of(3), Some(3));
     }
 
