@@ -160,9 +160,9 @@ if [ -n "$group_template" ]; then
 s|^\\( *\\)solo \"true\"|\\1solo \"true\"\\
 \\1group \"$group_template\"|"
 fi
-for side in left right workspace everything remote template; do
-    sed "$layout_edit" \
-        "$repo/layouts/agenttij-$side.kdl" >"$layout_dir/agenttij-$side.kdl"
+# Whatever is in `layouts/`, so adding one there is the whole of adding one.
+for layout in "$repo"/layouts/agenttij-*.kdl; do
+    sed "$layout_edit" "$layout" >"$layout_dir/$(basename "$layout")"
 done
 
 echo "installing hook -> $hook_path"
