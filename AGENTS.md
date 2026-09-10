@@ -275,7 +275,13 @@ Each of these cost a debugging round already:
   each, and it stayed that way. What the plugin put on screen itself is not a
   guess, so `panes::slot` prefers that (`Sidebar::showing`) until a list confirms
   it, with a countdown so a show that never landed cannot wedge the slot for ever.
-  The same staleness swallowed the second of two quick `Alt v`s.
+  The same staleness swallowed the second of two quick `Alt v`s. Which is why
+  nothing else may work the slot out for itself: `actions::open_row` used to, and
+  `Alt v` then `Alt m` in one write hid the pane already parked and left the new
+  one split beside what was on screen. It takes the slot from the caller now.
+  `add_to_row` goes further and prefers the *focused* terminal, because a screen
+  split by Zellij's own `Alt n` has two of them and the list names whichever
+  comes first.
 - **Reconcile against fresh pane data only.** `PaneUpdate`/`SessionUpdate` is the
   only moment the pane list is true; reconciling group membership on a state-file
   tick deletes whatever was added since the last update.

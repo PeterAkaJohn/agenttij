@@ -153,16 +153,18 @@ pub fn notify(command: &[String], agent: &Agent) {
 ///
 /// An empty template is one plain shell, which is what `a` wants and what a row
 /// was before templates existed.
+///
+/// The slot comes from the caller, not from a pane list read here: the sidebar
+/// knows what it put on screen and the manifest is a second behind it. Working
+/// it out again here hid a pane that was already parked, and the new pane stayed
+/// beside the one you were looking at - measured, `Alt v` then `Alt m` in one
+/// write, two panes at 50%.
 pub fn open_row(
-    all_panes: &[PaneSnapshot],
-    session: &str,
+    slot: Option<u32>,
     solo: bool,
     template: &[String],
     at: Option<&str>,
 ) -> (Option<u32>, Vec<u32>) {
-    let tab = get_focused_pane_info().ok().map(|(tab, _)| tab);
-    let slot = tab.and_then(|tab| panes::visible_terminal(all_panes, session, tab));
-
     // Where the row works: the directory you picked, or the one the row on
     // screen is in — a new row is nearly always more of the same work.
     let cwd = match at {

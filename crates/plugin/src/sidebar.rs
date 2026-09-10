@@ -2416,7 +2416,15 @@ impl Sidebar {
     /// no cursor involved then. It also keeps the two consistent: the pane you
     /// get always belongs to the row you were looking at.
     fn add_to_row(&mut self) {
-        let Some(visible) = self.slot() else {
+        // The pane that has focus wins over the pane list: a screen split by
+        // Zellij's own `Alt n` has two terminals on it, and the list names
+        // whichever comes first, so the pane you got joined a row you were not
+        // in while sitting beside the one you were.
+        let focused = match get_focused_pane_info() {
+            Ok((_, PaneId::Terminal(pane))) => Some(pane),
+            _ => None,
+        };
+        let Some(visible) = focused.or_else(|| self.slot()) else {
             self.new_row();
             return;
         };
@@ -2431,13 +2439,7 @@ impl Sidebar {
         }
         // One plain pane, deliberately: `a` means "one more", and the template
         // describes a whole row rather than the next pane of one.
-        let (opened, _) = actions::open_row(
-            &self.panes,
-            &self.current_session,
-            self.config.solo,
-            &[],
-            None,
-        );
+        let (opened, _) = actions::open_row(Some(visible), self.config.solo, &[], None);
         if let Some(opened) = opened {
             self.groups.add(visible, opened);
             self.took_slot(opened);
@@ -2520,13 +2522,7 @@ impl Sidebar {
     /// A row from a template that is not the layout's — what restoring a
     /// workspace opens, where each row remembers its own panes.
     fn build_row(&mut self, at: Option<&str>, template: &[String]) {
-        let (head, parked) = actions::open_row(
-            &self.panes,
-            &self.current_session,
-            self.config.solo,
-            template,
-            at,
-        );
+        let (head, parked) = actions::open_row(self.slot(), self.config.solo, template, at);
         let Some(pane) = head else {
             return;
         };
