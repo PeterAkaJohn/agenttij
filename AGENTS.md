@@ -231,6 +231,15 @@ Each of these cost a debugging round already:
   write-chars` / `send-keys` — that is where the `/dev/null` belief came from, and
   it is why `scripts/press-keys.sh` pipes into a client instead. A peek still has
   to be a plugin pane, but for the floating-focus reason below, not this one.
+- **A floating pane in the tab is not the workspace slot.** Zellij's own `Ctrl p`
+  then `e` (`TogglePaneEmbedOrFloating`) floats the focused pane, command and
+  all, and `get_layout_metadata` *does* serialize floating panes - so a session
+  resurrected after that brings a floating agent back for ever, and re-serializes
+  it each time. Measured in a user's cache: one session with
+  `floating_panes { pane command="claude" name="○ contentchef-serverless" }`.
+  `PaneInfo.is_floating` is what tells them apart; `visible_terminal` skips them,
+  or the sidebar parks and shows against a pane that is not in the tiled layer at
+  all. They stay rows, because a floating pane is still somewhere to go.
 - **A floating pane is only on screen while it holds focus.** Focus a tiled pane
   and Zellij sets the tab's `hide_floating_panes`; `pinned` does not override it.
   So a floating pane that needs to stay visible must be one that can hold focus

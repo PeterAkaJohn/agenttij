@@ -24,6 +24,7 @@ pub fn panes(sessions: &[SessionInfo]) -> Vec<PaneSnapshot> {
                         pane: pane.id,
                         title: pane.title.clone(),
                         suppressed: pane.is_suppressed,
+                        floating: pane.is_floating,
                     })
             })
         })

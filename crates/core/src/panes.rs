@@ -22,6 +22,10 @@ pub struct PaneSnapshot {
     /// Suppressed panes are running but not on screen. Solo mode parks agents
     /// here instead of leaving them visible.
     pub suppressed: bool,
+    /// Floating panes sit on top of the tiled ones. They are somewhere to go
+    /// like any other pane, but they are not the workspace slot: that is the
+    /// tiled pane the solo swap replaces.
+    pub floating: bool,
 }
 
 /// The panes alive now, plus the ones the last list had and this one does not.
@@ -53,7 +57,9 @@ pub fn still_alive(now: &[PaneSnapshot], before: &[PaneSnapshot]) -> Vec<PaneSna
 pub fn visible_terminal(panes: &[PaneSnapshot], session: &str, tab: usize) -> Option<u32> {
     panes
         .iter()
-        .find(|pane| pane.session == session && pane.tab == tab && !pane.suppressed)
+        .find(|pane| {
+            pane.session == session && pane.tab == tab && !pane.suppressed && !pane.floating
+        })
         .map(|pane| pane.pane)
 }
 
@@ -259,6 +265,7 @@ mod tests {
             pane,
             title: title.into(),
             suppressed: false,
+            floating: false,
         }
     }
 
@@ -267,6 +274,30 @@ mod tests {
             suppressed: true,
             ..self::pane(session, tab, pane, title)
         }
+    }
+
+    fn floating(session: &str, tab: usize, pane: u32, title: &str) -> PaneSnapshot {
+        PaneSnapshot {
+            floating: true,
+            ..self::pane(session, tab, pane, title)
+        }
+    }
+
+    /// Zellij's own `Ctrl p e` floats the focused pane, and a session brings
+    /// its floating panes back when it is resurrected. It is somewhere to go
+    /// like any other pane, but it is not the slot the solo swap replaces -
+    /// believing it was meant parking and showing against the wrong pane.
+    #[test]
+    fn a_floating_pane_does_not_hold_the_workspace_slot() {
+        let panes = vec![
+            floating("main", 0, 4, "claude, floating"),
+            pane("main", 0, 7, "the tiled one"),
+        ];
+        assert_eq!(visible_terminal(&panes, "main", 0), Some(7));
+        assert_eq!(slot(&panes, "main", 0, None), Some(7));
+
+        // And a tab with nothing but a floating pane has no slot at all.
+        assert_eq!(visible_terminal(&panes[..1], "main", 0), None);
     }
 
     /// A pane the list drops for one update is not a pane that has gone.
