@@ -1108,6 +1108,14 @@ impl Sidebar {
                 }
                 false
             }
+            // Put a pane back where it belongs: whatever the cursor is on joins
+            // the row on screen. A pane opened with Zellij's own key, or by a
+            // message that reached another sidebar, is a row of its own and there
+            // was no way to fix that short of closing it.
+            BareKey::Char('m') => {
+                self.join_to_row();
+                false
+            }
             // Rename this session. Prefilled, because a rename is usually an edit
             // of what is there rather than a fresh answer.
             BareKey::Char('S') => {
@@ -2326,6 +2334,43 @@ impl Sidebar {
         });
         actions::show_in_slot(target, slot);
         self.took_slot(target);
+    }
+
+    /// Moves what the cursor is on into the row on screen.
+    ///
+    /// A whole row joins as a whole row: its panes keep their order and its
+    /// primary stops being one. Anchored on what is on screen for the same
+    /// reason `a` is - that is the row you are working in.
+    fn join_to_row(&mut self) {
+        let Some(agent) = self.selected_agent().cloned() else {
+            return;
+        };
+        let Some(slot) = self.slot() else { return };
+        // Another machine's rows are arranged over there, and a project is not a
+        // row.
+        if !agent.host.is_empty() || matches!(agent.kind, Kind::Project { .. }) {
+            return;
+        }
+
+        let moving: Vec<u32> = match agent.kind {
+            Kind::Row => self.groups.members_of(agent.pane).to_vec(),
+            _ => vec![agent.pane],
+        };
+        if moving.contains(&slot) {
+            return;
+        }
+        for pane in moving {
+            self.groups.join(pane, slot);
+        }
+
+        // The cursor follows the row it joined, which is the one on screen.
+        if let Some(primary) = self.groups.group_of(slot).map(|group| group.primary()) {
+            self.selected = Some(Selection::Row {
+                session: self.current_session.clone(),
+                pane: primary,
+            });
+        }
+        self.rebuild();
     }
 
     /// Shows the next pane in the row currently on screen.

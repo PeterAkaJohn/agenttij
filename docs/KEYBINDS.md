@@ -28,6 +28,7 @@ working while the sidebar has focus.
 | `1`–`9` | straight to that pane of the row — the number its frame shows |
 | `'` | flip to the pane you were on before this one |
 | `a` | add a pane to the row on screen |
+| `m` | move what the cursor is on into the row on screen |
 | `n` | new agent pane — a new row, or a whole one with `group` in the layout |
 | `G` | the same row, in a directory you pick |
 | `d` `d` | close what the cursor is on — twice, it cannot be undone |
@@ -80,6 +81,19 @@ project of its own.
 No zoxide is not an error: the list is then just the directories in use. And a
 path under `/tmp` is the one thing this cannot honour — Zellij rewrites paths a
 plugin hands it when they start with `/tmp`, `/host`, `/data` or `/cache`.
+
+### Putting a pane back in a row
+
+A pane can end up as a row of its own without anyone asking for that: opened with
+Zellij's own `Alt n`, or by a message that reached a second sidebar rather than
+this one.
+The sidebar draws what it knows, so those show up at the top level with a `·` and
+no age, which looks like a row's hidden panes escaping.
+
+`m` fixes it: put the cursor on the loose pane or row and press it, and it joins
+the row on screen - the same anchor `a` uses.
+A whole row joins as a whole row, keeping the order of its panes, and what is on
+screen stays on screen.
 
 ### Naming a session
 

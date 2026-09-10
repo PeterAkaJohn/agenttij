@@ -166,6 +166,35 @@ impl Groups {
         self.unseen.push((pane, 10));
     }
 
+    /// Moves a pane out of whatever row holds it and into the one holding
+    /// `beside`.
+    ///
+    /// A pane can end up in a row of its own without anybody asking: opened with
+    /// Zellij's own key, or by a message that reached a second sidebar. Without
+    /// this the only repair is closing it and adding it again, which is not a
+    /// repair for a pane with an agent in it.
+    pub fn join(&mut self, pane: u32, beside: u32) {
+        if pane == beside {
+            return;
+        }
+        for group in &mut self.groups {
+            group.members.retain(|member| *member != pane);
+        }
+        self.groups.retain(|group| !group.members.is_empty());
+
+        match self.groups.iter_mut().find(|group| group.holds(beside)) {
+            // At the end, not on screen: joining a row is not asking to look at
+            // the thing that joined.
+            Some(group) => group.members.push(pane),
+            None => self.groups.push(Group {
+                members: vec![beside, pane],
+                current: beside,
+                previous: None,
+            }),
+        }
+        self.groups.sort_by_key(Group::primary);
+    }
+
     /// Puts back a grouping remembered from a previous run of the plugin.
     ///
     /// A reload starts with no groups at all, so every pane becomes a row of its
@@ -331,6 +360,38 @@ mod tests {
         // agent on the update that arrives before the panes exist.
         groups.reconcile(&[]);
         assert_eq!(groups.rows().collect::<Vec<_>>(), vec![(3, 3)]);
+    }
+
+    /// A pane that ended up on its own can be put back without closing it.
+    #[test]
+    fn a_pane_can_be_moved_into_another_row() {
+        let mut groups = Groups::default();
+        groups.reconcile(&[1]);
+        groups.add(1, 2);
+        // 3 and 4 arrive on their own, the way a pane opened with Zellij's key
+        // does.
+        groups.reconcile(&[1, 2, 3, 4]);
+        assert_eq!(
+            groups.rows().collect::<Vec<_>>(),
+            vec![(1, 2), (3, 1), (4, 1)]
+        );
+
+        groups.join(3, 1);
+        assert_eq!(groups.members_of(1), &[1, 2, 3]);
+        assert_eq!(
+            groups.current_of(1),
+            Some(2),
+            "what is on screen stays there"
+        );
+        assert_eq!(groups.rows().collect::<Vec<_>>(), vec![(1, 3), (4, 1)]);
+
+        // Out of one row and into another, not into both.
+        groups.join(3, 4);
+        assert_eq!(groups.members_of(1), &[1, 2]);
+        assert_eq!(groups.members_of(4), &[4, 3]);
+        // And joining itself is not a move.
+        groups.join(4, 4);
+        assert_eq!(groups.members_of(4), &[4, 3]);
     }
 
     /// What a reload does, and what putting it back has to survive.
