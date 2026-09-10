@@ -183,6 +183,9 @@ pub struct Sidebar {
     peeked: Vec<String>,
     /// The palette, when this instance is one.
     palette: Jump,
+    /// What Zellij remembers about resurrectable sessions, when this instance is
+    /// the palette: whether a sidebar was in one, and what it was working on.
+    past: Vec<scan::Past>,
     /// Which boot this is, so a snapshot of this session's rows is told apart
     /// from the live record of them. Empty until the answer lands.
     boot: String,
@@ -348,6 +351,9 @@ impl ZellijPlugin for Sidebar {
                 if self.permissions == Permissions::Granted {
                     if self.config.dirs {
                         self.ask_for_dirs();
+                    }
+                    if self.config.jump {
+                        self.ask_for_past();
                     }
                     let command = scan::boot_command();
                     let words: Vec<&str> = command.iter().map(String::as_str).collect();
@@ -626,6 +632,11 @@ impl Sidebar {
             // rows with it.
             self.order_loaded = true;
             self.rebuild();
+            return true;
+        }
+        if context.get(scan::CONTEXT_KEY).map(String::as_str) == Some(scan::CONTEXT_PAST) {
+            self.past = scan::parse_past(&String::from_utf8_lossy(stdout));
+            self.refresh_palette();
             return true;
         }
         if context.get(scan::CONTEXT_KEY).map(String::as_str) == Some(scan::CONTEXT_BOOT) {
@@ -2394,6 +2405,17 @@ impl Sidebar {
         });
     }
 
+    /// Asks what Zellij remembers about the sessions it can resurrect. Only the
+    /// palette offers those, so only it pays for the grep.
+    fn ask_for_past(&mut self) {
+        let command = scan::past_command();
+        let words: Vec<&str> = command.iter().map(String::as_str).collect();
+        run_command(
+            &words,
+            BTreeMap::from([(scan::CONTEXT_KEY.to_owned(), scan::CONTEXT_PAST.to_owned())]),
+        );
+    }
+
     /// Asks where you have been. Its answer carries the home directory too,
     /// because a plugin's command does not inherit `$HOME`.
     fn ask_for_dirs(&mut self) {
@@ -2435,10 +2457,13 @@ impl Sidebar {
         // A dead session carries the projects its rows were in, from the snapshot
         // it left behind — the only thing that makes `quadratic-donkey` tell you
         // anything a week later.
-        let dead: Vec<agenttij_core::jump::Dead> = self
+        let mut dead: Vec<agenttij_core::jump::Dead> = self
             .dead_sessions
             .iter()
             .map(|(name, since)| {
+                let past = self.past.iter().find(|past| past.session == *name);
+                // Our own snapshot knows the most, Zellij's layout knows about
+                // every session that ever existed. Whichever answers.
                 let projects = self
                     .arrangement
                     .workspaces
@@ -2454,14 +2479,27 @@ impl Sidebar {
                         }
                         seen
                     })
+                    .filter(|projects| !projects.is_empty())
+                    .or_else(|| past.map(|past| past.projects.clone()))
                     .unwrap_or_default();
                 agenttij_core::jump::Dead {
                     name: name.clone(),
                     projects,
                     age: agenttij_core::format::span(*since),
+                    ours: past.is_some_and(|past| past.ours),
                 }
             })
             .collect();
+        // Yours first, then the most recently alive: eighty animals in the order
+        // Zellij happens to list them is not a list anybody can read.
+        let recency: BTreeMap<&String, u64> =
+            self.dead_sessions.iter().map(|(n, s)| (n, *s)).collect();
+        dead.sort_by_key(|dead| {
+            (
+                !dead.ours,
+                recency.get(&dead.name).copied().unwrap_or(u64::MAX),
+            )
+        });
         let mut entries = agenttij_core::jump::entries(
             &everything,
             &self.live_sessions,

@@ -213,6 +213,107 @@ fn parse_row(line: &str) -> Option<Row> {
 /// directory. It rides along on the scan that already runs, so reading it costs
 /// nothing, and the session name goes as an argument rather than inside the
 /// script.
+/// What Zellij remembers about the sessions it can resurrect.
+///
+/// Its own serialized layouts, not ours: they exist for every session it ever
+/// saved, including the ones that ran before any of this was written down. One
+/// grep over all of them rather than a fork each, and the parsing happens in
+/// [`parse_past`] where it can be tested.
+pub fn past_command() -> [String; 3] {
+    [
+        "sh".to_owned(),
+        "-c".to_owned(),
+        "grep -HoE 'agenttij\\.wasm|name=\"[^\"]*\"|cwd=\"[^\"]*\"' \
+         \"${XDG_CACHE_HOME:-$HOME/.cache}\"/zellij/*/session_info/*/session-layout.kdl \
+         2>/dev/null; true"
+            .to_owned(),
+    ]
+}
+
+/// One session Zellij can bring back, as far as its layout tells us.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Past {
+    pub session: String,
+    /// Whether a sidebar was in it. A session of someone else's making is still
+    /// somewhere to go, it is just not yours.
+    pub ours: bool,
+    /// The projects it was working on, from the pane titles the sidebar wrote
+    /// and any directory the layout kept.
+    pub projects: Vec<String>,
+}
+
+/// Reads that grep. Lines look like
+/// `<cache>/zellij/<version>/session_info/<session>/session-layout.kdl:name="· api 1/3"`.
+pub fn parse_past(text: &str) -> Vec<Past> {
+    let mut out: Vec<Past> = Vec::new();
+
+    for line in text.lines() {
+        let Some((path, found)) = line.split_once(".kdl:") else {
+            continue;
+        };
+        let Some(session) = path
+            .rsplit('/')
+            .nth(1)
+            .filter(|session| !session.is_empty())
+        else {
+            continue;
+        };
+
+        let at = match out.iter().position(|past| past.session == session) {
+            Some(at) => at,
+            None => {
+                out.push(Past {
+                    session: session.to_owned(),
+                    ..Past::default()
+                });
+                out.len() - 1
+            }
+        };
+
+        if found.contains("agenttij.wasm") {
+            out[at].ours = true;
+            continue;
+        }
+        let Some(value) = found
+            .split_once('"')
+            .and_then(|(_, rest)| rest.rsplit_once('"'))
+            .map(|(value, _)| value)
+        else {
+            continue;
+        };
+        let project = match found.starts_with("cwd=") {
+            true => crate::project::display(value).to_owned(),
+            // A pane title the sidebar wrote: `<glyph> <project> <n>/<m>`. The
+            // glyph says nothing here and the position even less.
+            false => match pane_project(value) {
+                Some(project) => project,
+                None => continue,
+            },
+        };
+        if !project.is_empty() && !out[at].projects.contains(&project) {
+            out[at].projects.push(project);
+        }
+    }
+
+    out
+}
+
+/// The project out of a pane title the sidebar set, or `None` for a title it did
+/// not set (a tab name, the sidebar's own pane, a shell prompt).
+fn pane_project(title: &str) -> Option<String> {
+    let (glyph, rest) = title.split_once(' ')?;
+    // One character, and not a word: every status glyph is a symbol.
+    if glyph.chars().count() != 1 || glyph.chars().all(char::is_alphanumeric) {
+        return None;
+    }
+    let project = match rest.rsplit_once(' ') {
+        // `2/3` at the end is a position, not part of the name.
+        Some((name, position)) if position.contains('/') && !position.contains('.') => name,
+        _ => rest,
+    };
+    (!project.is_empty()).then(|| project.to_owned())
+}
+
 /// Which boot this is.
 ///
 /// A workspace written down *this* boot is the live state of a session that is
@@ -441,6 +542,8 @@ pub const CONTEXT_PEEK: &str = "peek";
 pub const CONTEXT_DIRS: &str = "dirs";
 /// Which boot this is.
 pub const CONTEXT_BOOT: &str = "boot";
+/// What Zellij remembers about resurrectable sessions.
+pub const CONTEXT_PAST: &str = "past";
 
 pub fn command() -> [&'static str; 3] {
     ["sh", "-c", SCAN_SCRIPT]
@@ -722,6 +825,43 @@ mod tests {
             .opening
             .is_none());
         assert!(parse(b"1\n").unwrap().opening.is_none());
+    }
+
+    /// Zellij's own layouts are the only record of a session that died before
+    /// agenttij wrote anything down, which is most of them.
+    #[test]
+    fn a_past_session_is_read_out_of_zellij_own_layout() {
+        let text = "\
+/home/pp/.cache/zellij/c1/session_info/quiet-apple/session-layout.kdl:agenttij.wasm\n\
+/home/pp/.cache/zellij/c1/session_info/quiet-apple/session-layout.kdl:name=\"agents\"\n\
+/home/pp/.cache/zellij/c1/session_info/quiet-apple/session-layout.kdl:name=\"Tab #1\"\n\
+/home/pp/.cache/zellij/c1/session_info/quiet-apple/session-layout.kdl:name=\"· wayfarers 1/5\"\n\
+/home/pp/.cache/zellij/c1/session_info/quiet-apple/session-layout.kdl:cwd=\"/home/pp/work/api\"\n\
+/home/pp/.cache/zellij/c1/session_info/someone-else/session-layout.kdl:name=\"Tab #1\"\n";
+
+        let past = parse_past(text);
+        assert_eq!(past.len(), 2);
+
+        let ours = &past[0];
+        assert_eq!(ours.session, "quiet-apple");
+        assert!(ours.ours, "a sidebar was in it");
+        assert_eq!(
+            ours.projects,
+            vec!["wayfarers", "api"],
+            "the project out of a title the sidebar wrote, and a directory"
+        );
+
+        let theirs = &past[1];
+        assert_eq!(theirs.session, "someone-else");
+        assert!(!theirs.ours);
+        assert!(
+            theirs.projects.is_empty(),
+            "a tab name is not a project, and neither is the sidebar's own pane"
+        );
+
+        // And the grep has to look where Zellij actually writes.
+        assert!(past_command()[2].contains("session_info"));
+        assert!(past_command()[2].contains("session-layout.kdl"));
     }
 
     #[test]

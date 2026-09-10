@@ -31,10 +31,14 @@ pub enum Target {
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Dead {
     pub name: String,
-    /// The projects its rows were in, from the snapshot it left behind.
+    /// The projects its rows were in, from the snapshot it left behind or from
+    /// Zellij's own layout for it.
     pub projects: Vec<String>,
     /// How long ago it was last alive, already formatted.
     pub age: String,
+    /// Whether a sidebar was in it. Yours are the ones worth finding, so they
+    /// are marked and they sort first.
+    pub ours: bool,
 }
 
 /// A workspace waiting to be built again.
@@ -65,6 +69,8 @@ const DEAD: char = '⊗';
 const DIR: char = '▸';
 /// A workspace waiting to be built again.
 const WORK: char = '⊞';
+/// A session that was ours, dead but rememberable.
+const MINE: char = '⊘';
 
 /// Workspaces worth offering: the rows a session had written down, by name.
 ///
@@ -245,7 +251,10 @@ pub fn entries(
     out.extend(dead_sessions.iter().map(|dead| {
         let projects = dead.projects.join(" ");
         Entry {
-            glyph: DEAD,
+            glyph: match dead.ours {
+                true => MINE,
+                false => DEAD,
+            },
             label: dead.name.clone(),
             context: match (projects.is_empty(), dead.age.is_empty()) {
                 (true, true) => "resurrect".to_owned(),
@@ -253,7 +262,14 @@ pub fn entries(
                 (false, true) => projects.clone(),
                 (false, false) => format!("{projects} · {}", dead.age),
             },
-            search: format!("{} resurrect dead {projects}", dead.name),
+            search: format!(
+                "{} resurrect dead {projects}{}",
+                dead.name,
+                match dead.ours {
+                    true => " mine",
+                    false => "",
+                }
+            ),
             target: Target::Session {
                 name: dead.name.clone(),
                 dead: true,
@@ -318,6 +334,9 @@ pub fn status(entry: &Entry) -> Status {
         glyph if glyph == Status::Done.glyph() => Status::Done,
         glyph if glyph == Status::Idle.glyph() => Status::Idle,
         SESSION => Status::Unknown,
+        // Yours reads like a row that is simply not running, because that is
+        // what it is; someone else's stays as quiet as a pane.
+        MINE => Status::Idle,
         DIR => Status::Idle,
         WORK => Status::Unknown,
         _ => Status::Pane,
@@ -367,6 +386,7 @@ mod tests {
             name: "quadratic-donkey".to_owned(),
             projects: vec!["agenttij".to_owned(), "lara-app".to_owned()],
             age: "3d".to_owned(),
+            ours: true,
         }];
         let entry = entries(&[], &[], &dead, "here")
             .into_iter()
@@ -378,6 +398,8 @@ mod tests {
         // Which is how you find it again: by the work, not the animal.
         assert!(score(&entry.search, "lara").is_some());
         assert!(score(&entry.search, "donkey").is_some());
+        assert_eq!(entry.glyph, MINE, "a session of ours is marked as one");
+        assert!(score(&entry.search, "mine").is_some());
 
         // Nothing remembered still resurrects, it just cannot say what it was.
         let bare = entries(
@@ -390,6 +412,7 @@ mod tests {
             "here",
         );
         assert_eq!(bare[0].context, "resurrect");
+        assert_eq!(bare[0].glyph, DEAD, "and one that was never ours is not");
     }
 
     #[test]
@@ -535,6 +558,7 @@ mod tests {
                 name: "yesterday".to_owned(),
                 projects: vec!["api".to_owned()],
                 age: "1d".to_owned(),
+                ours: true,
             }],
             "main",
         );

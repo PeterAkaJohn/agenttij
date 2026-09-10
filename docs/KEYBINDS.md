@@ -82,11 +82,18 @@ plugin hands it when they start with `/tmp`, `/host`, `/data` or `/cache`.
 
 ### Finding a session that is gone
 
-`⊗` in the palette is a session Zellij can resurrect, labelled with the projects
-its rows were in rather than only its name — `⊗ quadratic-donkey  agenttij
-lara-app` — and searchable by them, since a week later the animal means nothing.
-The projects come from the same snapshot the workspace restore uses, so a session
-that died before any of that was written down still shows plainly as `resurrect`.
+A session Zellij can resurrect is in the palette with what it was working on, not
+just its name, and is searchable by that: a week later the animal means nothing.
+`⊘` is one that had a sidebar in it and `⊗` is one that did not, and yours sort
+first, most recently alive first.
+
+The labels come from two places.
+Our own snapshot when there is one, and otherwise Zellij's serialized layout for
+that session, whose pane titles are the ones the sidebar wrote - which is why a
+session from long before any of this still says what it was.
+
+Identifying one is not rebuilding it: Zellij keeps a pane's directory only
+sometimes, so an old session resurrects into whatever it saved and no further.
 
 ### Bringing a workspace back
 

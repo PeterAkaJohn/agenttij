@@ -110,22 +110,36 @@ agent whose session no longer exists is one the sidebar drops. Measured with
 That is why the sidebar does not rename anything itself.
 
 For the sessions already sitting in `zellij ls` with animal names, the palette
-labels them with what they were working on rather than leaving you to guess:
+says what each one was working on instead of leaving you to guess.
+`⊘` marks the ones that had a sidebar in them, and those sort first:
 
 ```
-⊗ quadratic-donkey    agenttij lara-app
-⊗ charming-orange     contentchef
+⊘ adept-petunia       agenttij · 21d
+⊘ arcadian-quasar     sheald · 20d
+⊗ someone-elses       resurrect · 4d
 ```
 
-So `Alt t` and `lara` finds the dead session that had it, and `Enter` resurrects.
+That works for sessions that died long before any of this was written, because
+the labels come from Zellij's own serialized layouts rather than from agenttij:
+the pane titles in them are the ones the sidebar wrote, so the project is still
+in there.
+Measured on 186 saved sessions: 48 had a sidebar, and all 48 could be named.
+
+So `Alt t` and `sheald` finds the session that had it, and `Enter` resurrects it.
 Live sessions carry the same information, and everything that can say how long
 ago it was says that too:
 
 ```
 ⊙ contentchef-serverless   contentchef · session
-⊗ quadratic-donkey         agenttij lara-app · 3d
+⊘ quadratic-donkey         agenttij lara-app · 3d
 ⊞ contentchef              4 rows · 2h
 ```
+
+Identifying one is not the same as rebuilding it.
+Zellij records a directory for a pane only sometimes (11 of those 186 layouts had
+one), so a session from before agenttij kept its own snapshots can be resurrected
+into whatever Zellij saved and no further.
+Sessions from now on are written down properly, rows and directories both.
 
 ## After a restart
 
