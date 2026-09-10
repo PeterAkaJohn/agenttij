@@ -109,14 +109,18 @@ impl Groups {
     /// Brings the grouping in line with the panes that actually exist: dead
     /// members are dropped, empty groups disappear, and anything unrecognised
     /// becomes its own group.
-    pub fn reconcile(&mut self, live: &[u32]) {
+    ///
+    /// Says whether any of that happened, so a caller that skips its redraw when
+    /// the pane list has not moved can still notice a row losing a member it had
+    /// been waiting for.
+    pub fn reconcile(&mut self, live: &[u32]) -> bool {
         // Nothing known is not nothing alive — the same stance `panes::reconcile`
         // takes about agents, and for the same reason. A list that arrives empty
         // (before the first real one, or from a session whose panes have not been
         // published yet) would otherwise take every row apart in one update, and
         // the panes would come back as rows of their own.
         if live.is_empty() {
-            return;
+            return false;
         }
 
         // Anything the list names is alive and waiting for nothing. Anything it
@@ -138,10 +142,13 @@ impl Groups {
         self.unseen.retain(|(_, lives)| *lives > 0);
 
         let waiting: Vec<u32> = self.unseen.iter().map(|(pane, _)| *pane).collect();
+        let mut changed = false;
         for group in &mut self.groups {
+            let had = group.members.len();
             group
                 .members
                 .retain(|member| live.contains(member) || waiting.contains(member));
+            changed |= group.members.len() != had;
         }
         self.groups.retain(|group| !group.members.is_empty());
 
@@ -157,11 +164,13 @@ impl Groups {
         for pane in live {
             if !self.groups.iter().any(|group| group.holds(*pane)) {
                 self.groups.push(Group::new(*pane));
+                changed = true;
             }
         }
 
         // Ordered by primary so rows do not shuffle between updates.
         self.groups.sort_by_key(Group::primary);
+        changed
     }
 
     /// Adds a pane to whichever group holds `beside`, and shows it.

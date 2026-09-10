@@ -24,6 +24,30 @@ pub struct PaneSnapshot {
     pub suppressed: bool,
 }
 
+/// The panes alive now, plus the ones the last list had and this one does not.
+///
+/// A `PaneManifest` drops a pane for a single update while it is being
+/// suppressed and has it back in the next one - traced through a burst of
+/// `Alt m`, the list went from fifteen panes to thirteen and back to fifteen.
+/// Reaping an agent the moment its pane is missing therefore takes a row out of
+/// the sidebar for one frame and puts it back: a blink, on someone else's
+/// keypress, in a list you are reading. So a pane counts as alive while it is in
+/// either list, which costs a closed pane one extra update on screen and is the
+/// same grace `Groups::reconcile` gives its members.
+pub fn still_alive(now: &[PaneSnapshot], before: &[PaneSnapshot]) -> Vec<PaneSnapshot> {
+    let mut alive = now.to_vec();
+    alive.extend(
+        before
+            .iter()
+            .filter(|old| {
+                !now.iter()
+                    .any(|pane| pane.session == old.session && pane.pane == old.pane)
+            })
+            .cloned(),
+    );
+    alive
+}
+
 /// The terminal pane currently on screen in a tab — the slot a solo swap
 /// replaces. `None` when every agent there is parked.
 pub fn visible_terminal(panes: &[PaneSnapshot], session: &str, tab: usize) -> Option<u32> {
@@ -243,6 +267,25 @@ mod tests {
             suppressed: true,
             ..self::pane(session, tab, pane, title)
         }
+    }
+
+    /// A pane the list drops for one update is not a pane that has gone.
+    #[test]
+    fn a_pane_missing_from_one_list_is_still_alive() {
+        let before = vec![pane("main", 0, 1, "agent"), pane("main", 0, 2, "editor")];
+        let now = vec![pane("main", 0, 1, "agent")];
+
+        let alive = still_alive(&now, &before);
+        assert_eq!(alive.len(), 2, "2 is being suppressed, not closing");
+        let agents = vec![agent("main", 2)];
+        assert_eq!(
+            reconcile(agents.clone(), &alive, &["main".into()]).len(),
+            1,
+            "so its row stays in the list"
+        );
+        // And the list on its own still reaps it, which is what happens once
+        // the second list agrees that it is gone.
+        assert!(reconcile(agents, &now, &["main".into()]).is_empty());
     }
 
     /// The pane list is a second old, so what we last showed beats what it says.

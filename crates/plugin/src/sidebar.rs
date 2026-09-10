@@ -187,6 +187,9 @@ pub struct Sidebar {
     /// of `Alt m` left panes in no row at all. The next pane list names the
     /// pane; this names the row it belongs to.
     orphan: Option<(u32, u8)>,
+    /// The pane list before this one, so a pane the manifest drops for a single
+    /// update is not read as a pane that closed. See `panes::still_alive`.
+    previous_panes: Vec<PaneSnapshot>,
     /// The open peek pane, so `q` can close it and `p` never stacks two.
     peek: Option<PaneId>,
     /// Lines of the pane this instance is peeking at, when it is a peek.
@@ -297,16 +300,16 @@ impl ZellijPlugin for Sidebar {
             }
             Event::SessionUpdate(sessions, _) => {
                 // Zellij sends this every second whether or not anything moved.
-                // An identical pane list means there is nothing to reconcile and
-                // nothing new to draw, and redrawing anyway cost a second full
-                // render every second, forever. The scan tick keeps ages fresh.
+                // An identical pane list means there is nothing new to draw, and
+                // redrawing anyway cost a second full render every second,
+                // forever. The scan tick keeps ages fresh.
                 let panes = snapshot::panes(&sessions);
-                if panes == self.panes && self.tab.is_some() && self.named {
-                    return false;
-                }
-                self.panes = panes;
-                if let Some(name) = snapshot::current_session(&sessions) {
-                    self.current_session = name;
+                let moved = panes != self.panes;
+                if moved {
+                    self.previous_panes = std::mem::replace(&mut self.panes, panes);
+                    if let Some(name) = snapshot::current_session(&sessions) {
+                        self.current_session = name;
+                    }
                 }
 
                 // Only here: reconciling against a stale pane list would drop a
@@ -326,29 +329,53 @@ impl ZellijPlugin for Sidebar {
                 // the first pane it takes in: two adds can lose their panes in
                 // one burst and the panes turn up in different lists, and
                 // clearing on the first left the second a row of its own.
-                if let Some((beside, lives)) = self.orphan {
+                if let Some((beside, lives)) = self.orphan.filter(|_| moved) {
                     self.groups.adopt(&here, beside);
                     self.orphan = lives.checked_sub(1).map(|left| (beside, left));
                 }
-                self.groups.reconcile(&here);
+                // On every update, moved or not. A member's grace is counted in
+                // updates, and an identical list is still an update that did not
+                // name it - so a pane that never arrived at all used to sit in
+                // its row for ever once the session went quiet, and cycling onto
+                // it parked what was on screen and showed nothing.
+                let regrouped = self.groups.reconcile(&here);
+                if !moved && !regrouped && self.tab.is_some() && self.named {
+                    return false;
+                }
                 // A list that agrees with us has caught up and can be trusted
-                // again; one that does not spends a life. Only fresh lists get
-                // here — an identical one returned early above — so this cannot
-                // run out while nothing is happening.
-                self.showing = match self.showing {
-                    Some((pane, lives)) => {
-                        let agrees = self.panes.iter().any(|other| {
-                            other.session == self.current_session
-                                && other.pane == pane
-                                && !other.suppressed
-                        });
-                        match agrees {
-                            true => None,
-                            false => lives.checked_sub(1).map(|left| (pane, left)),
+                // again; one that does not spends a life. Only a list that moved
+                // counts: an identical one is not news, and reaching here with
+                // one only means reconcile gave up on something.
+                // A pane the list knew and no longer has is closed, not slow:
+                // `panes::slot` believes `showing` over the list now, so without
+                // this a pane closed with Zellij's own key would hold the slot
+                // for the whole countdown and the next `Alt m` would park a pane
+                // that is not there.
+                let closed = self.showing.is_some_and(|(pane, _)| {
+                    self.previous_panes
+                        .iter()
+                        .any(|old| old.session == self.current_session && old.pane == pane)
+                        && !self
+                            .panes
+                            .iter()
+                            .any(|now| now.session == self.current_session && now.pane == pane)
+                });
+                if moved {
+                    self.showing = match self.showing.filter(|_| !closed) {
+                        Some((pane, lives)) => {
+                            let agrees = self.panes.iter().any(|other| {
+                                other.session == self.current_session
+                                    && other.pane == pane
+                                    && !other.suppressed
+                            });
+                            match agrees {
+                                true => None,
+                                false => lives.checked_sub(1).map(|left| (pane, left)),
+                            }
                         }
-                    }
-                    None => None,
-                };
+                        None => None,
+                    };
+                }
                 self.restore_groups(&here);
                 self.fill_first_row(&here);
                 self.remember_groups();
@@ -410,6 +437,13 @@ impl ZellijPlugin for Sidebar {
         if let PipeSource::Cli(pipe) = &message.source {
             unblock_cli_pipe_input(pipe);
         }
+        // Whatever it did changed which pane is on screen or which row holds it,
+        // and the sidebar draws both. Waiting for the next pane update to say so
+        // leaves the mark a beat behind the screen.
+        let handled = matches!(
+            message.name.as_str(),
+            "cycle" | "cycle-back" | "flip" | "pane" | "back" | "new" | "add" | "show" | "close"
+        );
         match message.name.as_str() {
             "cycle" => self.cycle(),
             "cycle-back" => self.cycle_back(),
@@ -456,7 +490,7 @@ impl ZellijPlugin for Sidebar {
             }
             _ => {}
         }
-        false
+        handled
     }
 
     fn render(&mut self, rows: usize, cols: usize) {
@@ -793,7 +827,12 @@ impl Sidebar {
                 }
             }
         }
-        let mut agents = panes::reconcile(reported, &self.panes, &self.live_sessions);
+        // Against both lists: a pane the manifest drops for one update while it
+        // is being suppressed would otherwise take its row out of the sidebar
+        // and put it back a second later, which reads as a blink in a list you
+        // are trying to read.
+        let alive = panes::still_alive(&self.panes, &self.previous_panes);
+        let mut agents = panes::reconcile(reported, &alive, &self.live_sessions);
         let discovered = panes::discover(&self.panes, &agents, &self.config.agents);
         agents.extend(discovered);
 
@@ -965,11 +1004,11 @@ impl Sidebar {
             // mode, where the sidebar never has the keyboard.
             BareKey::Char(digit) if digit.is_ascii_digit() && digit != '0' => {
                 self.show_index(digit as usize - '0' as usize);
-                false
+                true
             }
             BareKey::Char('\'') => {
                 self.flip_pane();
-                false
+                true
             }
             BareKey::Down | BareKey::Char('j') => self.move_cursor(1),
             BareKey::Up | BareKey::Char('k') => self.move_cursor(-1),
@@ -1030,7 +1069,7 @@ impl Sidebar {
                     }
                     actions::go_to(&agent, &self.current_session, &self.panes);
                 }
-                false
+                true
             }
             // Everywhere you could go, filtered by typing.
             BareKey::Char('/') => {
@@ -1126,7 +1165,10 @@ impl Sidebar {
                     }
                     _ => self.cycle(),
                 }
-                false
+                // The mark that says which row is on screen has just moved, and
+                // waiting for the next pane update to say so is a visible beat
+                // of the sidebar disagreeing with the screen.
+                true
             }
             // Put a pane back where it belongs: whatever the cursor is on joins
             // the row on screen. A pane opened with Zellij's own key, or by a
@@ -1134,7 +1176,7 @@ impl Sidebar {
             // was no way to fix that short of closing it.
             BareKey::Char('m') => {
                 self.join_to_row();
-                false
+                true
             }
             // Rename this session. Prefilled, because a rename is usually an edit
             // of what is there rather than a fresh answer.
@@ -1155,7 +1197,7 @@ impl Sidebar {
             // whose panes you cannot see anyway.
             BareKey::Char('V') => {
                 self.cycle_back();
-                false
+                true
             }
             // Add a pane to the selected row: an editor beside the agent, a log,
             // whatever. It joins the group instead of becoming a row of its own.
@@ -1166,18 +1208,18 @@ impl Sidebar {
                     }
                     _ => self.add_to_row(),
                 }
-                false
+                true
             }
             // A new agent pane that takes over the slot, parking the current
             // one rather than splitting the screen with it.
             BareKey::Char('n') => {
                 self.new_row();
-                false
+                true
             }
             // Back to the row we came from.
             BareKey::Char('b') => {
                 self.go_back();
-                false
+                true
             }
             // Back to the session we came from — the other direction of the same
             // idea, and the way out of a session you jumped into.
@@ -2262,6 +2304,18 @@ impl Sidebar {
         )
     }
 
+    /// Whether a pane of this session is one Zellij has listed, now or in the
+    /// list before. Both, because the manifest drops a pane for one update as it
+    /// is suppressed (`panes::still_alive`).
+    fn is_live(&self, pane: u32) -> bool {
+        let listed = |panes: &[PaneSnapshot]| {
+            panes
+                .iter()
+                .any(|snapshot| snapshot.session == self.current_session && snapshot.pane == pane)
+        };
+        listed(&self.panes) || listed(&self.previous_panes)
+    }
+
     /// Records the pane we just put on screen, so the next keypress does not have
     /// to wait a second for the pane list to agree.
     fn took_slot(&mut self, pane: u32) {
@@ -2420,7 +2474,14 @@ impl Sidebar {
     /// which member of the row on screen to show, then show it.
     fn walk(&mut self, pick: impl Fn(&Groups, u32) -> Option<u32>) {
         let Some(visible) = self.slot() else { return };
-        let Some(target) = pick(&self.groups, visible).filter(|target| *target != visible) else {
+        let Some(target) = pick(&self.groups, visible)
+            .filter(|target| *target != visible)
+            // A member the pane list has never had is a pane that was asked for
+            // and never made. Showing it does nothing while parking what is on
+            // screen does happen, which empties the workspace - so cycling onto
+            // one is a no-op until reconcile gives up on it.
+            .filter(|target| self.is_live(*target))
+        else {
             return;
         };
 

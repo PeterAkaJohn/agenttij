@@ -106,7 +106,12 @@ keep `crates/plugin` to wiring, host calls and drawing.
 - **The headless `script` harness kills panes sometimes.** Look for
   `Input/output error`, `Failed to apply cached resizes` or `consecutive unknown
   messages` in `/tmp/zellij-*/zellij-log/zellij.log` before concluding the code
-  lost a pane.
+  lost a pane. The commonest way to cause it yourself is to let the keystream
+  end: the client hits EOF, spends a second sending the server nonsense until it
+  is logged out, and a pane goes with it. Cost a whole chase after a pane `Alt m`
+  had opened and Zellij had confirmed by id. Keep the keystream alive past the
+  measurement (`printf ...; sleep 60`), and check the log before believing a
+  pane count.
 
 ## Zellij traps worth knowing
 
@@ -282,6 +287,19 @@ Each of these cost a debugging round already:
   `add_to_row` goes further and prefers the *focused* terminal, because a screen
   split by Zellij's own `Alt n` has two of them and the list names whichever
   comes first.
+- **A row of the sidebar can blink out on the same staleness.** The pane list
+  regressing (below) reaches `panes::reconcile` too, which reaps an agent the
+  moment its pane is missing - so someone else's keypress in another session can
+  take a row out of the list for one frame and put it back. Reconciling against
+  `panes::still_alive` (this list and the one before) is what stops that.
+- **A grace counted in updates needs updates to arrive.** `SessionUpdate` is
+  skipped early when the pane list has not moved, so a quiet session produced no
+  reconcile at all - and a member that never appeared (Zellij answered with an id
+  and made no pane) sat in its row for ever, with `v` cycling onto a pane that is
+  not there: the show does nothing, the hide parks what you were looking at, and
+  the workspace is empty. Reconcile therefore runs on every update, moved or not,
+  and only the *redraw* is skipped. `walk` also refuses to show a pane no list has
+  ever named.
 - **The pane list also goes *backwards*.** A pane that has been listed alive can
   be absent from the next list and back in the one after - it happens as the
   pane is suppressed. Traced through a burst of `Alt m`: `[0,1,2,3,4,5]`, then
