@@ -77,7 +77,11 @@ keep `crates/plugin` to wiring, host calls and drawing.
 - **Plugin pane content cannot be read.** `dump-screen` and `subscribe` both
   return nothing for plugin panes, including for third-party ones. Verify
   behaviour through side effects instead: `list-panes`, `list-clients`,
-  `dump-layout`, or a file the plugin touches.
+  `dump-layout`, or a file the plugin touches. A pane *frame* is not pane
+  content either - it is drawn by the client, so `dump-screen` never shows it.
+  Capture a client instead: `sleep 90 | script -qfc "zellij -s x -n l.kdl" out`
+  keeps a client alive and writes its raw output, and the frame line is in there
+  to grep.
 - **Test anything input-related with `scripts/press-keys.sh`.** It pipes real
   bytes into a throwaway client's stdin and prints a second-by-second timeline of
   panes and focus, which is the only way to see what a key actually did:
@@ -154,6 +158,17 @@ Each of these cost a debugging round already:
   a rail you chose stays a rail. Constraining that first layout by pane count
   does not work: suppressing a pane relayouts too (`extract_pane`), and in solo
   mode that drops the count straight back down.
+- **A second client repaints the frames and is not our doing.** Zellij colours
+  the focused pane's frame per *client* as soon as two are attached and the
+  session is not mirrored (`frame_color`, `ui/pane_contents_and_ui.rs`): client 1
+  gets magenta, client 2 blue, and the theme's `frame_selected` is not used at
+  all. The same condition adds `MY FOCUS AND:` plus a block per other client to
+  the middle of the title (`render_my_and_others_focus`,
+  `ui/pane_boundaries_frame.rs`); our pane name stays on the left. Measured with
+  two captured clients: `[38;2;255;94;241m` for client 1 and
+  `[38;2;94;161;255m` for client 2, both titled `· agenttij`. So a blue border
+  and a title nobody set means something else is attached - switching to a
+  session that is already open in another terminal is the usual way in.
 - **A pane keeps the session name it was born with.** `ZELLIJ_SESSION_NAME` is
   set when the pane spawns and a `rename-session` does not reach it - measured
   through `/proc/<pid>/environ`, before and after. The hook reads that variable,
