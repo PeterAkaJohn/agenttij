@@ -208,6 +208,15 @@ Each of these cost a debugging round already:
   and a fresh run writes a new one, so the last run's survives; the palette
   offers it, and restoring it rebuilds the rows (measured: 3 panes after the
   resurrection, 6 in two rows after the restore).
+- **Keeping a snapshot per run means saying *which* one to restore.** The
+  newest is not the best: a run whose grouping had come apart records rows of one
+  pane, and restoring that rebuilds a session with nothing tied together - which
+  is what "the rows and the hidden panes are not tied together" turned out to be,
+  from a real arrangement whose newest snapshot was six rows of one pane and
+  whose older one held the same work as six rows of three. The palette entry
+  carries the stamp (`Target::Workspace { session, stamp }`, asked for as
+  `<session>@<stamp>`), so each entry restores the snapshot it names and its row
+  counts and ages are how you tell them apart.
 - **A resurrected pane has no working directory until you start it.** Zellij
   brings command panes back with `start_suspended true`, and a command that has
   not run has nothing in `/proc` for `get_pane_cwd` to read - so every row is

@@ -24,7 +24,11 @@ pub enum Target {
     Dir { path: String },
     /// A session's rows as they were written down, to be built again. What a
     /// restart takes away and this puts back.
-    Workspace { session: String },
+    /// A remembered workspace, named by the session *and* when it was taken: a
+    /// session keeps several, one per run, and the newest is not always the one
+    /// you want - a run whose grouping had come apart records rows of one pane,
+    /// and that would be what a restore rebuilt.
+    Workspace { session: String, stamp: u64 },
 }
 
 /// A session that can be brought back, and what is known about it.
@@ -47,6 +51,9 @@ pub struct Remembered {
     pub session: String,
     pub rows: usize,
     pub age: String,
+    /// When it was taken, which is what picks it out of the several a session
+    /// keeps.
+    pub stamp: u64,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -103,6 +110,7 @@ pub fn workspaces(remembered: &[Remembered]) -> Vec<Entry> {
             search: format!("restore {} workspace rows", workspace.session),
             target: Target::Workspace {
                 session: workspace.session.clone(),
+                stamp: workspace.stamp,
             },
         })
         .collect()
@@ -421,6 +429,7 @@ mod tests {
             session: session.to_owned(),
             rows,
             age: age.to_owned(),
+            stamp: 1_700_000_000,
         };
         let entries = workspaces(&[
             remembered("api", 3, "2h"),
@@ -436,7 +445,8 @@ mod tests {
         assert_eq!(
             entries[0].target,
             Target::Workspace {
-                session: "api".to_owned()
+                session: "api".to_owned(),
+                stamp: 1_700_000_000,
             }
         );
         // The verb finds workspaces and nothing else; the name still finds the

@@ -964,8 +964,11 @@ impl Sidebar {
                     close_self();
                     false
                 }
-                Act::Go(agenttij_core::jump::Target::Workspace { session }) => {
-                    actions::ask_for_workspace(&self.current_session, self.now, &session);
+                Act::Go(agenttij_core::jump::Target::Workspace { session, stamp }) => {
+                    // Which one, not just whose: a session keeps a snapshot per
+                    // run and they are not equally good.
+                    let workspace = format!("{session}@{stamp}");
+                    actions::ask_for_workspace(&self.current_session, self.now, &workspace);
                     self.leaving = true;
                     set_timeout(0.1);
                     false
@@ -1811,15 +1814,27 @@ impl Sidebar {
     /// after a restart the rows that Zellij itself brought back are exactly the
     /// ones whose directory is already open.
     fn restore_workspace(&mut self, workspace: &str) {
+        // `<session>@<stamp>` when the palette said which one, and a bare name
+        // from anything older or hand-written.
+        let (workspace, wanted) = match workspace.rsplit_once('@') {
+            Some((session, stamp)) => (session, stamp.parse::<u64>().ok()),
+            None => (workspace, None),
+        };
         // Sorted newest first when written, so the first match is the most
-        // recent — and another boot's snapshot beats this boot's live record,
-        // which is the one the session already has on screen.
+        // recent — and any snapshot beats the record this session is keeping,
+        // which is the one it already has on screen.
         let snapshot = self
             .arrangement
             .workspaces
             .iter()
             .find(|snapshot| {
-                snapshot.session == workspace && Some(snapshot.stamp) != self.snapshot_at
+                snapshot.session == workspace
+                    && wanted.is_some_and(|wanted| snapshot.stamp == wanted)
+            })
+            .or_else(|| {
+                self.arrangement.workspaces.iter().find(|snapshot| {
+                    snapshot.session == workspace && Some(snapshot.stamp) != self.snapshot_at
+                })
             })
             .or_else(|| {
                 self.arrangement
@@ -2852,6 +2867,7 @@ impl Sidebar {
                 session: snapshot.session.clone(),
                 rows: snapshot.rows.len(),
                 age: agenttij_core::format::age(self.now, snapshot.stamp),
+                stamp: snapshot.stamp,
             })
             .collect();
         entries.extend(agenttij_core::jump::workspaces(&remembered));
