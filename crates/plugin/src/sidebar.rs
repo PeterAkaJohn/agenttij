@@ -136,6 +136,14 @@ pub struct Sidebar {
     groups_restored: bool,
     /// Rows of a remembered workspace still to be opened, one per tick.
     restoring: Vec<order::Workspace>,
+    /// Rows Zellij brought back that a remembered row is owed to: the pane, and
+    /// the panes that row had behind it.
+    ///
+    /// A resurrected pane is a stranger - its id is new and the grouping was
+    /// written in the ids of the run before - so a session that comes back with
+    /// several panes comes back with none of them tied together. Each stands in
+    /// for one remembered row, and gets that row's companions opened behind it.
+    filling: Vec<(u32, Vec<String>)>,
     /// What the input line is collecting, and what has been typed so far.
     typing: Option<(Field, String)>,
     /// Which git roots each project holds, from before folding hid any of them —
@@ -1845,42 +1853,54 @@ impl Sidebar {
         let Some(rows) = snapshot.map(|snapshot| snapshot.rows.clone()) else {
             return;
         };
-        // How many rows this session already has in each directory — not
-        // *whether* it has one. Three rows on one project is the ordinary shape
-        // of working on it, and "the directory is already open" skipped all
-        // three of them: the first row Zellij brought back covered the lot.
-        let placed = self.workspace();
-        let mut here: BTreeMap<String, usize> = BTreeMap::new();
-        for row in &placed {
-            *here.entry(row.cwd.clone()).or_default() += 1;
+        // What this session already has, by the directory each row works in, and
+        // the rows nothing can place yet. A remembered row matches one of those
+        // and is not rebuilt: that pane stands in for it.
+        // Counted per row rather than per directory: three rows on one project is
+        // the ordinary shape of working on it, and "that directory is already
+        // open" once skipped all three of them.
+        let mut here: BTreeMap<String, Vec<u32>> = BTreeMap::new();
+        let mut strangers: Vec<u32> = Vec::new();
+        for (primary, _) in self.groups.rows() {
+            match self.row_cwd(primary) {
+                Some(cwd) => here.entry(cwd).or_default().push(primary),
+                None => strangers.push(primary),
+            }
         }
-        // Rows whose directory cannot be read yet take a remembered row's place
-        // too. A pane Zellij resurrected waits suspended until you press Enter,
-        // and a command that has not started has no working directory - so
-        // straight after a resurrection every row is unplaceable, and restoring
-        // rebuilt the one already on screen. Measured: nine panes where six were
-        // wanted, and six once the pane had been started by hand.
-        let mut unplaced = self.groups.rows().count().saturating_sub(placed.len());
-        // Rows waiting their turn count as here too. They are built one per
-        // tick, so a second ask arriving in between saw none of them and queued
-        // the lot again.
+        // Rows waiting their turn stand in as well. They are built one per tick,
+        // so a second ask arriving in between saw none of them and queued the
+        // lot again. Nothing stands *behind* them, so they need no id.
+        let mut queued: BTreeMap<String, usize> = BTreeMap::new();
         for row in &self.restoring {
-            *here.entry(row.cwd.clone()).or_default() += 1;
+            *queued.entry(row.cwd.clone()).or_default() += 1;
         }
 
-        let wanted = rows.into_iter().filter(|row| match here.get_mut(&row.cwd) {
-            // One of the remembered rows for this directory is that one.
-            Some(open) if *open > 0 => {
-                *open -= 1;
-                false
+        let mut fill: Vec<(u32, Vec<String>)> = Vec::new();
+        let mut wanted: Vec<order::Workspace> = Vec::new();
+        for row in rows {
+            if let Some(waiting) = queued.get_mut(&row.cwd).filter(|waiting| **waiting > 0) {
+                *waiting -= 1;
+                continue;
             }
-            _ if unplaced > 0 => {
-                unplaced -= 1;
-                false
+            // The row is already here, by its directory or as a pane nothing can
+            // place. Either way that pane *is* this row - so if it came back
+            // alone, it gets this row's companions rather than staying a pane on
+            // its own, which is what a resurrected session looks like.
+            let stands_in = here
+                .get_mut(&row.cwd)
+                .and_then(|primaries| primaries.pop())
+                .or_else(|| strangers.pop());
+            match stands_in {
+                Some(primary) => {
+                    if row.panes.len() > 1 && self.groups.members_of(primary).len() == 1 {
+                        fill.push((primary, row.panes.clone()));
+                    }
+                }
+                None => wanted.push(row),
             }
-            _ => true,
-        });
+        }
         self.restoring.extend(wanted);
+        self.filling.extend(fill);
     }
 
     /// One row per tick. Nine panes in a single event is a burst of opens and
@@ -1888,6 +1908,17 @@ impl Sidebar {
     /// how the workspace ended up split between two rows the last time
     /// something opened panes faster than Zellij reported them.
     fn restore_next_row(&mut self) {
+        // Filling first: those panes are already on screen, and giving them
+        // their companions is what makes them a row again.
+        if !self.filling.is_empty() {
+            let (head, panes) = self.filling.remove(0);
+            for companion in actions::fill_row(head, &panes) {
+                self.groups.add(head, companion);
+            }
+            self.groups.show(head);
+            self.took_slot(head);
+            return;
+        }
         if self.restoring.is_empty() {
             return;
         }
@@ -1901,19 +1932,26 @@ impl Sidebar {
     /// A pane whose program is not known yet falls back to the layout's template
     /// at the same position — which is the right answer for the rows that came
     /// out of that template, and a plain shell for the rest.
+    /// Where a row works, if anything can say yet. A pane Zellij resurrected is
+    /// suspended until you press Enter, and a command that has not started has
+    /// no working directory - so this is `None` for exactly the rows a restore
+    /// cannot place by directory.
+    fn row_cwd(&self, primary: u32) -> Option<String> {
+        self.agents
+            .iter()
+            .find(|agent| agent.pane == primary && agent.kind == Kind::Row)
+            .map(|agent| agent.cwd.clone())
+            .filter(|cwd| cwd.starts_with('/'))
+            .or_else(|| self.cwds.get(&primary).cloned())
+            .filter(|cwd| cwd.starts_with('/'))
+    }
+
     fn workspace(&self) -> Vec<order::Workspace> {
         self.groups
             .rows()
             .filter_map(|(primary, _)| {
                 let members = self.groups.members_of(primary).to_vec();
-                let cwd = self
-                    .agents
-                    .iter()
-                    .find(|agent| agent.pane == primary && agent.kind == Kind::Row)
-                    .map(|agent| agent.cwd.clone())
-                    .filter(|cwd| cwd.starts_with('/'))
-                    .or_else(|| self.cwds.get(&primary).cloned())
-                    .filter(|cwd| cwd.starts_with('/'))?;
+                let cwd = self.row_cwd(primary)?;
 
                 let panes = members
                     .iter()

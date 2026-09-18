@@ -217,6 +217,17 @@ Each of these cost a debugging round already:
   carries the stamp (`Target::Workspace { session, stamp }`, asked for as
   `<session>@<stamp>`), so each entry restores the snapshot it names and its row
   counts and ages are how you tell them apart.
+- **Everything a resurrection brings back is a stranger.** The grouping is
+  written in pane ids and the ids start again, so a session that comes back
+  holding more than one pane comes back with none of them tied together - which
+  is the whole of "the rows and the hidden panes are not tied together" after an
+  attach. Nothing can infer which row a pane belonged to; the workspace snapshot
+  can, though, so a restore treats each such pane as standing in for one
+  remembered row and opens that row's companions behind it
+  (`Sidebar::filling`). Only a pane that came back *alone*: one the layout's
+  template has already filled out is a row of three, and filling it again made
+  it a row of five. Measured: two rows of three, killed, resurrected as two
+  loose panes, restored to `0,4,5` and `1,2,3`.
 - **A resurrected pane has no working directory until you start it.** Zellij
   brings command panes back with `start_suspended true`, and a command that has
   not run has nothing in `/proc` for `get_pane_cwd` to read - so every row is
