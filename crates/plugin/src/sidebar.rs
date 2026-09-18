@@ -194,6 +194,16 @@ pub struct Sidebar {
     /// on a workspace of three rows restored it three times, nine panes in nine
     /// rows. Measured in the wild, three copies of each of three directories.
     answered: Option<(u64, String)>,
+    /// The stamp of the snapshot this sidebar is keeping up to date, so it
+    /// replaces its own record and nobody else's.
+    ///
+    /// Keying that on the boot was not enough: a session killed and resurrected
+    /// in the same boot comes back holding one row - Zellij does not serialize a
+    /// parked pane - and its new sidebar replaced the entry describing all the
+    /// rows it was there to bring back. Measured: two rows of three before the
+    /// kill, one row and no workspace left after it. A run that has not written
+    /// one yet writes a *new* entry, so the last run's survives to be restored.
+    snapshot_at: Option<u64>,
     /// The pane list before this one, so a pane the manifest drops for a single
     /// update is not read as a pane that closed. See `panes::still_alive`.
     previous_panes: Vec<PaneSnapshot>,
@@ -1721,7 +1731,7 @@ impl Sidebar {
         let rows = self.groups.remember();
         let workspace = self.workspace();
         let mine = |snapshot: &&order::Snapshot| {
-            snapshot.boot == self.boot && snapshot.session == self.current_session
+            Some(snapshot.stamp) == self.snapshot_at && snapshot.session == self.current_session
         };
         let same = self.arrangement.groups.get(&self.current_session) == Some(&rows)
             && self
@@ -1738,11 +1748,11 @@ impl Sidebar {
             .groups
             .insert(self.current_session.clone(), rows);
 
-        // This boot's entry for this session is the *live* record and is replaced;
-        // every other boot's is a snapshot of a session that is no longer running
-        // that way, and is left alone. That separation is the whole point: a
-        // sidebar that started after a restart must not overwrite the rows it is
-        // there to bring back.
+        // Our own entry is the *live* record and is replaced; every other one is
+        // a snapshot of a session that is no longer running that way, and is left
+        // alone. That separation is the whole point: a sidebar that started after
+        // a restart - of the machine or of the session - must not overwrite the
+        // rows it is there to bring back.
         // Not before the clock has arrived: a snapshot stamped zero sorts last and
         // is the first thing pruned, which is the opposite of what a snapshot
         // written a second ago deserves. The ids above are stamped by the file.
@@ -1760,6 +1770,9 @@ impl Sidebar {
                 stamp: self.now,
                 rows: workspace,
             });
+            // From here on this run keeps that one up to date rather than
+            // starting another.
+            self.snapshot_at = Some(self.now);
         }
         // Newest first, and only a few: boot ids cannot be put in order, so the
         // stamp is what says which restart was which, and a machine restarts a
@@ -1805,7 +1818,9 @@ impl Sidebar {
             .arrangement
             .workspaces
             .iter()
-            .find(|snapshot| snapshot.session == workspace && snapshot.boot != self.boot)
+            .find(|snapshot| {
+                snapshot.session == workspace && Some(snapshot.stamp) != self.snapshot_at
+            })
             .or_else(|| {
                 self.arrangement
                     .workspaces
@@ -1819,10 +1834,18 @@ impl Sidebar {
         // *whether* it has one. Three rows on one project is the ordinary shape
         // of working on it, and "the directory is already open" skipped all
         // three of them: the first row Zellij brought back covered the lot.
+        let placed = self.workspace();
         let mut here: BTreeMap<String, usize> = BTreeMap::new();
-        for row in self.workspace() {
-            *here.entry(row.cwd).or_default() += 1;
+        for row in &placed {
+            *here.entry(row.cwd.clone()).or_default() += 1;
         }
+        // Rows whose directory cannot be read yet take a remembered row's place
+        // too. A pane Zellij resurrected waits suspended until you press Enter,
+        // and a command that has not started has no working directory - so
+        // straight after a resurrection every row is unplaceable, and restoring
+        // rebuilt the one already on screen. Measured: nine panes where six were
+        // wanted, and six once the pane had been started by hand.
+        let mut unplaced = self.groups.rows().count().saturating_sub(placed.len());
         // Rows waiting their turn count as here too. They are built one per
         // tick, so a second ask arriving in between saw none of them and queued
         // the lot again.
@@ -1834,6 +1857,10 @@ impl Sidebar {
             // One of the remembered rows for this directory is that one.
             Some(open) if *open > 0 => {
                 *open -= 1;
+                false
+            }
+            _ if unplaced > 0 => {
+                unplaced -= 1;
                 false
             }
             _ => true,
@@ -2805,7 +2832,14 @@ impl Sidebar {
             .workspaces
             .iter()
             .filter(|snapshot| {
-                snapshot.boot != self.boot || !self.live_sessions.contains(&snapshot.session)
+                // Not the record this session is keeping right now - restoring
+                // that is a no-op - but everything else, including an earlier run
+                // of this same session, which is what a resurrection leaves
+                // behind.
+                let live_elsewhere = self.live_sessions.contains(&snapshot.session)
+                    && snapshot.session != self.current_session;
+                Some(snapshot.stamp) != self.snapshot_at
+                    && (snapshot.boot != self.boot || !live_elsewhere)
             })
             .collect();
         // Newest first here too. Ours are written in that order, but the file

@@ -198,6 +198,22 @@ Each of these cost a debugging round already:
   the file at all. Shared things (`p`, `f`, `n`) stay in `order`; a session's own
   (`b`, `g`, `w`, `h`) go to `sessions/<name>`, which only it writes. One `cat`
   reads both.
+- **A session restarts inside a boot, and that is the case the boot id misses.**
+  A session killed and resurrected comes back holding one row - Zellij does not
+  serialize a parked pane - and its new sidebar replaced the snapshot describing
+  every row it was there to bring back, because the snapshot was keyed on the
+  machine boot and the boot had not changed. Measured: two rows of three before
+  the kill, one row and no workspace after it, with nothing left to restore from.
+  A sidebar now replaces only the snapshot *it* wrote (`Sidebar::snapshot_at`)
+  and a fresh run writes a new one, so the last run's survives; the palette
+  offers it, and restoring it rebuilds the rows (measured: 3 panes after the
+  resurrection, 6 in two rows after the restore).
+- **A resurrected pane has no working directory until you start it.** Zellij
+  brings command panes back with `start_suspended true`, and a command that has
+  not run has nothing in `/proc` for `get_pane_cwd` to read - so every row is
+  unplaceable, and a restore that skips directories already open skipped none of
+  them and rebuilt the row already on screen (nine panes where six were wanted).
+  Rows whose directory cannot be read count against the remembered ones anyway.
 - **A session's own sidebar overwrites the thing it should restore.** The rows a
   session has are written to `~/.cache/agenttij/order` whenever they change — so
   after a restart the sidebar in `work` replaces `work`'s four remembered rows
