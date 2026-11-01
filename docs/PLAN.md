@@ -95,14 +95,17 @@ Claude Code hook ──> /tmp/agenttij/<session>.<pane>.state
               get_session_list(), 1/5 ticks — which sessions are alive
 ```
 
-A state line is `<status> <session> <pane> <unix-seconds> <cwd> <root> <host>`,
-tab separated. `<root>` is the project as the machine sees it: the name in the
-nearest `.agenttij` above the working directory, else the git root, else the
-directory itself. The last two arrived after the first five and are optional, since
-a hook older than the plugin is the normal state of an upgrade: no `root` means
-the project is the working directory, no `host` means this machine. `root` is
-resolved by the hook — one `git rev-parse` when an agent reports, rather than one
-per row per tick in a plugin that redraws every second.
+A state line is `<status> <session> <pane> <unix-seconds> <cwd> <root> <> <changes>`, tab separated.
+`<root>` is the project as the machine sees it: the name in the nearest `.agenttij` above the working directory, else the git root, else the directory itself.
+`<changes>` is `+<added>-<removed>`, what the agent left uncommitted when it finished, new files included; the hook counts it against a copy of the index, only on `done`.
+The seventh field is left empty: it was the host, appended by the plugin to lines read over ssh, and a plugin from before would take anything there for one.
+Hosts are set after parsing now.
+Everything after the first five is optional, since a hook older than the plugin is the normal state of an upgrade: no `root` means the project is the working directory.
+Both are resolved by the hook, once when an agent reports, rather than once per row per tick in a plugin that redraws every second.
+
+Beside each state file the sidebar of that row's session keeps `<session>.<pane>.seen`: when the row was last on screen with someone looking.
+A finished row reported after its last look is unread.
+The scan reads both with the same `cat`, so a look in one session reaches every other sidebar on its next tick.
 
 Files, not plugin memory or pipes, because a sidebar in a session that started
 *later* must still see every running agent, and a reload must lose nothing.

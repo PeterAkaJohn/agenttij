@@ -6,6 +6,9 @@ use crate::agent::{Agent, Kind, Status};
 /// not fit, and half a word is worse than none.
 pub const RAIL_MAX_COLS: usize = 8;
 
+/// How much of its name a row keeps before what it changed is dropped instead.
+const NAME_BEFORE_CHANGES: usize = 8;
+
 /// One sidebar row: `<glyph> <label>       <age>`, exactly `width` wide so the
 /// age column lines up down the list.
 ///
@@ -88,14 +91,29 @@ pub fn row_parts(agent: &Agent, now: u64, width: usize, current_session: &str) -
         _ => " ".repeat(agent.depth),
     };
 
-    // glyph, its space, the elsewhere marker, the count, the gap before the age,
-    // and the age itself.
-    let reserved = 3
-        + elsewhere.chars().count()
-        + owned.chars().count()
-        + usize::from(!owned.is_empty() && !age.is_empty())
-        + age.chars().count()
-        + indent.chars().count();
+    // Everything right of the name, one space apart.
+    let right_of = |parts: &[&str]| {
+        parts
+            .iter()
+            .filter(|part| !part.is_empty())
+            .copied()
+            .collect::<Vec<_>>()
+            .join(" ")
+    };
+    // The glyph, its space and the space before the right-hand side, the marker
+    // and the indent: what every row spends before its name.
+    let fixed = 3 + elsewhere.chars().count() + indent.chars().count();
+    let mut right = right_of(&[&owned, &age]);
+    // What the agent changed is the first thing to go: a name you can read
+    // matters more than a number you can only read beside one.
+    if let Some((added, removed)) = agent.changes.filter(|_| !project) {
+        let with = right_of(&[&changes(added, removed), &owned, &age]);
+        let room = width.saturating_sub(fixed + with.chars().count());
+        if room >= agent.label().chars().count().clamp(1, NAME_BEFORE_CHANGES) {
+            right = with;
+        }
+    }
+    let reserved = fixed + right.chars().count();
     if width <= reserved {
         let rest = truncate(&format!(" {elsewhere}{}", agent.label()), width - 1);
         return (glyph.to_string(), rest);
@@ -104,16 +122,21 @@ pub fn row_parts(agent: &Agent, now: u64, width: usize, current_session: &str) -
     let label_width = width - reserved;
     let label = truncate(agent.label(), label_width);
     let gap = " ".repeat(label_width - label.chars().count());
-
-    let between = if owned.is_empty() || age.is_empty() {
-        ""
-    } else {
-        " "
-    };
     (
         glyph.to_string(),
-        format!(" {indent}{elsewhere}{label}{gap} {owned}{between}{age}"),
+        format!(" {indent}{elsewhere}{label}{gap} {right}"),
     )
+}
+
+/// `+120−30`, with thousands shortened so a big change cannot push the name off
+/// the row.
+pub fn changes(added: u32, removed: u32) -> String {
+    let short = |lines: u32| match lines {
+        0..=999 => lines.to_string(),
+        1_000..=9_999 => format!("{}.{}k", lines / 1_000, lines % 1_000 / 100),
+        _ => format!("{}k", lines / 1_000),
+    };
+    format!("+{}−{}", short(added), short(removed))
 }
 
 /// What a pane in a row calls itself: what the agent is doing, the row's name,
@@ -125,13 +148,25 @@ pub fn row_parts(agent: &Agent, now: u64, width: usize, current_session: &str) -
 /// so using it would repaint the agent's own output.
 ///
 /// A row of one still gets its status; it just has no position worth showing.
-pub fn pane_title(row: &str, status: Status, index: usize, count: usize) -> String {
+/// What the agent changed goes on the end, for reviewing it from the frame.
+pub fn pane_title(
+    row: &str,
+    status: Status,
+    index: usize,
+    count: usize,
+    changed: Option<(u32, u32)>,
+) -> String {
     let glyph = status.glyph();
-    if count > 1 {
+    let mut title = if count > 1 {
         format!("{glyph} {row} {}/{count}", index + 1)
     } else {
         format!("{glyph} {row}")
+    };
+    if let Some((added, removed)) = changed {
+        title.push(' ');
+        title.push_str(&changes(added, removed));
     }
+    title
 }
 
 /// One line for a status bar: how many agents are in each state, then whoever
@@ -283,6 +318,11 @@ mod tests {
                 panes: 4,
                 ..agent(Status::Done, 900, "/home/pp/with-companions")
             },
+            Agent {
+                panes: 3,
+                changes: Some((12_345, 678)),
+                ..agent(Status::Unread, 900, "/home/pp/changed")
+            },
         ];
 
         for agent in &cases {
@@ -335,14 +375,38 @@ mod tests {
 
     #[test]
     fn a_pane_says_where_it_sits_in_its_row() {
-        assert_eq!(pane_title("api", Status::Idle, 0, 3), "○ api 1/3");
-        assert_eq!(pane_title("api", Status::Idle, 2, 3), "○ api 3/3");
+        assert_eq!(pane_title("api", Status::Idle, 0, 3, None), "○ api 1/3");
+        assert_eq!(pane_title("api", Status::Idle, 2, 3, None), "○ api 3/3");
         // A row of one is just a pane; the position would be noise.
         assert_eq!(
-            pane_title("api", Status::Idle, 0, 1),
+            pane_title("api", Status::Idle, 0, 1, None),
             "○ api",
             "no position in a row of one"
         );
+        assert_eq!(
+            pane_title("api", Status::Done, 0, 3, Some((120, 30))),
+            "✓ api 1/3 +120−30"
+        );
+    }
+
+    #[test]
+    fn a_finished_row_says_what_it_changed_while_its_name_still_fits() {
+        let mut agent = agent(Status::Done, 900, "/home/pp/api");
+        agent.changes = Some((120, 30));
+        assert_eq!(row(&agent, 1_020, 24, "sess"), "✓ api         +120−30 2m");
+
+        // Narrower, the number goes before the name does.
+        let mut long = agent.clone();
+        long.cwd = "/home/pp/agenttij-feature".into();
+        assert!(row(&long, 1_020, 30, "sess").contains("+120−30"));
+        assert_eq!(row(&long, 1_020, 20, "sess"), "✓ agenttij-featu… 2m");
+        assert_eq!(row(&agent, 1_020, 12, "sess"), "✓ api     2m");
+    }
+
+    #[test]
+    fn big_changes_stay_short() {
+        assert_eq!(changes(7, 0), "+7−0");
+        assert_eq!(changes(1_234, 56_789), "+1.2k−56k");
     }
 
     #[test]

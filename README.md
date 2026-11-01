@@ -23,6 +23,11 @@ it, then turns `✓`: work you have not read yet, told apart from work you have.
 One that finishes while you watch it is read as it finishes; one on screen in a
 session or tab nobody has open is not.
 
+A finished row also says what its agent left uncommitted, `+120−30`, new files
+included — on the row while there is room for it next to the name, and on the
+pane's frame. It is counted once, when the agent finishes, so it costs the
+sidebar nothing.
+
 The sidebar is an ordinary pane: focus it with your usual pane navigation (or
 `Alt s`), then. In the first column, `›` is the cursor and `▪` is the row on
 screen — the same thing until you open a pane somewhere else.

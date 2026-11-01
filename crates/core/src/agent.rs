@@ -97,6 +97,11 @@ pub struct Agent {
     /// The machine the agent runs on. Empty is this one; state read over ssh is
     /// tagged with the host it came from as it is read.
     pub host: String,
+    /// Lines added and removed in the work tree and not committed, new files
+    /// included, as the hook counted them when the agent last finished: what
+    /// there is to review. `None` outside a repository, with nothing changed, or
+    /// while the agent is still working.
+    pub changes: Option<(u32, u32)>,
     /// Short name from the pane's title, for entries that have no cwd to name
     /// them — a plain pane, or an agent found by process name.
     pub title: String,

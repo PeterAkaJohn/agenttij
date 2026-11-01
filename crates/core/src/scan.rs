@@ -775,12 +775,16 @@ pub fn parse(stdout: &[u8]) -> Option<Scan> {
     })
 }
 
-/// `<status>\t<session>\t<pane>\t<unix-seconds>\t<cwd>[\t<root>[\t<host>]]`
+/// `<status>\t<session>\t<pane>\t<unix-seconds>\t<cwd>[\t<root>[\t\t<changes>]]`
 ///
-/// The last two are newer than the first five, and a hook older than the plugin
+/// The fields after the first five are newer, and a hook older than the plugin
 /// is the normal state of an upgrade — so a line without them is not a broken
-/// line: the project falls back to the working directory, and no host means this
-/// machine.
+/// line: the project falls back to the working directory.
+///
+/// The seventh was the host, appended to each line read over ssh. Hosts are set
+/// after parsing now, since an appended field lands wherever the line happens to
+/// end; the hook leaves the seventh empty, so a plugin from before reads no host
+/// rather than taking the changes for one.
 fn parse_agent(line: &str) -> Option<Agent> {
     let mut fields = line.split('\t');
     let status = Status::parse(fields.next()?.trim())?;
@@ -789,7 +793,7 @@ fn parse_agent(line: &str) -> Option<Agent> {
     let reported_at = fields.next()?.trim().parse().ok()?;
     let cwd = fields.next().unwrap_or_default().trim();
     let root = fields.next().unwrap_or_default().trim();
-    let host = fields.next().unwrap_or_default().trim();
+    let changes = fields.nth(1).and_then(parse_changes);
 
     if session.is_empty() {
         return None;
@@ -802,10 +806,17 @@ fn parse_agent(line: &str) -> Option<Agent> {
         reported_at,
         cwd: cwd.to_owned(),
         root: if root.is_empty() { cwd } else { root }.to_owned(),
-        host: host.to_owned(),
+        changes,
         panes: 1,
         ..Agent::default()
     })
+}
+
+/// `+<added>-<removed>`, as the hook writes it. Nothing changed is no changes.
+fn parse_changes(raw: &str) -> Option<(u32, u32)> {
+    let (added, removed) = raw.trim().strip_prefix('+')?.split_once('-')?;
+    let changes = (added.parse().ok()?, removed.parse().ok()?);
+    (changes != (0, 0)).then_some(changes)
 }
 
 #[cfg(test)]
@@ -1018,12 +1029,33 @@ mod tests {
     }
 
     #[test]
-    fn a_project_and_a_host_are_read_when_they_are_there() {
-        let out = b"1754400000\nrunning\tmain\t3\t1754399990\t/home/pp/api/crates/core\t/home/pp/api\tdev1\n";
+    fn a_project_and_what_changed_are_read_when_they_are_there() {
+        let out = b"1754400000\ndone\tmain\t3\t1754399990\t/home/pp/api/crates/core\t/home/pp/api\t\t+120-30\n";
         let agent = &parse(out).expect("parses").agents[0];
 
         assert_eq!(agent.root, "/home/pp/api");
-        assert_eq!(agent.host, "dev1");
+        assert_eq!(agent.changes, Some((120, 30)));
+        assert_eq!(
+            agent.host, "",
+            "a host is the reader's to set, not the line's"
+        );
+
+        // Nothing changed, or something unreadable, is no changes.
+        for raw in ["+0-0", "", "12", "+x-1", "+1-"] {
+            let line = format!("1754400000\ndone\tmain\t3\t1\t/a\t/a\t\t{raw}\n");
+            assert_eq!(
+                parse(line.as_bytes()).expect("parses").agents[0].changes,
+                None,
+                "{raw:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_host_appended_by_an_older_plugin_is_not_read_as_anything() {
+        let out = b"1754400000\nrunning\tmain\t3\t1754399990\t/home/pp/api\t/home/pp/api\tdev1\n";
+        let agent = &parse(out).expect("parses").agents[0];
+        assert_eq!((agent.host.as_str(), agent.changes), ("", None));
     }
 
     #[test]

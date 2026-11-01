@@ -39,9 +39,31 @@ while [ -n "$p" ]; do
 done
 [ -n "$r" ] || r=$(git -C "$w" rev-parse --show-toplevel 2>/dev/null) || r="$w"
 
+# What the agent left uncommitted, counted once when it finishes: the one moment
+# the number means "this is what there is to review". New files count too - they
+# are added, intent-to-add only, to a copy of the index, so the real one is never
+# touched. Outside a repository, or with git before 2.31 (`--path-format`), there
+# is no number.
+c=""
+if [ "$s" = done ] &&
+    i=$(git -C "$w" rev-parse --path-format=absolute --git-path index 2>/dev/null) &&
+    t=$(mktemp 2>/dev/null); then
+    cp "$i" "$t" 2>/dev/null
+    GIT_INDEX_FILE=$t git -C "$w" add -N :/ 2>/dev/null
+    c=$(GIT_INDEX_FILE=$t git -C "$w" diff HEAD --shortstat 2>/dev/null | awk '
+        { for (n = 2; n <= NF; n++) {
+            if ($n ~ /^insertion/) a = $(n - 1)
+            if ($n ~ /^deletion/) e = $(n - 1)
+        } }
+        END { if (a + e) printf "+%d-%d", a, e }')
+    rm -f "$t"
+fi
+
+# The seventh field is left empty: it was the host, and a plugin from before
+# would take anything there for one.
 mkdir -p "$d" 2>/dev/null || exit 0
-printf '%s\t%s\t%s\t%s\t%s\t%s\n' \
+printf '%s\t%s\t%s\t%s\t%s\t%s\t\t%s\n' \
     "$s" "$ZELLIJ_SESSION_NAME" "$ZELLIJ_PANE_ID" "$(date +%s)" \
-    "$w" "$r" >"$f" 2>/dev/null
+    "$w" "$r" "$c" >"$f" 2>/dev/null
 
 exit 0

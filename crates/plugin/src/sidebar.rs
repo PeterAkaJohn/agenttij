@@ -710,18 +710,15 @@ impl Sidebar {
         }
 
         let text = String::from_utf8_lossy(stdout);
-        // The host is stamped on as it is read: the file on that machine has no
-        // idea it is being looked at from here.
-        let tagged: String = text
-            .lines()
-            .filter(|line| !line.trim().is_empty())
-            .map(|line| format!("{line}\t{host}\n"))
-            .collect();
-
-        let scanned = scan::parse(&format!("0\n{tagged}").into_bytes());
-        let (agents, rows, members) = scanned
+        let scanned = scan::parse(&format!("0\n{text}").into_bytes());
+        let (mut agents, rows, members) = scanned
             .map(|scan| (scan.agents, scan.rows, scan.members))
             .unwrap_or_default();
+        // The host is set as it is read: the file on that machine has no idea it
+        // is being looked at from here.
+        for agent in &mut agents {
+            agent.host = host.to_owned();
+        }
         self.remote.insert(host.to_owned(), agents);
         self.remote_rows.insert(host.to_owned(), (rows, members));
         self.rebuild();
@@ -2379,7 +2376,7 @@ impl Sidebar {
         }
         let status = row.status;
 
-        let name = format::pane_title(&label, status, index, members.len());
+        let name = format::pane_title(&label, status, index, members.len(), row.changes);
         if self.positions.get(&visible) == Some(&name) {
             return;
         }
