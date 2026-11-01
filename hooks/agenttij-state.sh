@@ -37,7 +37,16 @@ while [ -n "$p" ]; do
     fi
     p=${p%/*}
 done
-[ -n "$r" ] || r=$(git -C "$w" rev-parse --show-toplevel 2>/dev/null) || r="$w"
+# The repository a worktree belongs to, not the worktree: its common git
+# directory is the main checkout's `.git`. A submodule's is not, so it keeps its
+# own top level. The same answer as the plugin's, which resolves plain panes.
+if [ -z "$r" ]; then
+    c=$(git -C "$w" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)
+    case $c in
+    */.git) r=${c%/.git} ;;
+    *) r=$(git -C "$w" rev-parse --show-toplevel 2>/dev/null) || r="$w" ;;
+    esac
+fi
 
 # What the agent left uncommitted, counted once when it finishes: the one moment
 # the number means "this is what there is to review". New files count too - they

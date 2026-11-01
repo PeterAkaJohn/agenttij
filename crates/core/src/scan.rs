@@ -610,6 +610,10 @@ pub fn attach_command(host: &str, session: &str) -> [String; 5] {
 pub const CONTEXT_KEY: &str = "agenttij";
 pub const CONTEXT_ORDER: &str = "order";
 pub const CONTEXT_PROJECT: &str = "project";
+/// A worktree made for a new row: its path on stdout, or why not on stderr.
+pub const CONTEXT_WORKTREE: &str = "worktree";
+/// A worktree let go of when its row closed, or kept because it holds work.
+pub const CONTEXT_WORKTREE_GONE: &str = "worktree-gone";
 pub const CONTEXT_HOST: &str = "host";
 /// Which pane a project answer is about.
 pub const CONTEXT_PANE: &str = "pane";
@@ -647,7 +651,54 @@ while [ -n "$p" ]; do
     fi
     p=${p%/*}
 done
+# The repository a worktree belongs to, not the worktree: its common git
+# directory is the main checkout's `.git`. A submodule's is not a `.git`, so it
+# keeps its own top level.
+c=$(git -C "$d" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) &&
+    [ "${c%/.git}" != "$c" ] && { printf '%s' "${c%/.git}"; exit 0; }
 git -C "$d" rev-parse --show-toplevel 2>/dev/null || printf '%s' "$d""#;
+
+/// Makes a worktree beside the repository `$0` is in, branched from where `$0`
+/// is: `<repo>.worktrees/<repo>-<n>` on branch `<repo>-<n>`, the first number
+/// neither a directory nor a branch has taken. Prints its path.
+///
+/// Beside the repository rather than in it, so nothing has to be ignored; and
+/// named after it, because a row is named after its directory.
+const WORKTREE_SCRIPT: &str = r#"c=$(git -C "$0" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) ||
+    { echo "not in a git repository" >&2; exit 1; }
+root=${c%/.git}
+[ "$root" != "$c" ] || root=$(git -C "$0" rev-parse --show-toplevel) || exit 1
+base=${root##*/}
+n=1
+while [ -e "$root.worktrees/$base-$n" ] ||
+    git -C "$root" show-ref -q --verify "refs/heads/$base-$n"; do
+    n=$((n + 1))
+done
+git -C "$0" worktree add -q -b "$base-$n" "$root.worktrees/$base-$n" HEAD >/dev/null 2>&1 ||
+    { echo "git worktree add failed" >&2; exit 1; }
+printf '%s' "$root.worktrees/$base-$n""#;
+
+pub fn worktree_command(dir: &str) -> [String; 4] {
+    [
+        "sh".to_owned(),
+        "-c".to_owned(),
+        WORKTREE_SCRIPT.to_owned(),
+        dir.to_owned(),
+    ]
+}
+
+/// Lets a worktree go - without `--force`, so git refuses one holding anything
+/// uncommitted, and that work stays where it is. The branch always stays.
+pub fn worktree_gone_command(repo: &str, worktree: &str) -> [String; 6] {
+    [
+        "git".to_owned(),
+        "-C".to_owned(),
+        repo.to_owned(),
+        "worktree".to_owned(),
+        "remove".to_owned(),
+        worktree.to_owned(),
+    ]
+}
 
 pub fn project_command(cwd: &str) -> [String; 4] {
     [
@@ -1140,6 +1191,49 @@ mod tests {
         assert_eq!(scan.seen.get(&("main".to_owned(), 3)), Some(&1_754_400_123));
         assert!(scan.agents.is_empty(), "a look is not an agent");
         assert!(SCAN_SCRIPT.contains("*.seen"), "and the scan reads them");
+    }
+
+    #[test]
+    fn a_worktree_is_made_beside_its_repository_and_filed_under_it() {
+        let run = |command: &[String], at: &std::path::Path| {
+            let out = std::process::Command::new(&command[0])
+                .args(&command[1..])
+                .current_dir(at)
+                .output()
+                .expect("runs");
+            (out.status.success(), String::from_utf8_lossy(&out.stdout).into_owned())
+        };
+        let git = |args: &str, at: &std::path::Path| {
+            let words: Vec<String> = args.split(' ').map(str::to_owned).collect();
+            run(&[vec!["git".to_owned()], words].concat(), at).0
+        };
+        let base = std::env::temp_dir().join(format!("agenttij-wt-{}", std::process::id()));
+        let repo = base.join("api");
+        std::fs::create_dir_all(repo.join("crates")).expect("made");
+        std::fs::write(repo.join("f"), "a\n").expect("written");
+        std::fs::write(repo.join("crates/g"), "b\n").expect("written");
+        assert!(git("init -q", &repo) && git("add -A", &repo));
+        assert!(git("-c user.email=t@t -c user.name=t commit -qm one", &repo));
+
+        let crates = repo.join("crates").to_string_lossy().into_owned();
+        let (made, first) = run(&worktree_command(&crates), &base);
+        let (_, second) = run(&worktree_command(&crates), &base);
+        let (_, project) = run(&project_command(&format!("{first}/crates")), &base);
+        let (outside, _) = run(&worktree_command(&base.to_string_lossy()), &base);
+        let listed = std::process::Command::new("git")
+            .args(["-C", &repo.to_string_lossy(), "worktree", "list"])
+            .output()
+            .map(|out| String::from_utf8_lossy(&out.stdout).into_owned())
+            .unwrap_or_default();
+        std::fs::remove_dir_all(&base).ok();
+
+        let repo = repo.to_string_lossy();
+        assert!(made);
+        assert_eq!(first, format!("{repo}.worktrees/api-1"));
+        assert_eq!(second, format!("{repo}.worktrees/api-2"), "the next free number");
+        assert_eq!(project, repo, "a worktree files under its repository");
+        assert!(listed.contains("[api-1]") && listed.contains("[api-2]"), "{listed}");
+        assert!(!outside, "nothing to branch from outside a repository");
     }
 
     #[test]

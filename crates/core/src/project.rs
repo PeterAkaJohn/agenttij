@@ -132,6 +132,20 @@ fn header(project: &str, rows: &[Agent], folded: bool, names: &BTreeMap<String, 
     }
 }
 
+/// The worktree a directory is in, if it is one this sidebar made: the
+/// repository and the worktree, from `<repo>.worktrees/<name>/...`.
+///
+/// By where it is rather than by asking git, because the answer decides what
+/// closing a row may remove - and a worktree someone made by hand, wherever
+/// they put it, is theirs to remove.
+pub fn worktree_of(dir: &str) -> Option<(&str, &str)> {
+    let at = dir.find(".worktrees/")?;
+    let repo = &dir[..at];
+    let name_at = at + ".worktrees/".len();
+    let end = dir[name_at..].find('/').map_or(dir.len(), |slash| name_at + slash);
+    (repo.starts_with('/') && end > name_at).then_some((repo, &dir[..end]))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -285,5 +299,21 @@ mod tests {
             "other",
             "a project with no directory still needs a name"
         );
+    }
+
+    #[test]
+    fn a_worktree_this_sidebar_made_is_known_by_where_it_is() {
+        assert_eq!(
+            worktree_of("/home/pp/api.worktrees/api-2"),
+            Some(("/home/pp/api", "/home/pp/api.worktrees/api-2"))
+        );
+        assert_eq!(
+            worktree_of("/home/pp/api.worktrees/api-2/crates/core"),
+            Some(("/home/pp/api", "/home/pp/api.worktrees/api-2")),
+            "from anywhere inside it"
+        );
+        assert_eq!(worktree_of("/home/pp/api"), None);
+        assert_eq!(worktree_of("/home/pp/api.worktrees/"), None, "no name, no worktree");
+        assert_eq!(worktree_of("relative.worktrees/x"), None);
     }
 }
