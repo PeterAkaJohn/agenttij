@@ -1,0 +1,29 @@
+# Finished work stays unread until its row has been on screen with someone
+# looking - and a row that finishes while you watch it is read as it finishes.
+start layouts/agenttij-workspace.kdl --group ';;'
+keys '\033g'
+wait visible=terminal_3
+
+# Row 1 finishes while parked.
+report terminal_0 done
+sleep 2.5
+expect read.terminal_0=no
+keys '\033b'
+wait visible=terminal_0 read.terminal_0=yes
+
+# Finishing in front of you is reading it.
+sleep 1.1
+report terminal_0 running
+sleep 1.1
+report terminal_0 done
+wait read.terminal_0=yes --timeout 4
+
+# On screen in a tab nobody has open is not being looked at.
+keys '\x14' n
+wait terminals=7
+sleep 1.1
+report terminal_0 done
+sleep 2.5
+expect read.terminal_0=no
+keys '\x14' '\t' '\x14'
+wait read.terminal_0=yes

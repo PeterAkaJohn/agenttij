@@ -266,6 +266,13 @@ pub struct Sidebar {
     current_session: String,
     /// Host clock from the last scan.
     now: u64,
+    /// When each row was last on screen with someone looking, by session and
+    /// primary pane: what tells finished work you have read from work you have
+    /// not. Every sidebar's looks, from the files the scan reads.
+    seen: BTreeMap<(String, u32), u64>,
+    /// Whether anyone is looking at this tab: a client attached, with this tab
+    /// open. A row on screen in a session nobody is attached to is not read.
+    watched: bool,
     /// The highlighted agent, tracked by pane rather than by index so the
     /// cursor sticks to an agent while the list re-sorts underneath it.
     selected: Option<Selection>,
@@ -340,6 +347,8 @@ impl ZellijPlugin for Sidebar {
                 // forever. The scan tick keeps ages fresh.
                 let panes = snapshot::panes(&sessions);
                 let moved = panes != self.panes;
+                // Before the early return below: attaching moves no pane.
+                self.watched = snapshot::watched(&sessions, self.plugin_id);
                 if moved {
                     self.previous_panes = std::mem::replace(&mut self.panes, panes);
                     if let Some(name) = snapshot::current_session(&sessions) {
@@ -774,6 +783,21 @@ impl Sidebar {
 
         self.now = result.now;
         self.previous_session = result.from.filter(|from| *from != self.current_session);
+        // The later of the two: a look written a moment ago can be missing from
+        // a scan that started before it landed, and must not come back unread.
+        // Kept only for rows something still reports on, so it stays small.
+        let mut seen = result.seen;
+        for (row, at) in std::mem::take(&mut self.seen) {
+            let reported = result
+                .agents
+                .iter()
+                .any(|agent| agent.key() == (row.0.as_str(), row.1));
+            if reported {
+                let known = seen.entry(row).or_default();
+                *known = (*known).max(at);
+            }
+        }
+        self.seen = seen;
 
         let before = std::mem::replace(&mut self.reported, result.agents);
         if self.config.jump {
@@ -878,6 +902,8 @@ impl Sidebar {
         if self.config.solo {
             agents = self.group_rows(agents);
         }
+        agent::mark_unread(&mut agents, &self.seen);
+        self.read_what_is_watched(&mut agents);
 
         // A row on another machine knows how many panes it has, because the
         // controller there said so. Without this it draws as a lone pane.
@@ -941,6 +967,41 @@ impl Sidebar {
     /// `· api 1/3` to `· api`, and the sidebar's cache kept it that way.
     fn manages_rows(&self) -> bool {
         !(self.config.jump || self.config.bar || self.config.help || self.config.peek.is_some())
+    }
+
+    /// Marks the rows on screen as read, if someone is looking at them.
+    ///
+    /// On every rebuild rather than when a row is shown: a row that finishes
+    /// while you watch it was read as it finished, and should never show as
+    /// unread at all. Only the sidebar owning the rows writes, and only rows of
+    /// its own session - a look elsewhere is that session's sidebar's business.
+    fn read_what_is_watched(&mut self, agents: &mut [Agent]) {
+        if !self.watched || !self.manages_rows() {
+            return;
+        }
+        let on_screen: BTreeSet<u32> = self
+            .panes
+            .iter()
+            .filter(|pane| {
+                pane.session == self.current_session
+                    && Some(pane.tab) == self.tab
+                    && !pane.suppressed
+                    && !pane.floating
+            })
+            .map(|pane| self.row_in(Some(pane.pane)).unwrap_or(pane.pane))
+            .collect();
+        for agent in agents.iter_mut().filter(|agent| {
+            agent.status == Status::Unread
+                && agent.session == self.current_session
+                && on_screen.contains(&agent.pane)
+        }) {
+            agent.status = Status::Done;
+            self.seen
+                .insert((agent.session.clone(), agent.pane), self.now);
+            let command = scan::seen_command(&agent.session, agent.pane, self.now);
+            let words: Vec<&str> = command.iter().map(String::as_str).collect();
+            run_command(&words, BTreeMap::new());
+        }
     }
 
     /// Keeps the cursor on a real row after the list changes underneath it.

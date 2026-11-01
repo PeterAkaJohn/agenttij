@@ -39,6 +39,24 @@ pub fn panes(sessions: &[SessionInfo]) -> Vec<PaneSnapshot> {
     panes
 }
 
+/// Whether anyone is looking at our tab: a client attached to this session, with
+/// this tab the one open.
+pub fn watched(sessions: &[SessionInfo], plugin_id: u32) -> bool {
+    let Some(tab) = own_tab(sessions, plugin_id) else {
+        return false;
+    };
+    sessions
+        .iter()
+        .find(|session| session.is_current_session)
+        .is_some_and(|session| {
+            session.connected_clients > 0
+                && session
+                    .tabs
+                    .iter()
+                    .any(|info| info.position == tab && info.active)
+        })
+}
+
 /// The tab our own pane sits in.
 ///
 /// Taken from the manifest we are handed rather than `get_focused_pane_info`,

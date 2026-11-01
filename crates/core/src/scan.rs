@@ -10,6 +10,7 @@
 //! recover from on its own. A `sh` fork per tick always works.
 
 use crate::agent::{Agent, Status};
+use std::collections::BTreeMap;
 
 /// Host directory the hook writes to. Kept in sync with [`SCAN_SCRIPT`] and
 /// `hooks/agenttij-state.sh` (see `scan_script_uses_the_state_dir`).
@@ -30,10 +31,37 @@ pub const STATE_DIR: &str = "/tmp/agenttij";
 /// directory is not created here: the hook makes it when it has something to
 /// write, and a `mkdir` per tick is a fork per tick for nothing.
 const SCAN_SCRIPT: &str = "date +%s; cat /tmp/agenttij/from 2>/dev/null; \
-     cat /tmp/agenttij/open-at 2>/dev/null; cat /tmp/agenttij/*.state 2>/dev/null; true";
+     cat /tmp/agenttij/open-at 2>/dev/null; \
+     cat /tmp/agenttij/*.state /tmp/agenttij/*.seen 2>/dev/null; true";
 
 /// Marks the session you jumped away from, in the scan output.
 const FROM_PREFIX: &str = "from=";
+
+/// When a row was last on screen with someone looking:
+/// `seen=<session>\t<pane>\t<unix>`, one file per row beside its state file.
+///
+/// Beside the state rather than in the arrangement, because the arrangement is
+/// read once at load and a look in one session has to reach the sidebars of all
+/// the others; the scan reads this directory every tick anyway. A file per row,
+/// written only by the sidebar of the session the row is in, so no two writers
+/// share one - and never the state file itself, which is the hook's.
+const SEEN_PREFIX: &str = "seen=";
+
+/// Records that `pane`, a row of `session`, was looked at `at`.
+pub fn seen_command(session: &str, pane: u32, at: u64) -> [String; 7] {
+    [
+        "sh".to_owned(),
+        "-c".to_owned(),
+        format!(
+            "mkdir -p {STATE_DIR} && printf '{SEEN_PREFIX}%s\\t%s\\t%s\\n' \"$0\" \"$1\" \"$2\" \
+             > \"{STATE_DIR}/$3.$1.seen\""
+        ),
+        session.to_owned(),
+        pane.to_string(),
+        at.to_string(),
+        session.replace('/', "_"),
+    ]
+}
 
 /// A directory picker asking for a row: `at=<session>\t<unix>\t<path>`.
 ///
@@ -687,6 +715,8 @@ pub struct Scan {
     pub rows: Vec<Row>,
     /// The panes those rows hold.
     pub members: Vec<Member>,
+    /// When each row was last looked at, by session and primary pane.
+    pub seen: BTreeMap<(String, u32), u64>,
 }
 
 /// Parses scan output. Unreadable lines are skipped rather than failing the
@@ -703,8 +733,18 @@ pub fn parse(stdout: &[u8]) -> Option<Scan> {
     let mut agents = Vec::new();
     let mut rows = Vec::new();
     let mut members = Vec::new();
+    let mut seen = BTreeMap::new();
     for line in lines {
-        if let Some(row) = line.strip_prefix(ROW_PREFIX) {
+        if let Some(row) = line.strip_prefix(SEEN_PREFIX) {
+            let mut fields = row.split('\t').map(str::trim);
+            if let (Some(session), Some(Ok(pane)), Some(Ok(at))) = (
+                fields.next().filter(|session| !session.is_empty()),
+                fields.next().map(str::parse),
+                fields.next().map(str::parse),
+            ) {
+                seen.insert((session.to_owned(), pane), at);
+            }
+        } else if let Some(row) = line.strip_prefix(ROW_PREFIX) {
             rows.extend(parse_row(row));
         } else if let Some(member) = line.strip_prefix(MEMBER_PREFIX) {
             members.extend(parse_member(member));
@@ -731,6 +771,7 @@ pub fn parse(stdout: &[u8]) -> Option<Scan> {
         restoring,
         rows,
         members,
+        seen,
     })
 }
 
@@ -1046,6 +1087,27 @@ mod tests {
         assert_eq!(scan.agents[0].status, Status::Running);
         assert_eq!(scan.agents[0].key(), ("main", 3));
         assert_eq!(scan.agents[0].label(), "api");
+    }
+
+    #[test]
+    fn a_look_written_down_is_read_back_by_the_scan() {
+        // The real command, pointed at a directory of its own.
+        let dir = std::env::temp_dir().join(format!("agenttij-seen-{}", std::process::id()));
+        let mut command = seen_command("main", 3, 1_754_400_123);
+        command[2] = command[2].replace(STATE_DIR, &dir.to_string_lossy());
+        let ran = std::process::Command::new(&command[0])
+            .args(&command[1..])
+            .status()
+            .expect("sh runs");
+        let written = std::fs::read_to_string(dir.join("main.3.seen"));
+        std::fs::remove_dir_all(&dir).ok();
+        assert!(ran.success());
+
+        let scan =
+            parse(format!("1754400200\n{}", written.expect("written")).as_bytes()).expect("parses");
+        assert_eq!(scan.seen.get(&("main".to_owned(), 3)), Some(&1_754_400_123));
+        assert!(scan.agents.is_empty(), "a look is not an agent");
+        assert!(SCAN_SCRIPT.contains("*.seen"), "and the scan reads them");
     }
 
     #[test]

@@ -14,7 +14,7 @@ cat >/dev/null 2>&1 || true # drain hook stdin so the agent never blocks on us
 d=/tmp/agenttij
 f="$d/$ZELLIJ_SESSION_NAME.$ZELLIJ_PANE_ID.state"
 
-[ "$s" = gone ] && { rm -f "$f"; exit 0; }
+[ "$s" = gone ] && { rm -f "$f" "${f%.state}.seen"; exit 0; }
 
 w="${CLAUDE_PROJECT_DIR:-$PWD}"
 

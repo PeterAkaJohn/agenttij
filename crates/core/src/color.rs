@@ -9,8 +9,9 @@ use crate::agent::Status;
 use std::collections::BTreeMap;
 
 /// Obvious defaults: green finished, yellow waiting on you, blue working.
-const DEFAULTS: [(Status, &str); 6] = [
+const DEFAULTS: [(Status, &str); 7] = [
     (Status::NeedsInput, "yellow"),
+    (Status::Unread, "bright-green"),
     (Status::Running, "blue"),
     (Status::Done, "green"),
     (Status::Idle, "bright-black"),
@@ -111,6 +112,7 @@ impl Colors {
 fn status_named(name: &str) -> Option<Status> {
     match name.to_lowercase().as_str() {
         "needs-input" => Some(Status::NeedsInput),
+        "unread" => Some(Status::Unread),
         "running" => Some(Status::Running),
         "done" => Some(Status::Done),
         "idle" => Some(Status::Idle),

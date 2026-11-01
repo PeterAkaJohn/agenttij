@@ -1,5 +1,7 @@
 //! The unit the sidebar tracks: one coding agent, in one pane, in one session.
 
+use std::collections::BTreeMap;
+
 /// What an agent is doing.
 ///
 /// The variant order is the sidebar's sort order, deliberately: whatever wants
@@ -8,6 +10,10 @@
 pub enum Status {
     /// Blocked on you — a permission prompt, or a question.
     NeedsInput,
+    /// Finished its turn since anyone last had it on screen: work waiting to be
+    /// read. Never written by the hook - it is `Done` and what the sidebar saw
+    /// (`mark_unread`).
+    Unread,
     /// Working.
     Running,
     /// Finished its turn and is waiting for the next instruction.
@@ -39,7 +45,7 @@ impl Status {
         match self {
             Self::NeedsInput => "needs-input",
             Self::Running => "running",
-            Self::Done => "done",
+            Self::Unread | Self::Done => "done",
             Self::Idle | Self::Unknown | Self::Pane => "idle",
         }
     }
@@ -47,22 +53,13 @@ impl Status {
     pub fn glyph(self) -> char {
         match self {
             Self::NeedsInput => '⚠',
+            // The half circle filled in: finished, and not looked at yet.
+            Self::Unread => '●',
             Self::Running => '◐',
             Self::Done => '✓',
             Self::Idle => '○',
             Self::Unknown => '?',
             Self::Pane => '·',
-        }
-    }
-
-    /// Theme colour slot for this status. Zellij maps these onto the user's
-    /// theme, so the sidebar stays legible in light and dark.
-    pub fn color_slot(self) -> usize {
-        match self {
-            Self::NeedsInput => 3,
-            Self::Running => 2,
-            Self::Done => 1,
-            Self::Idle | Self::Unknown | Self::Pane => 0,
         }
     }
 }
@@ -146,6 +143,23 @@ pub fn newly_blocked<'a>(previous: &[Agent], current: &'a [Agent]) -> Vec<&'a Ag
                 .is_none_or(|before| before.status != Status::NeedsInput)
         })
         .collect()
+}
+
+/// Turns every finished agent nobody has looked at since into `Unread`.
+///
+/// `seen` is when each row was last on screen with someone attached, by session
+/// and primary pane. A row on another machine keeps no such record here, so it
+/// stays `Done`; and one that finished again after being seen is unread again.
+pub fn mark_unread(agents: &mut [Agent], seen: &BTreeMap<(String, u32), u64>) {
+    for agent in agents
+        .iter_mut()
+        .filter(|agent| agent.status == Status::Done && agent.host.is_empty())
+    {
+        let looked = seen.get(&(agent.session.clone(), agent.pane)).copied();
+        if agent.reported_at > looked.unwrap_or(0) {
+            agent.status = Status::Unread;
+        }
+    }
 }
 
 /// Orders the list: this session first, then by attention needed, then by pane.
@@ -310,10 +324,59 @@ mod tests {
             at_pane(Status::Running, 1, "/a"),
             at_pane(Status::NeedsInput, 2, "/b"),
             at_pane(Status::Done, 3, "/c"),
+            at_pane(Status::Unread, 4, "/d"),
         ];
         sort_for_display(&mut agents, "sess");
         let labels: Vec<&str> = agents.iter().map(Agent::label).collect();
-        assert_eq!(labels, vec!["b", "a", "c"]);
+        assert_eq!(
+            labels,
+            vec!["b", "d", "a", "c"],
+            "finished work you have not read is next"
+        );
+    }
+
+    #[test]
+    fn finished_work_is_unread_until_someone_has_seen_it() {
+        let seen = |entries: &[(u32, u64)]| {
+            entries
+                .iter()
+                .map(|(pane, at)| (("sess".to_owned(), *pane), *at))
+                .collect::<BTreeMap<_, _>>()
+        };
+        let statuses = |mut agents: Vec<Agent>, seen: &BTreeMap<(String, u32), u64>| {
+            mark_unread(&mut agents, seen);
+            agents.iter().map(|agent| agent.status).collect::<Vec<_>>()
+        };
+
+        // Finished at 100: never seen, seen at 150, seen at 50 - before it finished.
+        let done = at_pane(Status::Done, 1, "/a");
+        assert_eq!(statuses(vec![done.clone()], &seen(&[])), [Status::Unread]);
+        assert_eq!(
+            statuses(vec![done.clone()], &seen(&[(1, 150)])),
+            [Status::Done]
+        );
+        assert_eq!(
+            statuses(vec![done.clone()], &seen(&[(1, 100)])),
+            [Status::Done]
+        );
+        assert_eq!(
+            statuses(vec![done.clone()], &seen(&[(1, 50)])),
+            [Status::Unread]
+        );
+        // Another pane's look is not this one's.
+        assert_eq!(
+            statuses(vec![done.clone()], &seen(&[(2, 150)])),
+            [Status::Unread]
+        );
+
+        // Only finished work, and only on this machine.
+        let running = at_pane(Status::Running, 1, "/a");
+        assert_eq!(statuses(vec![running], &seen(&[])), [Status::Running]);
+        let remote = Agent {
+            host: "dev1".into(),
+            ..done
+        };
+        assert_eq!(statuses(vec![remote], &seen(&[])), [Status::Done]);
     }
 
     /// Rows must not move under the cursor just because Zellij handed us the

@@ -145,6 +145,7 @@ pub fn bar(agents: &[Agent], now: u64, width: usize) -> String {
     let mut out = String::new();
     for status in [
         Status::NeedsInput,
+        Status::Unread,
         Status::Running,
         Status::Done,
         Status::Idle,
@@ -357,6 +358,17 @@ mod tests {
 
         assert!(line.starts_with("⚠1 ◐1"), "{line}");
         assert!(line.contains("api"), "{line}");
+
+        // Unread work counts beside what is blocked, and is named when nothing is.
+        let line = bar(
+            &[
+                agent(Status::Unread, 40, "/home/pp/api"),
+                agent(Status::Running, 90, "/home/pp/web"),
+            ],
+            100,
+            40,
+        );
+        assert!(line.starts_with("●1 ◐1 · api"), "{line}");
     }
 
     #[test]

@@ -8,15 +8,20 @@ jump to it.
 ```
 ┌ agents ────────────┐
 │ ▾ agenttij      2  │  ⚠ needs input     ◐ running
-│ ⚠ agenttij  3  2m  │  ✓ done            ○ idle
-│   ├ nvim        -  │  ? unknown         · a pane, no agent
-│   └ lazygit     -  │
-│ ✓ docs-fix     5m  │  ▾ ▸ a project, open or folded
+│ ⚠ agenttij  3  2m  │  ● done, unread    ✓ done, read
+│   ├ nvim        -  │  ○ idle            ? unknown
+│   └ lazygit     -  │  · a pane, no agent
+│ ● docs-fix     5m  │  ▾ ▸ a project, open or folded
 │ ▸ dotfiles      4  │  ├ └ panes of the row above
 │                    │  "3" = the row owns
 │ j/k ↵ n a v b d    │  three panes
 └────────────────────┘
 ```
+
+A finished agent stays `●` until its row has been on screen with you looking at
+it, then turns `✓`: work you have not read yet, told apart from work you have.
+One that finishes while you watch it is read as it finishes; one on screen in a
+session or tab nobody has open is not.
 
 The sidebar is an ordinary pane: focus it with your usual pane navigation (or
 `Alt s`), then. In the first column, `›` is the cursor and `▪` is the row on
@@ -484,7 +489,7 @@ pane size="20%" {
         // what the pane frame calls itself (not `title`: Zellij keeps that one)
         pane_title "agents"
         // per-status colours: a name, a 256-colour index, or #rrggbb.
-        // statuses are needs-input, running, done, idle, unknown, pane
+        // statuses are needs-input, unread, running, done, idle, unknown, pane
         colors "needs-input=yellow,running=blue,done=green,idle=bright-black"
         // run something when an agent becomes blocked on you
         notify "notify-send -u critical"
