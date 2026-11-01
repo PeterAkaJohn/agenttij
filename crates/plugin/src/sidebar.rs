@@ -1364,8 +1364,12 @@ impl Sidebar {
             // whatever. It joins the group instead of becoming a row of its own.
             BareKey::Char('a') => {
                 match self.selected_agent().cloned() {
+                    // The same ask as `Alt m` from an attached pane, fallback and
+                    // all: a bare ask did nothing on a machine with no agenttij
+                    // to answer it, and said nothing either.
                     Some(agent) if !agent.host.is_empty() => {
-                        actions::ask(&agent.host, &agent.session, "add", None);
+                        let cwd = self.remote_cwd(&agent.host, &agent.session);
+                        actions::add_remote_pane(&agent.host, &agent.session, cwd.as_deref());
                     }
                     _ => self.add_to_row(),
                 }
