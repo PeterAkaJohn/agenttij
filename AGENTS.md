@@ -163,7 +163,12 @@ rechecked against 0.45.1's source when the plugin moved to it, and the ones
   time a pane was added. Each layout therefore defines an unconstrained `sidebar`
   swap layout *before* `rail`. Re-applying keeps the *current* position rather
   than advancing (`add_tiled_pane` sets the damaged flag first, deliberately), so
-  a rail you chose stays a rail. Constraining that first layout by pane count
+  a rail you chose stays a rail. The base layout stays in the cycle too, and with
+  two panes on screen it always fits, so `NextSwapLayout` past the rail wraps to
+  it and the next one lands on `sidebar`: a press that changes nothing. Unfold
+  with `PreviousSwapLayout` (`Alt [`) and the base never comes round again;
+  every reordering or constraint tried instead either kept that dud or lost the
+  rail when a pane was added. Constraining that first layout by pane count
   does not work: suppressing a pane relayouts too (`extract_pane`), and in solo
   mode that drops the count straight back down.
 - **A second client repaints the frames and is not our doing.** Zellij colours

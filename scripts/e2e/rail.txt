@@ -11,3 +11,12 @@ wait terminals=6
 expect width.sidebar=5
 keys '\033['
 wait width.sidebar=32
+
+# Every press does one thing when Alt [ unfolds: the base layout never comes
+# round to swallow one.
+keys '\033]'
+wait width.sidebar=5
+keys '\033['
+wait width.sidebar=32
+keys '\033]'
+wait width.sidebar=5

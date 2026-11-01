@@ -50,7 +50,7 @@ pub const GLOBAL_KEYS: [(&str, &str); 11] = [
         "Alt t",
         "jump, from anywhere — type `restore` for a workspace",
     ),
-    ("Alt ]", "fold the sidebar to a rail"),
+    ("Alt ]", "fold the sidebar to a rail (Alt [ unfolds)"),
 ];
 
 /// The help pane's lines, wrapped to a width.

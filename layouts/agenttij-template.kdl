@@ -74,7 +74,8 @@ layout {
     }
 
     // Fold the sidebar to a rail with Zellij's own swap-layout key (Alt ] by
-    // default). A swap layout rather than something the plugin does to itself: a
+    // default), and unfold it with Alt [ - not a second Alt ], which
+    // wraps round to the base layout and costs a press on the next fold. A swap layout rather than something the plugin does to itself: a
     // plugin can only resize in coarse async steps, and the width drifts.
     swap_tiled_layout name="rail" {
         tab {

@@ -407,7 +407,7 @@ is why the bindings go in there.
 | `Alt m` | add a pane to the row on screen |
 | `Alt a` | summon a sidebar in whatever session you are in, floating |
 | `Alt t` | jump, from anywhere — no sidebar needed |
-| `Alt ]` | fold the sidebar to a status rail, and back — Zellij's own key |
+| `Alt ]` | fold the sidebar to a status rail; `Alt [` unfolds it - Zellij's own keys |
 
 `Alt g` and `Alt m` are `n` and `a` without going through the sidebar first —
 `Alt m` adds to the row *on screen*, which is why `a` does the same rather than
@@ -423,11 +423,11 @@ the same side at the same percentage width. A plugin can only resize itself in
 coarse asynchronous steps, so the width drifts; and hiding the pane is worse,
 since a suppressed pane comes back wherever Zellij decides to put it.
 
-In a session still holding the panes its layout was written with, the first
-`Alt ]` lands on `sidebar` — the same arrangement under another name — and the
-second folds to the rail. That layout exists so that opening a pane does not fold
-the sidebar on its own (see the swap-layout trap in AGENTS.md); once you have
-opened one, `Alt ]` folds on the first press.
+Unfold with `Alt [` (`PreviousSwapLayout`), not a second `Alt ]`.
+Zellij keeps your starting layout in the cycle as well, and with two panes on screen it always fits: going forward past the rail wraps round to it, and the next `Alt ]` lands on `sidebar` - the same arrangement under another name - so the fold after that takes two presses.
+With `Alt ]` to fold and `Alt [` to unfold, every press does one thing, and a rail stays a rail when you open panes (measured).
+The one press left over is a session that has never had a pane added: it still sits on that starting layout, and its very first `Alt ]` lands on `sidebar`.
+`sidebar` exists so that opening a pane does not fold the sidebar on its own (see the swap-layout trap in AGENTS.md).
 
 On the rail the sidebar shows one status glyph per row, centred, and every key
 still works.

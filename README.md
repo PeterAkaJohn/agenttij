@@ -63,7 +63,7 @@ screen — the same thing until you open a pane somewhere else.
 Every one of those that makes sense away from the sidebar has a global binding,
 installed for you: `Alt s` focuses the sidebar, `Alt v` cycles a row's panes,
 `Alt b` flips rows, `Alt g` starts a new row, `Alt w` starts one in a fresh git
-worktree, `Alt m` adds a pane to the row on screen, `Alt a` summons a sidebar in any session, and `Alt ]` — Zellij's own
+worktree, `Alt m` adds a pane to the row on screen, `Alt a` summons a sidebar in any session, and `Alt ]` (`Alt [` back) - Zellij's own
 swap-layout key — folds the sidebar to a status rail. Full reference:
 [docs/KEYBINDS.md](docs/KEYBINDS.md).
 
@@ -425,7 +425,7 @@ agents and `Enter` can never throw you out of the workspace, and `solo "true"`,
 which is what parks the others instead of leaving them on screen.
 
 When you want the width back, `Alt ]` folds the sidebar to a status rail and
-folds it out again — same side, same percentage width, because it is a swap
+`Alt [` folds it out again - same side, same percentage width, because it is a swap
 layout defined alongside the main one rather than something the plugin does to
 itself. Each layout's `rail` block repeats that layout's plugin configuration,
 since Zellij identifies a plugin by url *and* configuration; change one, change
@@ -435,10 +435,12 @@ There is a second swap layout, `sidebar`, listed before the rail and identical t
 the layout you start in. It is there because Zellij re-applies a swap layout
 every time a pane is added and registers your base layout with an exact pane
 count, so with only a rail to fall through to, opening a pane folded the sidebar
-by itself. It costs one press: in a session still holding the panes its layout
-was written with, the first `Alt ]` lands on `sidebar` and looks like nothing
-happened, and the second folds. After that `Alt ]` folds on the first press, and
-a rail you chose stays a rail when you open panes.
+by itself. Unfold with `Alt [` rather than a second `Alt ]`: going forward past
+the rail wraps round to the layout you started in, and the next `Alt ]` would
+land on `sidebar` first. With `Alt ]` to fold and `Alt [` to unfold, every press
+does one thing, and a rail you chose stays a rail when you open panes. The one
+press left over is a session that has never had a pane added, whose first `Alt ]`
+lands on `sidebar`.
 
 The catch is a hard one: **panes belong to the session that owns them.** Zellij
 has no way to render another session's pane inside yours, so this only works for
