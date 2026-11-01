@@ -35,14 +35,16 @@ up)
 
     cat >"$work/Dockerfile" <<'EOF'
 FROM alpine:3.20
-RUN apk add --no-cache openssh-server ca-certificates && ssh-keygen -A
+RUN apk add --no-cache openssh-server ca-certificates zsh && ssh-keygen -A
 # A real zellij, so Enter on one of its rows attaches to something.
-ARG ZELLIJ=v0.44.3
+ARG ZELLIJ=v0.45.1
 RUN wget -qO- "https://github.com/zellij-org/zellij/releases/download/$ZELLIJ/zellij-x86_64-unknown-linux-musl.tar.gz" \
     | tar xz -C /usr/local/bin && chmod +x /usr/local/bin/zellij
 # Unlocked, or sshd refuses the key: adduser leaves the account with a locked
-# password, and public-key auth is denied for locked accounts.
-RUN adduser -D -s /bin/sh dev && passwd -u dev
+# password, and public-key auth is denied for locked accounts. zsh, because ssh
+# runs a command in the login shell and the scripts sent over are POSIX: under
+# zsh an unquoted `$ids` stays one word, which /bin/sh here used to hide.
+RUN adduser -D -s /bin/zsh dev && passwd -u dev && touch /home/dev/.zshrc
 # /srv/api and /srv/web are the projects its state files claim, so a pane opened
 # there by the sidebar has somewhere to land.
 RUN mkdir -p /home/dev/.ssh /tmp/agenttij /home/dev/.config/zellij /srv/api /srv/web
