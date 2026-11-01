@@ -32,3 +32,29 @@ jobs:
           sh -n scripts/install.sh
           sh -n scripts/testbox.sh
           python3 -m py_compile scripts/*.py
+
+  # The plugin in a real Zellij, driven by real keystrokes: the only test
+  # crates/plugin has. Each scenario runs in a sealed session, so nothing here
+  # depends on the runner's config or cache.
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-wasip1
+
+      - uses: Swatinem/rust-cache@v2
+
+      - run: cargo build -p agenttij --target wasm32-wasip1 --release
+
+      # The version zellij-tile is pinned to.
+      - name: zellij
+        run: |
+          mkdir -p "$HOME/.local/bin"
+          curl -fsSL https://github.com/zellij-org/zellij/releases/download/v0.45.1/zellij-x86_64-unknown-linux-musl.tar.gz |
+            tar xz -C "$HOME/.local/bin"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - run: python3 scripts/harness.py scenario scripts/e2e/*.txt
