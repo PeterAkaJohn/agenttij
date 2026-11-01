@@ -14,7 +14,7 @@ cargo clippy -p agenttij --target wasm32-wasip1    # same for the plugin
 cargo fmt --all
 cargo build -p agenttij --target wasm32-wasip1 --release
 ./scripts/install.sh                               # build + install everything
-sh scripts/press-keys.sh test layouts/agenttij-workspace.kdl 8:'\033h' 4:p 6:q
+python3 scripts/harness.py scenario scripts/e2e/*.txt   # the plugin, in real sessions
 ```
 
 Fast loop when iterating on the plugin: build, copy the wasm over the installed
@@ -29,6 +29,8 @@ Without `-c`, that command does not reload the sidebar you are looking at — it
 starts a *second* one in a new pane, because a plugin's identity is its url plus
 its configuration. Measured: `plugin_3`, titled "agents", beside the first. The
 `-c` has to say everything the layout says, `group` included.
+In a harness session, `harness.py reload <session>` does this with the plugin you
+just built and the layout's whole configuration, and installs nothing.
 
 ## Structure
 
@@ -44,7 +46,8 @@ hooks/         the shell hook agents run — tool-agnostic: `$1` is the state.
                the sidebar cannot afford that per row per tick
 integrations/  per-tool glue that calls that hook (opencode plugin)
 layouts/       left, right, workspace (+ `sidebar` and `rail` swap layouts)
-scripts/       installer, three helpers, and press-keys.sh
+scripts/       installer, three helpers, testbox.sh, and harness.py with its
+               e2e/ scenarios
 docs/          PLAN.md (design and constraints), KEYBINDS.md (every key)
 ```
 
@@ -72,55 +75,40 @@ keep `crates/plugin` to wiring, host calls and drawing.
 
 ## Verifying changes
 
-`cargo test` covers `core`. The plugin needs a real session, and there are traps:
+`cargo test` covers `core`.
+The plugin is covered by `scripts/harness.py`, which drives real Zellij sessions with real keystrokes, and by its scenarios in `scripts/e2e/`, which CI runs.
+Anything a key does gets a scenario; `harness.py --help` lists the commands and the checks.
 
-- **Plugin pane content cannot be read.** `dump-screen` and `subscribe` both
-  return nothing for plugin panes, including for third-party ones. Verify
-  behaviour through side effects instead: `list-panes`, `list-clients`,
-  `dump-layout`, or a file the plugin touches. A pane *frame* is not pane
-  content either - it is drawn by the client, so `dump-screen` never shows it.
-  Capture a client instead: `sleep 90 | script -qfc "zellij -s x -n l.kdl" out
-  >/dev/null` keeps a client alive and writes its raw output, and the frame line
-  is in there to grep. Keep that `>/dev/null`: a 0.45 client announces itself on
-  stdout, and the Zellij pane that receives it marks itself a nested guest and
-  swallows keys. Since 0.45 the default frame (`pane_frame_style` titles) is one
-  title row with the name centred, not a box.
-- **Test anything input-related with `scripts/press-keys.sh`.** It pipes real
-  bytes into a throwaway client's stdin and prints a second-by-second timeline of
-  panes and focus, which is the only way to see what a key actually did:
-  `scripts/press-keys.sh test layouts/agenttij-workspace.kdl 7:'\033h' 3:p 6:q`.
-  Two traps it exists to avoid: `zellij action send-keys` bypasses keybind
-  resolution, and `write-chars` does not reach command panes at all — a real
-  keypress does, which is the difference this harness exists to exercise. Move
-  focus from inside the keystream (`\033h` is Alt+h, focus left); an external
-  `focus-pane-id` gets overridden on startup. And `printf %b` reads `\0333` as one
-  octal byte rather than Esc then 3, so Alt and a digit has to be written `\e3`.
-  A lone Esc typed into a zsh pane makes the next key a Meta key - `echo` ran as
-  `cho` - which is zsh, not Zellij. Global keys (`Alt v`, `Alt m`) are the
-  config's, and reach the sidebar only if the layout says the same `group`; with
-  a layout that does not, you are testing a second sidebar. Run the harness with
-  `ZELLIJ_CONFIG_FILE` pointing at a copy rebound by `zellij-keybinds.py` with the
-  layout's own `group`, so your real template (and real agents) stay out of it.
-- **`zellij setup --check` proves a config parses, not that it works.** A second
-  `keybinds` block passes the check and is then ignored.
-- **`dump-layout` prints the live layout *and* the templates.** Cut at the first
-  `swap_tiled_layout` / `new_tab_template` line before asserting on it.
-- **`move-focus right` only lands on a visible pane**, which is a handy way to
-  find out which pane currently holds the workspace slot.
-- **Use throwaway session names and kill them afterwards.** The user has real
-  sessions with real agents; never send keys or actions to a session you did not
-  create, and check `zellij ls` before and after.
-- **`pgrep`/`pkill` patterns match your own command line.** Anchor them
-  (`pgrep -f '^zellij -s test'`) or you will kill your own shell.
-- **The headless `script` harness kills panes sometimes.** Look for
-  `Input/output error`, `Failed to apply cached resizes` or `consecutive unknown
-  messages` in `/tmp/zellij-*/zellij-log/zellij.log` before concluding the code
-  lost a pane. The commonest way to cause it yourself is to let the keystream
-  end: the client hits EOF, spends a second sending the server nonsense until it
-  is logged out, and a pane goes with it. Cost a whole chase after a pane `Alt m`
-  had opened and Zellij had confirmed by id. Keep the keystream alive past the
-  measurement (`printf ...; sleep 60`), and check the log before believing a
-  pane count.
+- **Drive the plugin through `scripts/harness.py`, never `zellij action`.**
+  `send-keys` bypasses keybind resolution and `write-chars` never reaches a command pane, so only bytes in a real client's stdin test what a key does.
+  `start` gives the session its own config (Zellij's defaults, `sh`, no background plugins, the binds carrying the layout's own `group`), cache, log and socket directory, and runs the plugin you built rather than the one installed.
+  So it never shows in `zellij ls`, writes nothing into your caches, and cannot address one of your sessions.
+  The shared config and cache it replaced left a workspace snapshot per test session in `~/.cache/agenttij/sessions`, which a palette would have offered to restore after the next boot.
+  Then `keys`, `state`, `expect` or `wait` on checks like `focus=slot` and `title.slot=*1/3`, and `stop`, which reads the session's own log for a verdict.
+  Step by step from a shell, or as a scenario file.
+- **A test passes only if it failed first.** Run a new scenario against the build before the fix (`AGENTTIJ_WASM` points the harness at another wasm) and watch it fail.
+  The scenarios in `scripts/e2e/` were checked that way against `b09de72`.
+- **Check titles and focus, not counts.** The bugs fixed alongside the harness (a palette relabelling the pane on screen, `Alt b` with nowhere to go) left every count right; only a title and the focus were wrong.
+- **The sidebar's cursor cannot be seen**, because plugin pane content cannot be read (next).
+  A key that acts on what the cursor is on (`d`, `c`) needs a cursor you put there: a new row takes it, and so does `Enter`.
+- **Plugin pane content cannot be read.** `dump-screen` and `subscribe` both return nothing for plugin panes, including third-party ones.
+  Verify behaviour through side effects instead: `list-panes`, `list-clients`, `dump-layout`, or a file the plugin touches.
+  A pane *frame* is not pane content either - the client draws it, so `dump-screen` never shows it.
+  The harness keeps each client's raw output in `client.out` in the session's directory, and the frame line is in there to grep.
+  Capturing one by hand (`script -qfc "zellij ..." out >/dev/null`), keep the `>/dev/null`: a 0.45 client announces itself on stdout, and the Zellij pane that receives it marks itself a nested guest and swallows keys.
+  Since 0.45 the default frame (`pane_frame_style` titles) is one title row with the name centred, not a box.
+- **Keys are written as in a shell:** `\033h` or `\eh` is Alt+h, `\r` is Enter, `\x27` a quote.
+  The harness reads `\0333` as Esc then 3; `printf %b`, which the old shell harness used, read it as one octal byte.
+  Move focus from inside the keystream; an external `focus-pane-id` gets overridden on startup.
+  The harness's panes run `sh`, because a lone Esc typed into zsh makes the next key a Meta key: `echo` ran as `cho`.
+- **`zellij setup --check` proves a config parses, not that it works.** A second `keybinds` block passes the check and is then ignored.
+- **`dump-layout` prints the live layout *and* the templates.** Cut at the first `swap_tiled_layout` / `new_tab_template` line before asserting on it.
+- **`move-focus right` only lands on a visible pane**, which is a handy way to find out which pane currently holds the workspace slot.
+- **Outside the harness, use throwaway session names and kill them afterwards.** The user has real sessions with real agents; never send keys or actions to a session you did not create, and check `zellij ls` before and after.
+- **`pgrep`/`pkill` patterns match your own command line.** Anchor them (`pgrep -f '^zellij -s test'`) or you will kill your own shell.
+- **A client that dies takes panes with it.** Letting a keystream end used to do it: the client hit EOF, spent a second sending the server nonsense until it was logged out, and a pane went with it, which cost a whole chase after a pane `Alt m` had opened and Zellij had confirmed by id.
+  The harness's client holds its own end of the key pipe, so it never reads EOF.
+  If one dies anyway, `stop` says `log: client` and a scenario runs once more; outside the harness, look for `Input/output error`, `Failed to apply cached resizes` or `consecutive unknown messages` in the log before believing a pane count.
 
 ## Zellij traps worth knowing
 
@@ -147,8 +135,8 @@ rechecked against 0.45.1's source when the plugin moved to it, and the ones
   the server's environment on, so this depends on how the server was started;
   keep reading the passwd entry either way.
 - **A denied permission is remembered as an empty grant, and everything then
-  fails silently.** Zellij's prompt is answered with `y`/`n` — so a `press-keys`
-  run that types `n` into a session whose plugin is *waiting* on that prompt
+  fails silently.** Zellij's prompt is answered with `y`/`n` — so a keystroke
+  test that types `n` into a session whose plugin is *waiting* on that prompt
   answers "deny", and `~/.cache/zellij/permissions.kdl` keeps the plugin with an
   empty `{}` block forever after. The symptom is a sidebar that draws but does
   nothing: no new panes, no floating panes, no scan. Check that file first when a
@@ -281,7 +269,7 @@ rechecked against 0.45.1's source when the plugin moved to it, and the ones
   real keypress lands on the program's stdin, which is what makes `group "claude"`
   as usable as typing `claude` into a shell. What never arrives is `zellij action
   write-chars` / `send-keys` — that is where the `/dev/null` belief came from, and
-  it is why `scripts/press-keys.sh` pipes into a client instead. A peek still has
+  it is why `scripts/harness.py` pipes into a client instead. A peek still has
   to be a plugin pane, but for the floating-focus reason below, not this one.
 - **A floating pane in the tab is not the workspace slot.** Zellij's own `Ctrl p`
   then `e` (`TogglePaneEmbedOrFloating`) floats the focused pane, command and
