@@ -65,5 +65,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: e2e-sessions
-          path: /tmp/agenttij-harness/
+          path: /var/tmp/agenttij-harness/
           include-hidden-files: true

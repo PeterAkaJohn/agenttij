@@ -54,14 +54,16 @@ import shutil
 import signal
 import subprocess
 import sys
-import tempfile
 import time
 import unicodedata
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 WASM = os.environ.get("AGENTTIJ_WASM", REPO / "target/wasm32-wasip1/release/agenttij.wasm")
-ROOT = Path(tempfile.gettempdir()) / "agenttij-harness"
+# Not under /tmp: Zellij rewrites any path a plugin hands it that starts with
+# /tmp into its own temporary directory (`translate_plugin_path`), so a row
+# opened in a scenario's repository would open somewhere else.
+ROOT = Path("/var/tmp/agenttij-harness")
 # Where the hook and the plugin keep state, fixed in both: shared with the
 # user's own agents, so a session cleans out exactly its own files on the way out.
 STATE = Path("/tmp/agenttij")
