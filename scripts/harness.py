@@ -37,10 +37,12 @@ A check is <key>=<glob> or <key>!=<glob>:
     read.P                         yes once a look covers P's last report
     drawn.P                        a line P has on screen (`!=`: none does);
                                    the sidebar's cursor is the `›` in column one
-A pane P is terminal_N, plugin_N, `sidebar`, or `slot` (the one terminal shown).
+A pane P is terminal_N, plugin_N, `sidebar`, `slot` (the one terminal shown), or
+`floating` (the first floating pane: a peek, the palette).
 
 A scenario file is these commands one per line, without the session, starting
-with `start`; `sleep <seconds>` waits. The session is stopped at the end either
+with `start`; `sleep <seconds>` waits, `$VARIABLES` are expanded, and
+`needs VAR...` skips the scenario unless they are set. The session is stopped at the end either
 way, and a run the client broke is run once more before it counts as a failure.
 """
 
@@ -193,6 +195,7 @@ def snapshot(session):
         "running": under,
         "visible": shown,
         "slot": shown[0] if len(shown) == 1 else None,
+        "floating": next((p["id"] for p in panes if p["where"] == "floating"), None),
         "sidebar": next((p["id"] for p in panes if p["ours"] and p["where"] == "tiled"), None),
     }
 
@@ -267,7 +270,7 @@ def value(state, key):
         return ",".join(p["title"] for p in state["panes"] if p["where"] == "floating")
     field, _, pane = key.partition(".")
     if field in ("title", "where", "width", "read") and pane:
-        pane = state.get(pane, pane) if pane in ("sidebar", "slot") else pane
+        pane = state.get(pane, pane) if pane in ("sidebar", "slot", "floating") else pane
         if field == "read":
             return "yes" if read(state["session"], pane) else "no"
         found = next((p for p in state["panes"] if p["id"] == pane), None)
@@ -591,10 +594,16 @@ def run_scenario(path, parser):
     print(f"== {path}")
     try:
         for number, line in enumerate(Path(path).read_text().splitlines(), 1):
-            words = shlex.split(line, comments=True)
+            words = shlex.split(os.path.expandvars(line), comments=True)
             if not words:
                 continue
             print(f"  > {line.strip()}")
+            if words[0] == "needs":
+                missing = [name for name in words[1:] if not os.environ.get(name)]
+                if missing:
+                    print(f"  skipped: {' '.join(missing)} not set")
+                    return "skip"
+                continue
             if words[0] == "sleep":
                 time.sleep(float(words[1]))
                 continue
@@ -626,7 +635,7 @@ def scenario(a, parser):
             print("  the client broke that run, not the plugin; once more")
             status = run_scenario(path, parser)
         print(f"== {path}: {status}\n")
-        if status != "pass":
+        if status not in ("pass", "skip"):
             failed.append(path)
     if failed:
         print("failed: " + " ".join(failed))
