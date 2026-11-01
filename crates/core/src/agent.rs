@@ -150,6 +150,23 @@ pub fn newly_blocked<'a>(previous: &[Agent], current: &'a [Agent]) -> Vec<&'a Ag
         .collect()
 }
 
+/// Agents that have just finished a turn: reported done, where the report
+/// before said working or waiting. Not one that was done before anyone was
+/// watching - a sidebar starting up would otherwise announce every finished
+/// agent on the machine at once.
+pub fn newly_finished<'a>(previous: &[Agent], current: &'a [Agent]) -> Vec<&'a Agent> {
+    current
+        .iter()
+        .filter(|agent| agent.status == Status::Done)
+        .filter(|agent| {
+            previous
+                .iter()
+                .find(|before| before.key() == agent.key())
+                .is_some_and(|before| matches!(before.status, Status::Running | Status::NeedsInput))
+        })
+        .collect()
+}
+
 /// Turns every finished agent nobody has looked at since into `Unread`.
 ///
 /// `seen` is when each row was last on screen with someone attached, by session
@@ -312,6 +329,29 @@ mod tests {
 
         // Nothing blocked at all.
         assert_eq!(newly_blocked(&none, &none).len(), 0);
+    }
+
+    #[test]
+    fn a_finished_turn_is_reported_once_and_only_after_work() {
+        let working = vec![at_pane(Status::Running, 1, "/a")];
+        let done = vec![at_pane(Status::Done, 1, "/a")];
+        assert_eq!(newly_finished(&working, &done).len(), 1);
+        assert_eq!(
+            newly_finished(&done, &done).len(),
+            0,
+            "still done is not news"
+        );
+        assert_eq!(
+            newly_finished(&[], &done).len(),
+            0,
+            "done before anyone was looking"
+        );
+        let waiting = vec![at_pane(Status::NeedsInput, 1, "/a")];
+        assert_eq!(
+            newly_finished(&waiting, &done).len(),
+            1,
+            "answered, then finished"
+        );
     }
 
     /// An agent that answers and blocks again is worth a second mention.

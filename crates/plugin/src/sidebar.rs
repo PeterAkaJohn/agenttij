@@ -822,9 +822,26 @@ impl Sidebar {
             let screen = String::from_utf8_lossy(stdout);
             // Nothing came back when the pane is gone; that is not a screen.
             if let (Some(pane), false) = (pane, screen.trim().is_empty()) {
+                let before = self.readings.get(&pane).map(|read| read.status);
                 let read = reading::read(self.readings.get(&pane), &screen, self.now);
+                let now = read.status;
                 self.readings.insert(pane, read);
                 self.rebuild();
+                // Told the same way a hook's report is: once, as it happens.
+                let row = self
+                    .agents
+                    .iter()
+                    .find(|agent| agent.session == self.current_session && agent.pane == pane)
+                    .cloned();
+                match (before, now, row) {
+                    (Some(was), Status::NeedsInput, Some(row)) if was != Status::NeedsInput => {
+                        actions::notify(&self.config.notify, &row, "needs input")
+                    }
+                    (Some(Status::Running | Status::NeedsInput), Status::Done, Some(row)) => {
+                        self.notify_finished(&row)
+                    }
+                    _ => {}
+                }
             }
             return true;
         }
@@ -926,7 +943,14 @@ impl Sidebar {
         // Only agents that *became* blocked, so a waiting agent is announced
         // once rather than every second.
         for agent in agent::newly_blocked(&before, &self.reported) {
-            actions::notify(&self.config.notify, agent);
+            actions::notify(&self.config.notify, agent, "needs input");
+        }
+        let finished: Vec<Agent> = agent::newly_finished(&before, &self.reported)
+            .into_iter()
+            .cloned()
+            .collect();
+        for agent in &finished {
+            self.notify_finished(agent);
         }
         true
     }
@@ -1980,6 +2004,18 @@ impl Sidebar {
                 (scan::CONTEXT_PANE.to_owned(), pane.to_string()),
             ]),
         );
+    }
+
+    /// Says an agent finished - unless its row is already read, which means
+    /// someone was looking at it as it finished and needs no telling.
+    fn notify_finished(&self, finished: &Agent) {
+        let unread = self
+            .agents
+            .iter()
+            .any(|row| row.key() == finished.key() && row.status == Status::Unread);
+        if unread {
+            actions::notify(&self.config.notify, finished, "finished");
+        }
     }
 
     /// Reads the arrangement, once. It outlives the plugin, so a reload - or

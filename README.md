@@ -97,7 +97,8 @@ It counts every agent on the machine unless you add `scope "session"` — a summ
 is usually a summary of everything, while a sidebar is usually about where you
 are. It never takes focus, the way a status bar should not, and it works with or
 without a sidebar — including `notify`, so a bar is also how you get desktop
-notifications in a session that has no sidebar at all.
+notifications in a session that has no sidebar at all. `notify` runs when an agent
+becomes blocked on you, and when one finishes a turn nobody was looking at.
 
 ## A session per folder
 
@@ -503,7 +504,8 @@ pane size="20%" {
         // per-status colours: a name, a 256-colour index, or #rrggbb.
         // statuses are needs-input, unread, running, done, idle, unknown, pane
         colors "needs-input=yellow,running=blue,done=green,idle=bright-black"
-        // run something when an agent becomes blocked on you
+        // run something when an agent becomes blocked on you, or finishes a
+        // turn nobody was watching; it is given "agenttij" and the message
         notify "notify-send -u critical"
         // "false" to stop naming a row's panes "<row> 2/3"
         position "true"

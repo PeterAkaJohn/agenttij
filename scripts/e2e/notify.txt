@@ -1,0 +1,29 @@
+# `notify` says when an agent is blocked and when it finishes - the second only
+# if nobody was looking at it as it did.
+start layouts/agenttij-workspace.kdl --group ';;' --set 'notify=$AGENTTIJ_SESSION_DIR/note'
+sh 'printf "#!/bin/sh\necho \"\$*\" >> \"\$(dirname \"\$0\")/notes\"\n" > note && chmod +x note && : > notes'
+
+# Working, then finished while you look at another row: said. Working for long
+# enough that a scan saw it working.
+report terminal_0 running
+sleep 2
+keys '\033s' n
+wait visible=terminal_3
+report terminal_0 done
+sleep 2.5
+sh 'grep -q "agenttij finished" notes'
+sh 'test "$(grep -c finished notes)" = 1'
+
+# Finished in front of you: read as it finished, so not said.
+keys '\033s' k '\r'
+wait visible=terminal_0 read.terminal_0=yes
+report terminal_0 running
+sleep 1.5
+report terminal_0 done
+sleep 2.5
+sh 'test "$(grep -c finished notes)" = 1'
+
+# Blocked is said whatever you are looking at.
+report terminal_0 needs-input
+sleep 2.5
+sh 'grep -q "agenttij needs input" notes'

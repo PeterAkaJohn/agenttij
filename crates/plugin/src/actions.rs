@@ -132,12 +132,13 @@ pub fn leave_for(session: &str, current_session: &str) {
     switch_session_with_focus(session, None, None);
 }
 
-/// Tells you an agent is blocked, when you are not looking at the sidebar.
-pub fn notify(command: &[String], agent: &Agent) {
+/// Tells you what an agent did - "needs input", "finished" - when you are not
+/// looking at the sidebar.
+pub fn notify(command: &[String], agent: &Agent, what: &str) {
     if command.is_empty() {
         return;
     }
-    let message = format!("{} needs input", agent.label());
+    let message = format!("{} {what}", agent.label());
     let mut words: Vec<&str> = command.iter().map(String::as_str).collect();
     words.push("agenttij");
     words.push(&message);
