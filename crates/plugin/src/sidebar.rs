@@ -408,8 +408,6 @@ impl ZellijPlugin for Sidebar {
                 if self.own_url.is_none() {
                     self.own_url = snapshot::own_url(&sessions, self.plugin_id);
                 }
-                // After the url is captured, not before: the title *is* the url
-                // until we overwrite it.
                 self.name_self();
                 self.rebuild();
                 true
@@ -2179,13 +2177,6 @@ impl Sidebar {
     /// issued before the grant is denied in silence.
     fn name_self(&mut self) {
         if self.named || self.permissions != Permissions::Granted {
-            return;
-        }
-        // The sidebar has to wait: its own url is read from this very title, and
-        // renaming first would erase it. A peek or the help list never launches
-        // anything, so it has nothing to wait for.
-        let needs_url = self.config.peek.is_none() && !self.config.help;
-        if needs_url && self.own_url.is_none() {
             return;
         }
         self.named = true;

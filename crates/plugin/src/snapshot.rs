@@ -73,10 +73,12 @@ pub fn current_session(sessions: &[SessionInfo]) -> Option<String> {
 /// Our own plugin url, needed to open a peek — a peek is another instance of
 /// this same plugin, and a plugin can only be launched by url.
 ///
-/// Read from our own pane's title, which Zellij sets to the url until something
-/// renames it. Two more obvious routes are dead ends: `SessionInfo.plugins` is
-/// empty in practice, and `get_session_environment_variables()` *panics*, taking
-/// the whole plugin down with it.
+/// Read from our own pane's `plugin_url`. Not its title: that is the url only
+/// until something renames the pane, so a sidebar reloaded after naming itself
+/// never learned it - no peek, no palette, no help - and one launched at runtime
+/// is titled `(<cwd>) - file:/…`, which is no url at all. Two other routes are
+/// dead ends: `SessionInfo.plugins` is empty in practice, and
+/// `get_session_environment_variables()` *panics*, taking the plugin with it.
 pub fn own_url(sessions: &[SessionInfo], plugin_id: u32) -> Option<String> {
     sessions
         .iter()
@@ -85,7 +87,7 @@ pub fn own_url(sessions: &[SessionInfo], plugin_id: u32) -> Option<String> {
         .panes
         .values()
         .flatten()
-        .find(|pane| pane.is_plugin && pane.id == plugin_id)
-        .map(|pane| pane.title.clone())
-        .filter(|title| title.contains(".wasm") || title.starts_with("zellij:"))
+        .find(|pane| pane.is_plugin && pane.id == plugin_id)?
+        .plugin_url
+        .clone()
 }
