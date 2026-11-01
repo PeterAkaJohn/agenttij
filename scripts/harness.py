@@ -9,6 +9,7 @@
     harness.py wait <session> <check>... [--timeout 10]
     harness.py reload <session>
     harness.py report <session> <pane> <status> [--cwd DIR]   what the hook says
+    harness.py sh <session> <script>        runs in the session's directory
     harness.py stop <session> [--keep]
     harness.py timeline <session> <layout> <delay>:<bytes>... [--group G]
     harness.py scenario <file>...
@@ -206,7 +207,13 @@ def report(a):
     hook_env = {k: v for k, v in os.environ.items() if k not in ("PWD", "CLAUDE_PROJECT_DIR")}
     hook_env.update(ZELLIJ_SESSION_NAME=a.session, ZELLIJ_PANE_ID=a.pane.rpartition("_")[2])
     subprocess.run(["sh", str(REPO / "hooks/agenttij-state.sh"), a.status], env=hook_env,
-                   cwd=a.cwd, stdin=subprocess.DEVNULL, check=True)
+                   cwd=home(a.session) / a.cwd, stdin=subprocess.DEVNULL, check=True)
+
+
+def shell(a):
+    """A script for setting a scene - a repository to work in, say - kept in the
+    session's directory so it goes when the session does."""
+    subprocess.run(["sh", "-c", a.script], cwd=home(a.session), check=True)
 
 
 def show(state):
@@ -530,7 +537,9 @@ def build_parser():
     w.add_argument("--timeout", type=float, default=10)
     command("reload", reload)
     r = command("report", report, ("pane", None), ("status", None))
-    r.add_argument("--cwd", default=str(REPO), help="where the agent works")
+    r.add_argument("--cwd", default=str(REPO),
+                   help="where the agent works, relative to the session's directory")
+    command("sh", shell, ("script", None))
     s = command("stop", lambda a: stop_session(a.session, a.keep) == "clean")
     s.add_argument("--keep", action="store_true", help="keep its directory and log")
     command("timeline", timeline, ("layout", None), ("steps", "+"), starts=True)
