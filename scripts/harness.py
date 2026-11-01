@@ -10,6 +10,7 @@
     harness.py reload <session>
     harness.py report <session> <pane> <status> [--cwd DIR]   what the hook says
     harness.py sh <session> <script>        runs in the session's directory
+    harness.py pipe <session> <name> [payload]  `zellij pipe`, to no plugin in particular
     harness.py stop <session> [--keep]
     harness.py timeline <session> <layout> <delay>:<bytes>... [--group G]
     harness.py scenario <file>...
@@ -217,6 +218,12 @@ def report(a):
     hook_env.update(ZELLIJ_SESSION_NAME=a.session, ZELLIJ_PANE_ID=a.pane.rpartition("_")[2])
     subprocess.run(["sh", str(REPO / "hooks/agenttij-state.sh"), a.status], env=hook_env,
                    cwd=home(a.session) / a.cwd, stdin=subprocess.DEVNULL, check=True)
+
+
+def action_pipe(session, name, payload):
+    """What a machine watching this one sends: a pipe that names no plugin."""
+    subprocess.run(["zellij", "-s", session, "pipe", "--name", name, *([payload] if payload else [])],
+                   env=env(session), stdin=subprocess.DEVNULL, capture_output=True, timeout=10)
 
 
 def shell(a):
@@ -653,6 +660,8 @@ def build_parser():
     r.add_argument("--cwd", default=str(REPO),
                    help="where the agent works, relative to the session's directory")
     command("sh", shell, ("script", None))
+    p = command("pipe", lambda a: action_pipe(a.session, a.name, a.payload), ("name", None))
+    p.add_argument("payload", nargs="?")
     s = command("stop", lambda a: stop_session(a.session, a.keep) == "clean")
     s.add_argument("--keep", action="store_true", help="keep its directory and log")
     command("timeline", timeline, ("layout", None), ("steps", "+"), starts=True)
