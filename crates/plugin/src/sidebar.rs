@@ -2262,12 +2262,18 @@ impl Sidebar {
         let mut rows: Vec<Agent> = self
             .groups
             .rows()
-            .filter_map(|(primary, _members)| {
-                local
+            .filter_map(|(primary, members)| {
+                let mut row = local
                     .iter()
                     .find(|agent| agent.pane == primary)
                     .or_else(|| plain.iter().find(|entry| entry.pane == primary))
-                    .cloned()
+                    .cloned()?;
+                // How many panes it owns, which the row says when it is more
+                // than one. Set for rows on other machines from what they
+                // publish, and never set here - so no row on this machine
+                // ever said it.
+                row.panes = members.max(1);
+                Some(row)
             })
             .collect();
 
