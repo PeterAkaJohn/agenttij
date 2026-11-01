@@ -1201,7 +1201,10 @@ mod tests {
                 .current_dir(at)
                 .output()
                 .expect("runs");
-            (out.status.success(), String::from_utf8_lossy(&out.stdout).into_owned())
+            (
+                out.status.success(),
+                String::from_utf8_lossy(&out.stdout).into_owned(),
+            )
         };
         let git = |args: &str, at: &std::path::Path| {
             let words: Vec<String> = args.split(' ').map(str::to_owned).collect();
@@ -1213,7 +1216,10 @@ mod tests {
         std::fs::write(repo.join("f"), "a\n").expect("written");
         std::fs::write(repo.join("crates/g"), "b\n").expect("written");
         assert!(git("init -q", &repo) && git("add -A", &repo));
-        assert!(git("-c user.email=t@t -c user.name=t commit -qm one", &repo));
+        assert!(git(
+            "-c user.email=t@t -c user.name=t commit -qm one",
+            &repo
+        ));
 
         let crates = repo.join("crates").to_string_lossy().into_owned();
         let (made, first) = run(&worktree_command(&crates), &base);
@@ -1230,9 +1236,16 @@ mod tests {
         let repo = repo.to_string_lossy();
         assert!(made);
         assert_eq!(first, format!("{repo}.worktrees/api-1"));
-        assert_eq!(second, format!("{repo}.worktrees/api-2"), "the next free number");
+        assert_eq!(
+            second,
+            format!("{repo}.worktrees/api-2"),
+            "the next free number"
+        );
         assert_eq!(project, repo, "a worktree files under its repository");
-        assert!(listed.contains("[api-1]") && listed.contains("[api-2]"), "{listed}");
+        assert!(
+            listed.contains("[api-1]") && listed.contains("[api-2]"),
+            "{listed}"
+        );
         assert!(!outside, "nothing to branch from outside a repository");
     }
 

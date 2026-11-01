@@ -142,7 +142,9 @@ pub fn worktree_of(dir: &str) -> Option<(&str, &str)> {
     let at = dir.find(".worktrees/")?;
     let repo = &dir[..at];
     let name_at = at + ".worktrees/".len();
-    let end = dir[name_at..].find('/').map_or(dir.len(), |slash| name_at + slash);
+    let end = dir[name_at..]
+        .find('/')
+        .map_or(dir.len(), |slash| name_at + slash);
     (repo.starts_with('/') && end > name_at).then_some((repo, &dir[..end]))
 }
 
@@ -313,7 +315,11 @@ mod tests {
             "from anywhere inside it"
         );
         assert_eq!(worktree_of("/home/pp/api"), None);
-        assert_eq!(worktree_of("/home/pp/api.worktrees/"), None, "no name, no worktree");
+        assert_eq!(
+            worktree_of("/home/pp/api.worktrees/"),
+            None,
+            "no name, no worktree"
+        );
         assert_eq!(worktree_of("relative.worktrees/x"), None);
     }
 }
