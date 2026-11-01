@@ -1,0 +1,9 @@
+# A pipe from the command line - what a machine watching this one sends - is
+# answered by the sidebar keeping the rows, not by every instance that hears it.
+start layouts/agenttij-workspace.kdl --group ';;'
+keys '\033a'
+wait floating=agents
+pipe add
+wait terminals=4
+sleep 2
+expect terminals=4

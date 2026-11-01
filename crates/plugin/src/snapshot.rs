@@ -57,6 +57,22 @@ pub fn watched(sessions: &[SessionInfo], plugin_id: u32) -> bool {
         })
 }
 
+/// Whether our own pane is a floating one.
+pub fn floating(sessions: &[SessionInfo], plugin_id: u32) -> bool {
+    sessions
+        .iter()
+        .find(|session| session.is_current_session)
+        .and_then(|session| {
+            session
+                .panes
+                .panes
+                .values()
+                .flatten()
+                .find(|pane| pane.is_plugin && pane.id == plugin_id)
+        })
+        .is_some_and(|pane| pane.is_floating)
+}
+
 /// The tab our own pane sits in.
 ///
 /// Taken from the manifest we are handed rather than `get_focused_pane_info`,

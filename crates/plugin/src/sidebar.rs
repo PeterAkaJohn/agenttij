@@ -276,6 +276,9 @@ pub struct Sidebar {
     /// Something to say in the notice line, and for how many more ticks: what
     /// went wrong with something asked for, which would otherwise fail silently.
     said: Option<(String, u8)>,
+    /// Whether our own pane floats - a sidebar summoned with `Alt a` - rather
+    /// than sitting in the layout.
+    floating: bool,
     /// The highlighted agent, tracked by pane rather than by index so the
     /// cursor sticks to an agent while the list re-sorts underneath it.
     selected: Option<Selection>,
@@ -363,6 +366,7 @@ impl ZellijPlugin for Sidebar {
                 let moved = panes != self.panes;
                 // Before the early return below: attaching moves no pane.
                 self.watched = snapshot::watched(&sessions, self.plugin_id);
+                self.floating = snapshot::floating(&sessions, self.plugin_id);
                 if moved {
                     self.previous_panes = std::mem::replace(&mut self.panes, panes);
                     if let Some(name) = snapshot::current_session(&sessions) {
@@ -492,6 +496,16 @@ impl ZellijPlugin for Sidebar {
         // instead — the unblocking is the receiver's job.
         if let PipeSource::Cli(pipe) = &message.source {
             unblock_cli_pipe_input(pipe);
+            // A pipe from the command line names no plugin, so every instance
+            // of this one in the session hears it - a sidebar summoned with
+            // `Alt a`, a palette, a peek - and each used to act on it: a remote
+            // add opened two panes. Only the one keeping the rows answers: the
+            // sidebar in the layout, or a controller. A keybind's message is
+            // addressed by configuration and reaches one instance anyway.
+            let keeps_rows = self.config.remote || (self.manages_rows() && !self.floating);
+            if !keeps_rows {
+                return false;
+            }
         }
         // Whatever it did changed which pane is on screen or which row holds it,
         // and the sidebar draws both. Waiting for the next pane update to say so
