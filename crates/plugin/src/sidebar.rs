@@ -291,6 +291,12 @@ impl ZellijPlugin for Sidebar {
             EventType::Key,
             EventType::PermissionRequestResult,
         ]);
+        // A peek hidden with the floating layer (`Alt f`, a click on a tiled
+        // pane) used to live on unseen, re-reading its pane every second. Since
+        // 0.45 Zellij tells a floating plugin when its layer hides.
+        if self.config.peek.is_some() || self.config.help {
+            subscribe(&[EventType::Visible]);
+        }
 
         // The sidebar is a pane you navigate to like any other — and so is the
         // palette, which has to hold focus to be typed into at all. Unselectable
@@ -314,6 +320,10 @@ impl ZellijPlugin for Sidebar {
         match event {
             Event::Timer(_) => {
                 self.tick();
+                false
+            }
+            Event::Visible(false) if self.config.peek.is_some() || self.config.help => {
+                close_self();
                 false
             }
             Event::RunCommandResult(exit, stdout, _, context) => {
