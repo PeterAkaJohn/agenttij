@@ -273,6 +273,9 @@ pub struct Sidebar {
     /// Whether anyone is looking at this tab: a client attached, with this tab
     /// open. A row on screen in a session nobody is attached to is not read.
     watched: bool,
+    /// Something to say in the notice line, and for how many more ticks: what
+    /// went wrong with something asked for, which would otherwise fail silently.
+    said: Option<(String, u8)>,
     /// The highlighted agent, tracked by pane rather than by index so the
     /// cursor sticks to an agent while the list re-sorts underneath it.
     selected: Option<Selection>,
@@ -333,7 +336,18 @@ impl ZellijPlugin for Sidebar {
                 close_self();
                 false
             }
-            Event::RunCommandResult(exit, stdout, _, context) => {
+            Event::RunCommandResult(exit, stdout, stderr, context) => {
+                let asked = context.get(scan::CONTEXT_KEY).map(String::as_str);
+                if asked == Some(scan::CONTEXT_WORKTREE)
+                    || asked == Some(scan::CONTEXT_WORKTREE_GONE)
+                {
+                    return self.worktree_answered(
+                        asked == Some(scan::CONTEXT_WORKTREE),
+                        exit,
+                        &stdout,
+                        &stderr,
+                    );
+                }
                 if context.get(scan::CONTEXT_KEY).map(String::as_str) == Some(scan::CONTEXT_HOST) {
                     let host = context.get(scan::CONTEXT_PANE).cloned().unwrap_or_default();
                     return self.absorb_host(&host, exit, &stdout);
@@ -484,7 +498,16 @@ impl ZellijPlugin for Sidebar {
         // leaves the mark a beat behind the screen.
         let handled = matches!(
             message.name.as_str(),
-            "cycle" | "cycle-back" | "flip" | "pane" | "back" | "new" | "add" | "show" | "close"
+            "cycle"
+                | "cycle-back"
+                | "flip"
+                | "pane"
+                | "back"
+                | "new"
+                | "add"
+                | "show"
+                | "close"
+                | "worktree"
         );
         match message.name.as_str() {
             "cycle" => self.cycle(),
@@ -506,6 +529,22 @@ impl ZellijPlugin for Sidebar {
             "back" => self.go_back(),
             "new" => self.new_row(),
             "add" => self.add_to_row(),
+            // The row on screen, since whoever pressed it is looking at that.
+            "worktree" => {
+                let on_screen = self.row_in(self.slot());
+                let row = self
+                    .agents
+                    .iter()
+                    .find(|agent| {
+                        agent.kind == Kind::Row
+                            && agent.session == self.current_session
+                            && Some(agent.pane) == on_screen
+                    })
+                    .cloned();
+                if let Some(row) = row {
+                    self.worktree(&row);
+                }
+            }
             // A controller is told which pane to show, since the sidebar asking
             // is looking at a list of them.
             "show" => {
@@ -587,6 +626,10 @@ impl Sidebar {
             return;
         }
         set_timeout(TICK_SECONDS);
+        self.said = self
+            .said
+            .take()
+            .and_then(|(text, left)| left.checked_sub(1).map(|left| (text, left)));
 
         // Once the session list has arrived, so a folder whose name is already
         // taken gets a number rather than a silent failure.
@@ -1333,6 +1376,14 @@ impl Sidebar {
                 }
                 false
             }
+            // A new row on that code in a worktree of its own, for a second agent
+            // that must not share the first one's files.
+            BareKey::Char('w') => {
+                if let Some(agent) = self.selected_agent().cloned() {
+                    self.worktree(&agent);
+                }
+                false
+            }
             // The same project, here: a workspace on that code in the session you
             // are already in, without moving the agent that is working on it.
             BareKey::Char('o') => {
@@ -1422,6 +1473,11 @@ impl Sidebar {
         }
         if agent.kind == Kind::Row {
             self.expanded.remove(&(agent.host.clone(), agent.pane));
+        }
+        // A whole row or project only: closing one pane of a row leaves the row,
+        // and the row is still working there.
+        if !matches!(agent.kind, Kind::Pane { .. }) {
+            self.let_worktrees_go(&closing);
         }
         if let Kind::Project { .. } = agent.kind {
             self.arrangement
@@ -2515,26 +2571,9 @@ impl Sidebar {
     /// Only for rows on this machine: a directory on another one is a path that
     /// means nothing here, and `Enter` on those already does the honest thing.
     fn hand_off(&mut self, agent: &Agent) {
-        // A project header hands off its own directory, which is the project —
-        // exactly the thing you would want a workspace on.
-        if !agent.host.is_empty() {
+        let Some(cwd) = self.workdir(agent) else {
             return;
-        }
-        // A named project is keyed by its name, which is not a directory — its
-        // roots are. Any of them is the project; the first is as good as another.
-        let cwd = match agent.kind {
-            Kind::Project { .. } => self
-                .project_roots
-                .get(project::root(agent))
-                .and_then(|roots| roots.iter().next())
-                .cloned()
-                .unwrap_or_default(),
-            _ if agent.cwd.is_empty() => project::root(agent).to_owned(),
-            _ => agent.cwd.clone(),
         };
-        if cwd.is_empty() || !cwd.starts_with('/') {
-            return;
-        }
 
         let slot = self.slot();
         let leaving = self.row_in(slot);
@@ -2546,6 +2585,113 @@ impl Sidebar {
                 pane: opened,
             });
         }
+    }
+
+    /// Where a row works, for starting something beside it. Only on this
+    /// machine: a directory on another one is a path that means nothing here.
+    fn workdir(&self, agent: &Agent) -> Option<String> {
+        if !agent.host.is_empty() {
+            return None;
+        }
+        // A project header hands over its own directory, which is the project.
+        // A named project is keyed by its name, which is not a directory - its
+        // roots are, and any of them is the project.
+        let cwd = match agent.kind {
+            Kind::Project { .. } => self
+                .project_roots
+                .get(project::root(agent))
+                .and_then(|roots| roots.iter().next())
+                .cloned()
+                .unwrap_or_default(),
+            _ if agent.cwd.is_empty() => project::root(agent).to_owned(),
+            _ => agent.cwd.clone(),
+        };
+        cwd.starts_with('/').then_some(cwd)
+    }
+
+    /// A new row in a fresh worktree of the repository `agent` works in, so
+    /// two agents on one repository stop writing over each other's files. The
+    /// row opens once git has made it (`worktree_answered`).
+    fn worktree(&mut self, agent: &Agent) {
+        let Some(dir) = self.workdir(agent) else {
+            return;
+        };
+        let command = scan::worktree_command(&dir);
+        let words: Vec<&str> = command.iter().map(String::as_str).collect();
+        run_command(
+            &words,
+            BTreeMap::from([(
+                scan::CONTEXT_KEY.to_owned(),
+                scan::CONTEXT_WORKTREE.to_owned(),
+            )]),
+        );
+    }
+
+    /// What git said about a worktree: made, so the row opens in it; or not, or
+    /// kept rather than removed - said, rather than left to look like nothing
+    /// happened.
+    fn worktree_answered(
+        &mut self,
+        made: bool,
+        exit: Option<i32>,
+        stdout: &[u8],
+        stderr: &[u8],
+    ) -> bool {
+        let reason = String::from_utf8_lossy(stderr)
+            .lines()
+            .next()
+            .unwrap_or_default()
+            .trim()
+            .to_owned();
+        match (made, exit == Some(0)) {
+            (true, true) => {
+                let path = String::from_utf8_lossy(stdout).trim().to_owned();
+                self.start_row(Some(&path));
+            }
+            (true, false) if reason.is_empty() => self.say("no worktree made"),
+            (true, false) => self.say(&reason),
+            (false, true) => {}
+            (false, false) => self.say("worktree kept: it has changes"),
+        }
+        true
+    }
+
+    /// Lets go of the worktrees this sidebar made that only the closing rows
+    /// were working in. Git keeps one that holds anything uncommitted, which
+    /// `worktree_answered` says; the branch always stays.
+    fn let_worktrees_go(&mut self, closing: &[u32]) {
+        let here = |agent: &Agent| agent.host.is_empty() && agent.session == self.current_session;
+        let going: BTreeSet<(String, String)> = self
+            .agents
+            .iter()
+            .filter(|agent| here(agent) && agent.kind == Kind::Row && closing.contains(&agent.pane))
+            .filter_map(|agent| project::worktree_of(&agent.cwd))
+            .map(|(repo, worktree)| (repo.to_owned(), worktree.to_owned()))
+            .collect();
+        for (repo, worktree) in going {
+            let inside = |dir: &str| dir == worktree || dir.starts_with(&format!("{worktree}/"));
+            let still_used = self.agents.iter().chain(&self.reported).any(|agent| {
+                agent.host.is_empty()
+                    && !(here(agent) && closing.contains(&agent.pane))
+                    && inside(&agent.cwd)
+            });
+            if still_used {
+                continue;
+            }
+            let command = scan::worktree_gone_command(&repo, &worktree);
+            let words: Vec<&str> = command.iter().map(String::as_str).collect();
+            run_command(
+                &words,
+                BTreeMap::from([(
+                    scan::CONTEXT_KEY.to_owned(),
+                    scan::CONTEXT_WORKTREE_GONE.to_owned(),
+                )]),
+            );
+        }
+    }
+
+    fn say(&mut self, text: &str) {
+        self.said = Some((text.to_owned(), 5));
     }
 
     /// The row whose pane holds the slot, by its primary.
@@ -3011,7 +3157,10 @@ impl Sidebar {
         self.projects.get(project).cloned().unwrap_or_default()
     }
 
-    fn notice(&self) -> Option<&'static str> {
+    fn notice(&self) -> Option<&str> {
+        if let Some((text, _)) = &self.said {
+            return Some(text);
+        }
         match self.permissions {
             Permissions::Pending => Some("waiting for permissions"),
             Permissions::Denied => Some("permissions denied"),

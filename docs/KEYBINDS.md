@@ -23,6 +23,7 @@ working while the sidebar has focus.
 | `b` | flip back to the row you were on before |
 | `B` | back to the session you came from |
 | `o` | open a workspace here on that row's project |
+| `w` | a new row in a fresh git worktree of that row's repository |
 | `v` | cycle to the next pane *within* the row on screen |
 | `V` | and back the other way |
 | `1`–`9` | straight to that pane of the row — the number its frame shows |
@@ -81,6 +82,15 @@ project of its own.
 No zoxide is not an error: the list is then just the directories in use. And a
 path under `/tmp` is the one thing this cannot honour — Zellij rewrites paths a
 plugin hands it when they start with `/tmp`, `/host`, `/data` or `/cache`.
+
+### A row in a worktree
+
+Two agents on one repository write over each other's files.
+`w` on a row - `Alt w` from anywhere, for the row on screen - makes a git worktree beside that row's repository and starts a new row in it, template and all: `api.worktrees/api-2` on a branch `api-2`, from the commit the row is on.
+It files under the same project as the repository, since a worktree is the same code.
+Closing the row lets the worktree go with `git worktree remove`, which refuses one holding anything uncommitted: that one stays, and the sidebar says so.
+The branch always stays.
+Only worktrees under `<repo>.worktrees/` are ever removed, so one you made by hand is yours to keep.
 
 ### Putting a pane back in a row
 
@@ -393,6 +403,7 @@ is why the bindings go in there.
 | `Alt v` | cycle to the next pane in the row on screen |
 | `Alt b` | flip back to the row you were on before |
 | `Alt g` | new row — a new agent pane |
+| `Alt w` | new row in a fresh git worktree of the row on screen's repository |
 | `Alt m` | add a pane to the row on screen |
 | `Alt a` | summon a sidebar in whatever session you are in, floating |
 | `Alt t` | jump, from anywhere — no sidebar needed |

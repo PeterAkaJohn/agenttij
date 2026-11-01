@@ -37,6 +37,8 @@ def block(url, summon, cycle, back, focus, new, add, jump, group, indent):
     # A new row somewhere you choose is the new-row key with Shift.
     new_modifier, new_key = new.rsplit(" ", 1)
     pick = f"{new_modifier} {new_key.upper()}"
+    # And one in a fresh git worktree is that modifier with `w`.
+    worktree = f"{new_modifier} w"
     # What every binding that has to *find* the docked sidebar must repeat,
     # exactly as the layout writes it.
     matched = ['            scope "session"', '            solo "true"']
@@ -117,6 +119,15 @@ def block(url, summon, cycle, back, focus, new, add, jump, group, indent):
         f'    bind "{add}" {{',
         f'        MessagePlugin "{url}" {{',
         '            name "add"',
+        "            launch_new false",
+        *matched,
+        "        }",
+        "    }",
+        "    // A new row in a fresh git worktree of the row on screen's repository,",
+        "    // for a second agent on the same code that must not share its files.",
+        f'    bind "{worktree}" {{',
+        f'        MessagePlugin "{url}" {{',
+        '            name "worktree"',
         "            launch_new false",
         *matched,
         "        }",

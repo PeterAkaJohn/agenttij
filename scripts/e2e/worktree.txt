@@ -1,0 +1,29 @@
+# A row in a fresh worktree of the repository a row works in: filed under the
+# same project, and let go of when the row closes - unless it holds work.
+start layouts/agenttij-workspace.kdl --group ';;'
+sh 'git init -q work && cd work && printf "a\n" > f && git add f && git -c user.email=e2e@agenttij -c user.name=e2e commit -qm one'
+report terminal_0 idle --cwd work
+wait 'drawn.sidebar=›○ work*'
+
+keys '\033s' w
+wait terminals=6 visible=terminal_3 'drawn.sidebar=›· work-1 * 3 *'
+sh 'git -C work worktree list | grep -q "work.worktrees/work-1 .*\[work-1\]"'
+# One repository is one project: no headers to tell two apart.
+wait 'drawn.sidebar!=*▾*'
+
+# Closing the row lets the worktree go, and its branch stays.
+keys '\033s' d d
+wait terminals=3 visible=terminal_0
+sleep 1.5
+sh 'test ! -e work.worktrees/work-1 && git -C work show-ref -q --verify refs/heads/work-1'
+
+# From the agent's pane, on the row on screen - and a worktree holding work is
+# kept, and the sidebar says so.
+keys '\033l'
+wait focus=terminal_0
+keys '\033w'
+wait terminals=6 'drawn.sidebar=›· work-2 * 3 *'
+sh 'echo b >> work.worktrees/work-2/f'
+keys '\033s' d d
+wait terminals=3 'drawn.sidebar=*worktree kept: it has changes*'
+sh 'test -d work.worktrees/work-2'
