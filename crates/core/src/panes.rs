@@ -7,6 +7,7 @@
 //! the agent read `ZELLIJ_SESSION_NAME`.
 
 use crate::agent::{Agent, Status};
+use std::collections::BTreeSet;
 
 /// One terminal pane, flattened out of Zellij's per-session `PaneManifest`.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -139,10 +140,23 @@ fn has_pane_data(panes: &[PaneSnapshot], session: &str) -> bool {
 
 /// Finds agent panes that are not reporting to us, so tools without hooks
 /// still show up in the sidebar instead of being silently absent.
-pub fn discover(panes: &[PaneSnapshot], reported: &[Agent], names: &[String]) -> Vec<Agent> {
+///
+/// By title, or by what the pane is running (`running`, the panes of this
+/// session whose program [`runs_an_agent`]): the sidebar renames the pane on
+/// screen to say where it sits in its row, and that name replaces whatever
+/// title the agent set - so an agent you were looking at was never found.
+pub fn discover(
+    panes: &[PaneSnapshot],
+    reported: &[Agent],
+    names: &[String],
+    running: &BTreeSet<(String, u32)>,
+) -> Vec<Agent> {
     panes
         .iter()
-        .filter(|pane| looks_like_an_agent(&pane.title, names))
+        .filter(|pane| {
+            looks_like_an_agent(&pane.title, names)
+                || running.contains(&(pane.session.clone(), pane.pane))
+        })
         .filter(|pane| {
             !reported
                 .iter()
@@ -247,6 +261,36 @@ fn exists(panes: &[PaneSnapshot], session: &str, pane: u32) -> bool {
     panes
         .iter()
         .any(|candidate| candidate.session == session && candidate.pane == pane)
+}
+
+/// Programs that run an agent written in them, which is then the second word.
+/// A shell counts when it was handed a script: a wrapper around an agent is
+/// how many people start one.
+const INTERPRETERS: [&str; 11] = [
+    "node", "nodejs", "bun", "deno", "python", "python3", "ruby", "npx", "sh", "bash", "zsh",
+];
+
+/// Whether a pane's foreground command is one of the agents: its program, or
+/// the script an interpreter was given - `node .../bin/codex.js`. Only those
+/// two words, so `nvim codex-notes.md` is an editor.
+pub fn runs_an_agent(command: &[String], names: &[String]) -> bool {
+    let base = |word: &str| word.rsplit('/').next().unwrap_or(word).to_lowercase();
+    let Some(first) = command.first().map(|word| base(word)) else {
+        return false;
+    };
+    let interpreted = INTERPRETERS
+        .iter()
+        .any(|name| first == *name || first.starts_with(&format!("{name}.")));
+    let word = if interpreted {
+        command.get(1).map(|word| base(word))
+    } else {
+        Some(first)
+    };
+    word.is_some_and(|word| {
+        names
+            .iter()
+            .any(|name| word == *name || word.starts_with(&format!("{name}.")))
+    })
 }
 
 fn looks_like_an_agent(title: &str, names: &[String]) -> bool {
@@ -425,7 +469,7 @@ mod tests {
     #[test]
     fn discovers_unreported_agent_panes_by_title() {
         let panes = vec![pane("main", 1, 4, "codex"), pane("main", 0, 3, "zsh")];
-        let found = discover(&panes, &[], &names());
+        let found = discover(&panes, &[], &names(), &BTreeSet::new());
 
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].key(), ("main", 4));
@@ -435,7 +479,39 @@ mod tests {
     #[test]
     fn discovery_never_shadows_a_reporting_agent() {
         let panes = vec![pane("main", 0, 3, "claude")];
-        assert_eq!(discover(&panes, &[agent("main", 3)], &names()), vec![]);
+        assert_eq!(
+            discover(&panes, &[agent("main", 3)], &names(), &BTreeSet::new()),
+            vec![]
+        );
+    }
+
+    #[test]
+    fn a_renamed_pane_is_found_by_what_it_runs() {
+        let panes = vec![
+            pane("main", 0, 4, "· api 1/3"),
+            pane("main", 0, 5, "· api 2/3"),
+        ];
+        let running = BTreeSet::from([("main".to_owned(), 4)]);
+        let found = discover(&panes, &[], &names(), &running);
+        assert_eq!(found.iter().map(|a| a.pane).collect::<Vec<_>>(), vec![4]);
+    }
+
+    #[test]
+    fn an_agent_is_its_program_or_the_script_an_interpreter_runs() {
+        let words = |line: &str| line.split(' ').map(str::to_owned).collect::<Vec<_>>();
+        let agents = crate::config::DEFAULT_AGENTS.map(str::to_owned);
+        let agent = |line: &str| runs_an_agent(&words(line), &agents);
+        assert!(agent("codex"));
+        assert!(agent(
+            "/usr/bin/node /usr/lib/node_modules/@openai/codex/bin/codex.js"
+        ));
+        assert!(agent("python3.12 /home/pp/.local/bin/aider --model x"));
+        assert!(
+            !agent("nvim codex-notes.md"),
+            "an editor on a file named after one"
+        );
+        assert!(!agent("node server.js"));
+        assert!(!runs_an_agent(&[], &names()));
     }
 
     #[test]
@@ -467,7 +543,7 @@ mod tests {
             pane("main", 0, 4, "claude"),
             pane("other", 0, 9, "zsh"),
         ];
-        let listed = discover(&panes, &[], &names());
+        let listed = discover(&panes, &[], &names(), &BTreeSet::new());
 
         let extra = list_panes(&panes, &listed, "main");
         assert_eq!(extra.len(), 1, "only the non-agent pane in this session");

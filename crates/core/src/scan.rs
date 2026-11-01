@@ -631,6 +631,8 @@ pub fn attach_command(host: &str, session: &str) -> [String; 5] {
 pub const CONTEXT_KEY: &str = "agenttij";
 pub const CONTEXT_ORDER: &str = "order";
 pub const CONTEXT_PROJECT: &str = "project";
+/// A read of an unhooked agent's screen, for `reading::read`.
+pub const CONTEXT_READ: &str = "read";
 /// A worktree made for a new row: its path on stdout, or why not on stderr.
 pub const CONTEXT_WORKTREE: &str = "worktree";
 /// A worktree let go of when its row closed, or kept because it holds work.
@@ -705,6 +707,19 @@ pub fn worktree_command(dir: &str) -> [String; 4] {
         "-c".to_owned(),
         WORKTREE_SCRIPT.to_owned(),
         dir.to_owned(),
+    ]
+}
+
+/// A pane's screen, read to tell what an agent with no hook is doing. Not
+/// `dump_command`: that one is a peek, and a peek writes down that you looked.
+pub fn screen_command(session: &str, pane: u32) -> [String; 6] {
+    [
+        "zellij".to_owned(),
+        "--session".to_owned(),
+        session.to_owned(),
+        "action".to_owned(),
+        "dump-screen".to_owned(),
+        format!("--pane-id=terminal_{pane}"),
     ]
 }
 

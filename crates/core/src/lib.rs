@@ -15,6 +15,7 @@ pub mod jump;
 pub mod order;
 pub mod panes;
 pub mod project;
+pub mod reading;
 pub mod scan;
 
 pub use agent::{Agent, Kind, Status};

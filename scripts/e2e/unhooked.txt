@@ -1,0 +1,14 @@
+# An agent no hook reports on, found by what it runs - the sidebar renames the
+# pane on screen, so its own title is gone - and read off its screen: working
+# while it changes, waiting when it asks, finished when it goes still.
+start layouts/agenttij-workspace.kdl --group ';;'
+sh 'printf "%s\n" "#!/usr/bin/env python3" "import time" "for i in range(8): print(\"working\", i, flush=True); time.sleep(1)" "input(\"Apply this change? (y/n) \")" "for i in range(4): print(\"applying\", i, flush=True); time.sleep(1)" "input(\"> \")" > codex && chmod +x codex'
+keys '\033l'
+wait focus=slot
+keys '$AGENTTIJ_SESSION_DIR/codex\r'
+wait 'drawn.sidebar=›◐ *' --timeout 15
+wait 'drawn.sidebar=›⚠ *' --timeout 20
+keys 'y\r'
+wait 'drawn.sidebar=›◐ *' --timeout 10
+# Finished while on screen: read as it finished.
+wait 'drawn.sidebar=›✓ *' --timeout 20

@@ -574,9 +574,14 @@ A row is named after the folder it is working in — the last component, not the
 whole path. An agent reports its own through the hook; a plain pane is asked for
 its cwd, since its title is a shell prompt and says whatever your prompt says.
 
-Agents that never report are still listed, discovered by pane title, as
-`?`/unknown. Note that Claude Code sets its own terminal title, so this
-fallback mostly helps *other* tools; hooked agents don't need it.
+Agents that never report are still listed: found by pane title, or by what the
+pane is running (`codex`, or `node .../codex.js`), since the sidebar renames the
+pane on screen and that replaces the agent's own title. Their status is read off
+their screen, one agent every other second: a screen that keeps changing is
+working (`◐`), one that went still after working has finished (`✓`, unread until
+you look), and a question at the bottom - `(y/n)`, "Do you want…" - is waiting on
+you (`⚠`). It is a reading, not a report: a hooked agent says exactly, so hooks
+stay the better way for any tool that has them.
 
 Nothing reaches the sidebar without something alive behind it. Every tick
 reconciles against the live session list and, where available, the pane list —

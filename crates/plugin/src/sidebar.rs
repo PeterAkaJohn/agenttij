@@ -3,8 +3,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use agenttij_core::{
-    agent, config::Scope, format, order, panes, project, scan, Agent, Config, Group, Groups, Kind,
-    PaneSnapshot, Status,
+    agent, config::Scope, format, order, panes, project, reading, scan, Agent, Config, Group,
+    Groups, Kind, PaneSnapshot, Status,
 };
 use zellij_tile::prelude::*;
 
@@ -164,6 +164,14 @@ pub struct Sidebar {
     /// a `cd` still shows up.
     cwds: BTreeMap<u32, String>,
     programs: BTreeMap<u32, String>,
+    /// What each pane of this session runs in the foreground, the same way:
+    /// how an agent with no hook is found once its title has been replaced.
+    running: BTreeMap<u32, Vec<String>>,
+    /// What each unhooked agent's screen said last, by pane, and which panes
+    /// those are; read one at a time, every other tick (`read_unhooked`).
+    readings: BTreeMap<u32, reading::Reading>,
+    unhooked: Vec<u32>,
+    read_turn: u64,
     /// What project a pane's directory belongs to, and the directory it was
     /// asked about — so a `cd` re-asks and nothing else does. Only panes nothing
     /// reports on need this; an agent's hook has already answered it.
@@ -675,6 +683,7 @@ impl Sidebar {
             .cwds
             .keys()
             .chain(self.programs.keys())
+            .chain(self.running.keys())
             .copied()
             .collect();
         let known: Vec<u32> = known.into_iter().collect();
@@ -683,6 +692,7 @@ impl Sidebar {
             let pane = known[self.refresh_next];
             self.cwds.remove(&pane);
             self.programs.remove(&pane);
+            self.running.remove(&pane);
         }
 
         // Not while the grant is pending either: a command issued then is
@@ -696,6 +706,7 @@ impl Sidebar {
         // The backstop for reading the arrangement, should the grant's own
         // moment have passed without it.
         self.read_order();
+        self.read_unhooked();
 
         if let Some((session, pane)) = self.config.peek.clone() {
             let command = scan::dump_command(&self.config.peek_host, &session, pane);
@@ -802,6 +813,19 @@ impl Sidebar {
         if context.get(scan::CONTEXT_KEY).map(String::as_str) == Some(scan::CONTEXT_PAST) {
             self.past = scan::parse_past(&String::from_utf8_lossy(stdout));
             self.refresh_palette();
+            return true;
+        }
+        if context.get(scan::CONTEXT_KEY).map(String::as_str) == Some(scan::CONTEXT_READ) {
+            let pane = context
+                .get(scan::CONTEXT_PANE)
+                .and_then(|pane| pane.parse::<u32>().ok());
+            let screen = String::from_utf8_lossy(stdout);
+            // Nothing came back when the pane is gone; that is not a screen.
+            if let (Some(pane), false) = (pane, screen.trim().is_empty()) {
+                let read = reading::read(self.readings.get(&pane), &screen, self.now);
+                self.readings.insert(pane, read);
+                self.rebuild();
+            }
             return true;
         }
         if context.get(scan::CONTEXT_KEY).map(String::as_str) == Some(scan::CONTEXT_BOOT) {
@@ -958,7 +982,29 @@ impl Sidebar {
         // are trying to read.
         let alive = panes::still_alive(&self.panes, &self.previous_panes);
         let mut agents = panes::reconcile(reported, &alive, &self.live_sessions);
-        let discovered = panes::discover(&self.panes, &agents, &self.config.agents);
+        let running = self.running_agents();
+        let mut discovered = panes::discover(&self.panes, &agents, &self.config.agents, &running);
+        // What their screens said, for the ones in this session.
+        self.unhooked = discovered
+            .iter()
+            .filter(|agent| agent.session == self.current_session)
+            .map(|agent| agent.pane)
+            .collect();
+        let unhooked = &self.unhooked;
+        self.readings.retain(|pane, _| unhooked.contains(pane));
+        for agent in discovered
+            .iter_mut()
+            .filter(|agent| agent.session == self.current_session)
+        {
+            if let Some(read) = self
+                .readings
+                .get(&agent.pane)
+                .filter(|read| read.status != Status::Unknown)
+            {
+                agent.status = read.status;
+                agent.reported_at = read.since;
+            }
+        }
         agents.extend(discovered);
 
         // In solo mode a row is a group of panes, so the rows are the groups:
@@ -1885,6 +1931,55 @@ impl Sidebar {
             })
             .collect();
         self.groups.restore(&live);
+    }
+
+    /// The panes of this session running an agent, by what is in the
+    /// foreground. Asked once per pane and kept; the tick refreshes one a turn.
+    /// Only the sidebar keeping the rows asks - a round-trip per pane is not
+    /// for every instance.
+    fn running_agents(&mut self) -> BTreeSet<(String, u32)> {
+        if !self.manages_rows() {
+            return BTreeSet::new();
+        }
+        let ours: Vec<u32> = self
+            .panes
+            .iter()
+            .filter(|pane| pane.session == self.current_session)
+            .map(|pane| pane.pane)
+            .collect();
+        let mut found = BTreeSet::new();
+        for pane in ours {
+            let command = self
+                .running
+                .entry(pane)
+                .or_insert_with(|| {
+                    get_pane_running_command(PaneId::Terminal(pane)).unwrap_or_default()
+                })
+                .clone();
+            if panes::runs_an_agent(&command, &self.config.agents) {
+                found.insert((self.current_session.clone(), pane));
+            }
+        }
+        found
+    }
+
+    /// Reads one unhooked agent's screen every other tick, each in turn: one
+    /// fork, and only while there is an agent no hook speaks for.
+    fn read_unhooked(&mut self) {
+        self.read_turn += 1;
+        if !self.manages_rows() || self.unhooked.is_empty() || self.read_turn % 2 == 1 {
+            return;
+        }
+        let pane = self.unhooked[(self.read_turn / 2) as usize % self.unhooked.len()];
+        let command = scan::screen_command(&self.current_session, pane);
+        let words: Vec<&str> = command.iter().map(String::as_str).collect();
+        run_command(
+            &words,
+            BTreeMap::from([
+                (scan::CONTEXT_KEY.to_owned(), scan::CONTEXT_READ.to_owned()),
+                (scan::CONTEXT_PANE.to_owned(), pane.to_string()),
+            ]),
+        );
     }
 
     /// Reads the arrangement, once. It outlives the plugin, so a reload - or

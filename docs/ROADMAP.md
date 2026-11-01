@@ -37,20 +37,19 @@ Measured, not assumed, and every idea below is bent around them.
 - **Unread finished work**: `●` until the row has been on screen with someone looking, or peeked at.
 - **What an agent left uncommitted**, `+120−30`, counted by the hook when it finishes.
 - **Worktree rows** (`w`, `Alt w`): a new row in a fresh git worktree, let go of when the row closes unless it holds work.
+- **Status for agents without a hook**, read off their screens with `dump-screen` - no new permission - and found by what they run as well as by title.
 - **A harness and e2e scenarios**: sealed Zellij sessions driven by real keystrokes, reading what the sidebar draws, run in CI against the Zellij the plugin is built for.
 
 ## Open, ranked
 
 | | what | why it earns its place | cost |
 |---|---|---|---|
-| 1 | status for agents without a hook | codex, aider and the rest show as `Unknown`; reading their pane on the slow tick and matching each tool's prompt is the only route left | medium, and the patterns need upkeep |
-| 2 | check in from a phone | 0.45 serves a session over its web server with a mobile UI; a toggle that shares this session and shows the URL, loudly visible while on | medium |
-| 3 | reply to a blocked agent | answering "1" without going there, `write_chars_to_pane_id`; crosses "never types into an agent", so opt-in and needs-input rows only | small, and a judgement call |
-| 4 | promote a project to its own tab (`P`) | real isolation and a tab bar that shows projects; `break_panes_to_new_tab` meets swap layouts and suppressed panes, where things have broken before | medium to large |
+| 1 | check in from a phone | 0.45 serves a session over its web server with a mobile UI; a toggle that shares this session and shows the URL, loudly visible while on | medium |
+| 2 | reply to a blocked agent | answering "1" without going there, `write_chars_to_pane_id`; crosses "never types into an agent", so opt-in and needs-input rows only | small, and a judgement call |
+| 3 | promote a project to its own tab (`P`) | real isolation and a tab bar that shows projects; `break_panes_to_new_tab` meets swap layouts and suppressed panes, where things have broken before | medium to large |
 
-Items 1 and 3 need `ReadPaneContents` and `WriteToStdin` respectively; the plugin already asks for the second, for `c`.
-The first is a new permission, so it re-prompts every existing user - an invisible prompt in a narrow pane - unless the installer grants it first.
-The same permission would let local peeks read `get_pane_scrollback` instead of forking `dump-screen`, which is worth doing only once something else needs it.
+Replying needs `WriteToStdin`, which the plugin already asks for, for `c`.
+Reading screens went through `dump-screen` rather than `ReadPaneContents` for the reason a new permission is costly: a session still running an older build rewrites the grant without it, and the next sidebar sits on an invisible prompt.
 
 ## A suite, if the pieces stay honest
 
