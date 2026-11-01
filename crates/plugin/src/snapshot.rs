@@ -57,6 +57,16 @@ pub fn watched(sessions: &[SessionInfo], plugin_id: u32) -> bool {
         })
 }
 
+/// How many web clients are watching this session, if it is shared on the
+/// web at all.
+pub fn shared(sessions: &[SessionInfo]) -> Option<usize> {
+    sessions
+        .iter()
+        .find(|session| session.is_current_session)
+        .filter(|session| session.web_clients_allowed)
+        .map(|session| session.web_client_count)
+}
+
 /// Whether our own pane is a floating one.
 pub fn floating(sessions: &[SessionInfo], plugin_id: u32) -> bool {
     sessions

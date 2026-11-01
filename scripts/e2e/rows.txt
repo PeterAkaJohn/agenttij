@@ -1,8 +1,8 @@
 # Rows built from a template, moving inside one, and flipping between two.
 start layouts/agenttij-workspace.kdl --group ';;'
 expect terminals=3 parked=2 focus=slot title.slot=*1/3
-# A row says how many panes it owns.
-expect 'drawn.sidebar=›* agenttij * 3 *'
+# A row says how many panes it owns, and nothing claims to be on the web.
+expect 'drawn.sidebar=›* agenttij * 3 *' 'drawn.sidebar!=*on the web*'
 
 keys '\033g'
 wait terminals=6 visible=terminal_3 focus=terminal_3

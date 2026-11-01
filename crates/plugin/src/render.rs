@@ -5,7 +5,7 @@
 //! writing the escapes directly lets a status be any colour the user asked for.
 //! Layout arithmetic stays in `agenttij_core::format`, where it is tested.
 
-use agenttij_core::{format, Agent, Colors};
+use agenttij_core::{format, Agent, Colors, Status};
 
 /// Reset everything: colour, and the weight the cursor row is drawn in.
 const RESET: &str = "\u{1b}[0m";
@@ -31,6 +31,9 @@ pub struct View<'a> {
     /// Shown instead of the list when there is nothing to show, or nothing we
     /// are allowed to show.
     pub notice: Option<&'a str>,
+    /// Said above the list for as long as it is true: that this session is on
+    /// the web, which nobody should be able to forget.
+    pub banner: Option<&'a str>,
     /// Which session we are in, so rows elsewhere can be marked.
     pub current_session: &'a str,
     /// The pane holding the workspace slot, and the row that owns it — the thing
@@ -59,13 +62,25 @@ pub fn draw(view: &View) {
     // need it and there is width to read it in.
     // A question always gets its line, even when the list would rather have it:
     // a confirmation you cannot see is worse than a row you cannot.
-    let hint_fits = view.agents.len() < view.rows && view.cols >= format::RAIL_MAX_COLS;
+    let top = usize::from(view.banner.is_some() && view.rows > 1);
+    if let Some(banner) = view.banner.filter(|_| top == 1) {
+        let text = format::truncate(banner, view.cols);
+        let padding = view.cols.saturating_sub(text.chars().count());
+        at(0);
+        print!(
+            "\u{1b}[{}m{text}{}{RESET}",
+            view.colors.of(Status::NeedsInput),
+            " ".repeat(padding)
+        );
+    }
+    let hint_fits = view.agents.len() + top < view.rows && view.cols >= format::RAIL_MAX_COLS;
     let footer = view.rows > 0 && (view.prompt.is_some() || hint_fits);
     let capacity = if footer {
         view.rows.saturating_sub(1)
     } else {
         view.rows
-    };
+    }
+    .saturating_sub(top);
 
     let offset = format::scroll_offset(view.cursor, capacity);
     for (row, agent) in view.agents.iter().skip(offset).take(capacity).enumerate() {
@@ -89,7 +104,7 @@ pub fn draw(view: &View) {
             _ => ' ',
         };
 
-        at(row);
+        at(row + top);
         if selected {
             print!("{CURSOR}");
         }

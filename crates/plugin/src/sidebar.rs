@@ -290,6 +290,9 @@ pub struct Sidebar {
     /// Whether our own pane floats - a sidebar summoned with `Alt a` - rather
     /// than sitting in the layout.
     floating: bool,
+    /// How many are watching this session on the web, while it is shared.
+    shared: Option<usize>,
+    banner: String,
     /// The highlighted agent, tracked by pane rather than by index so the
     /// cursor sticks to an agent while the list re-sorts underneath it.
     selected: Option<Selection>,
@@ -378,6 +381,14 @@ impl ZellijPlugin for Sidebar {
                 // Before the early return below: attaching moves no pane.
                 self.watched = snapshot::watched(&sessions, self.plugin_id);
                 self.floating = snapshot::floating(&sessions, self.plugin_id);
+                let shared = snapshot::shared(&sessions);
+                let sharing_moved = shared != self.shared;
+                self.shared = shared;
+                self.banner = match shared {
+                    Some(0) => "shared on the web".to_owned(),
+                    Some(watching) => format!("on the web · {watching} watching"),
+                    None => String::new(),
+                };
                 if moved {
                     self.previous_panes = std::mem::replace(&mut self.panes, panes);
                     if let Some(name) = snapshot::current_session(&sessions) {
@@ -412,7 +423,7 @@ impl ZellijPlugin for Sidebar {
                 // its row for ever once the session went quiet, and cycling onto
                 // it parked what was on screen and showed nothing.
                 let regrouped = self.groups.reconcile(&here);
-                if !moved && !regrouped && self.tab.is_some() && self.named {
+                if !moved && !regrouped && !sharing_moved && self.tab.is_some() && self.named {
                     return false;
                 }
                 // A list that agrees with us has caught up and can be trusted
@@ -641,6 +652,7 @@ impl ZellijPlugin for Sidebar {
             cursor: self.cursor(),
             now: self.now,
             notice: self.notice(),
+            banner: Some(self.banner.as_str()).filter(|banner| !banner.is_empty()),
             current_session: &self.current_session,
             colors: &self.config.colors,
         });
@@ -1476,6 +1488,12 @@ impl Sidebar {
             }
             // A new row on that code in a worktree of its own, for a second agent
             // that must not share the first one's files.
+            // Share this session on the web - from a phone, say - with
+            // Zellij's own screen for it.
+            BareKey::Char('s') => {
+                actions::share();
+                false
+            }
             BareKey::Char('w') => {
                 if let Some(agent) = self.selected_agent().cloned() {
                     self.worktree(&agent);

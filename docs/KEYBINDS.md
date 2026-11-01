@@ -24,6 +24,7 @@ working while the sidebar has focus.
 | `B` | back to the session you came from |
 | `o` | open a workspace here on that row's project |
 | `w` | a new row in a fresh git worktree of that row's repository |
+| `s` | share this session on the web, with Zellij's own share screen |
 | `v` | cycle to the next pane *within* the row on screen |
 | `V` | and back the other way |
 | `1`–`9` | straight to that pane of the row — the number its frame shows |
@@ -82,6 +83,13 @@ project of its own.
 No zoxide is not an error: the list is then just the directories in use. And a
 path under `/tmp` is the one thing this cannot honour — Zellij rewrites paths a
 plugin hands it when they start with `/tmp`, `/host`, `/data` or `/cache`.
+
+### On the web, from a phone
+
+Zellij 0.45 serves a session over its web server, with a mobile UI, so a phone can watch the agents and answer one.
+`s` opens Zellij's own share screen (`Ctrl o` then `s` does too), where the session is shared, the server started and a login made; the sidebar does not share anything itself, since that needs a permission of its own.
+While the session is shared, the sidebar says so on its first line - `shared on the web`, or `on the web · 2 watching` - for as long as it is true.
+For a phone the server has to listen on an address the phone can reach, with a certificate: `web_server_ip`, `web_server_cert` and `web_server_key` in your Zellij config. It serves a live terminal, so mind who can reach it.
 
 ### A row in a worktree
 

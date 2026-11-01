@@ -89,6 +89,14 @@ pub fn clear_row_request() {
 
 /// Opens the directory picker: this plugin again, floating, listing places to
 /// start rather than places to go.
+/// Opens Zellij's own share screen, where a session is shared on the web, its
+/// server started and a login made. Its own and not ours: sharing from here
+/// needs `StartWebServer`, a new permission, and a new permission is one a
+/// session still running an older build takes away again.
+pub fn share() -> Option<PaneId> {
+    open_plugin_pane_floating("zellij:share", BTreeMap::new(), None, BTreeMap::new())
+}
+
 pub fn pick_dir(own_url: &str) -> Option<PaneId> {
     // Exactly what the `Alt G` binding says, or that binding would open a second
     // picker instead of this one.

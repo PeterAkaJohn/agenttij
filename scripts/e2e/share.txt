@@ -1,0 +1,8 @@
+# Shared on the web, the sidebar says so above its rows for as long as it is;
+# s opens Zellij's own screen for sharing.
+start layouts/agenttij-workspace.kdl --group ';;' --option 'web_sharing "on"'
+wait 'drawn.sidebar=shared on the web*'
+expect 'drawn.sidebar=›* agenttij * 3 *'
+
+keys '\033s' s
+wait 'floating=?*'

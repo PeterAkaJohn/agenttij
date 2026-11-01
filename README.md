@@ -45,6 +45,7 @@ screen — the same thing until you open a pane somewhere else.
 | `B` | back to the session you came from |
 | `o` | open a workspace here on that row's project |
 | `w` | a new row in a fresh git worktree of that row's repository (`Alt w`) |
+| `s` | share this session on the web - a phone, say - with Zellij's own screen |
 | `v`, `V` | cycle the panes *within* this row, either way (`Alt v`, `Alt V`) |
 | `1`–`9` | straight to that pane of the row (`Alt 1`–`Alt 9`) |
 | `'` | flip to the pane you were on before this one (`Alt '`) |
