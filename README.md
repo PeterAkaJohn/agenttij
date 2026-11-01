@@ -254,7 +254,7 @@ because "what is running over there" is a question only it can answer.
 
 ## Install
 
-Needs the `wasm32-wasip1` target and Zellij 0.44+.
+Needs the `wasm32-wasip1` target and Zellij 0.45+.
 
 ```sh
 rustup target add wasm32-wasip1

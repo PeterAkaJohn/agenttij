@@ -7,4 +7,4 @@ license.workspace = true
 
 [dependencies]
 agenttij-core = { path = "../core" }
-zellij-tile = "0.44.3"
+zellij-tile = "0.45.1"
