@@ -486,7 +486,11 @@ fn stack(session: &str) -> String {
 /// with real suppressed panes rather than an imitation.
 ///
 /// If nothing answers, the pane count over there will not have moved, and this
-/// opens one itself and stacks the session so it still shows one pane at a time.
+/// stacks the session and opens one itself, so it still shows one pane at a
+/// time. Stacking first is what makes that work: a new pane joins a stack on its
+/// own, while one opened first splits a pane in half and `stack-panes` leaves a
+/// grid like that alone. Measured on 0.45.1: new-pane then stack-panes left four
+/// panes tiled, stack-panes then new-pane left one stack of four.
 /// Which is why it counts rather than looking for a sidebar by name: a plugin's
 /// configuration decides its identity and its title is whatever a layout called
 /// it, but a pane appearing is a pane appearing.
@@ -510,7 +514,7 @@ fn remote_pane_script(session: &str, cwd: Option<&str>) -> String {
 
     format!(
         "before=$({count}); zellij -s {session} pipe --name add >/dev/null 2>&1; sleep 1; \
-         [ \"$({count})\" != \"$before\" ] || {{ {fallback}; {} ; }}",
+         [ \"$({count})\" != \"$before\" ] || {{ {}; {fallback}; }}",
         stack(&session)
     )
 }
@@ -1000,7 +1004,9 @@ mod tests {
         assert!(remote.contains(
             r#"new-pane -- sh -c 'cd '\''/srv/api'\'' 2>/dev/null; exec "${SHELL:-sh}"'"#
         ));
-        assert!(remote.contains("stack-panes"));
+        // Stacked before the pane opens, or the pane splits the grid and the
+        // stack never forms.
+        assert!(remote.find("stack-panes") < remote.find("action new-pane"));
     }
 
     #[test]
