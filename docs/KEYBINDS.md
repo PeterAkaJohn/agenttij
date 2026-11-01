@@ -98,7 +98,7 @@ Two agents on one repository write over each other's files.
 `w` on a row - `Alt w` from anywhere, for the row on screen - makes a git worktree beside that row's repository and starts a new row in it, template and all: `api.worktrees/api-2` on a branch `api-2`, from the commit the row is on.
 It files under the same project as the repository, since a worktree is the same code.
 Closing the row lets the worktree go with `git worktree remove`, which refuses one holding anything uncommitted: that one stays, and the sidebar says so.
-The branch always stays.
+Its branch goes with it through `git branch -d`, which refuses a branch with commits not yet merged - so a branch with work on it stays, and one with none does not pile up.
 Only worktrees under `<repo>.worktrees/` are ever removed, so one you made by hand is yours to keep.
 
 ### Putting a pane back in a row

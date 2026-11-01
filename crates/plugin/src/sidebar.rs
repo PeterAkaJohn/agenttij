@@ -2909,7 +2909,7 @@ impl Sidebar {
 
     /// Lets go of the worktrees this sidebar made that only the closing rows
     /// were working in. Git keeps one that holds anything uncommitted, which
-    /// `worktree_answered` says; the branch always stays.
+    /// `worktree_answered` says. Its branch goes too, unless it has commits.
     fn let_worktrees_go(&mut self, closing: &[u32]) {
         let here = |agent: &Agent| agent.host.is_empty() && agent.session == self.current_session;
         let going: BTreeSet<(String, String)> = self

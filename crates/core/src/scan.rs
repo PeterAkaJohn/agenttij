@@ -724,14 +724,19 @@ pub fn screen_command(session: &str, pane: u32) -> [String; 6] {
 }
 
 /// Lets a worktree go - without `--force`, so git refuses one holding anything
-/// uncommitted, and that work stays where it is. The branch always stays.
-pub fn worktree_gone_command(repo: &str, worktree: &str) -> [String; 6] {
+/// uncommitted, and that work stays where it is - and then its branch, with
+/// `-d`, which git refuses for one with commits not merged: a branch with work
+/// on it stays, and one with none no longer piles up. Fails only if the
+/// worktree stayed.
+pub fn worktree_gone_command(repo: &str, worktree: &str) -> [String; 5] {
     [
-        "git".to_owned(),
-        "-C".to_owned(),
+        "sh".to_owned(),
+        "-c".to_owned(),
+        r#"git -C "$0" worktree remove "$1" || exit 1
+git -C "$0" branch -d "${1##*/}" >/dev/null 2>&1
+exit 0"#
+            .to_owned(),
         repo.to_owned(),
-        "worktree".to_owned(),
-        "remove".to_owned(),
         worktree.to_owned(),
     ]
 }
@@ -1282,6 +1287,21 @@ mod tests {
             .output()
             .map(|out| String::from_utf8_lossy(&out.stdout).into_owned())
             .unwrap_or_default();
+        // The second gets a commit of its own; the first has none.
+        let second_dir = std::path::PathBuf::from(&second);
+        std::fs::write(second_dir.join("f"), "b\n").expect("written");
+        assert!(git(
+            "-c user.email=t@t -c user.name=t commit -qam two",
+            &second_dir
+        ));
+        let repo_path = repo.to_string_lossy().into_owned();
+        let (first_gone, _) = run(&worktree_gone_command(&repo_path, &first), &base);
+        let (second_gone, _) = run(&worktree_gone_command(&repo_path, &second), &base);
+        let branches = std::process::Command::new("git")
+            .args(["-C", &repo_path, "branch", "--list"])
+            .output()
+            .map(|out| String::from_utf8_lossy(&out.stdout).into_owned())
+            .unwrap_or_default();
         std::fs::remove_dir_all(&base).ok();
 
         let repo = repo.to_string_lossy();
@@ -1298,6 +1318,15 @@ mod tests {
             "{listed}"
         );
         assert!(!outside, "nothing to branch from outside a repository");
+        assert!(first_gone && second_gone, "both clean, so both removed");
+        assert!(
+            !branches.contains("api-1"),
+            "no work on it: the branch went too"
+        );
+        assert!(
+            branches.contains("api-2"),
+            "a commit on it: the branch stays"
+        );
     }
 
     #[test]
