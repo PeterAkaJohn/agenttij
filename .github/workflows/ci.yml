@@ -58,3 +58,12 @@ jobs:
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - run: python3 scripts/harness.py scenario scripts/e2e/*.txt
+
+      # A failed run keeps its session's directory: the Zellij log, the client's
+      # raw output, and the config and layout it was given.
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-sessions
+          path: /tmp/agenttij-harness/
+          include-hidden-files: true
