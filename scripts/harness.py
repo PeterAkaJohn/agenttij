@@ -608,7 +608,9 @@ def run_scenario(path, parser):
         print(f"  {error}")
     finally:
         if home(session).exists():
-            logged = stop_session(session)
+            # A failed run keeps its directory whatever the log says: the log,
+            # the client's output and the layout are what explain it.
+            logged = stop_session(session, keep=status == "fail")
             if logged == "panic":
                 status = "fail"
             elif logged == "client" and status == "fail":
