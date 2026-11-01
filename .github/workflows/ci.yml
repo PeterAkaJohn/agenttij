@@ -67,3 +67,43 @@ jobs:
           name: e2e-sessions
           path: /var/tmp/agenttij-harness/
           include-hidden-files: true
+
+  # The same, against a machine watched over ssh: scripts/testbox.sh in a
+  # container, whose login shell is zsh. Everything that runs over ssh is
+  # covered here and nowhere else.
+  e2e-remote:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-wasip1
+
+      - uses: Swatinem/rust-cache@v2
+
+      - run: cargo build -p agenttij --target wasm32-wasip1 --release
+
+      - name: zellij
+        run: |
+          mkdir -p "$HOME/.local/bin"
+          curl -fsSL https://github.com/zellij-org/zellij/releases/download/v0.45.1/zellij-x86_64-unknown-linux-musl.tar.gz |
+            tar xz -C "$HOME/.local/bin"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      # The plugin's ssh runs as this user, with BatchMode: a key, no passphrase.
+      - name: testbox
+        run: |
+          mkdir -p ~/.ssh && ssh-keygen -q -t ed25519 -N '' -f ~/.ssh/id_ed25519
+          host=$(sh scripts/testbox.sh up | sed -n 's/^watching host: //p')
+          test -n "$host"
+          echo "AGENTTIJ_HOST=$host" >> "$GITHUB_ENV"
+
+      - run: python3 scripts/harness.py scenario scripts/e2e/remote/*.txt
+
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-remote-sessions
+          path: /var/tmp/agenttij-harness/
+          include-hidden-files: true

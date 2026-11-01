@@ -1,0 +1,29 @@
+# A machine watched over ssh, against scripts/testbox.sh - whose login shell is
+# zsh, where a POSIX script sent over unquoted used to break: its rows, a peek
+# at one, a pane added over there with no agenttij to answer, and an attach.
+needs AGENTTIJ_HOST
+start layouts/agenttij-workspace.kdl --group ';;'
+keys '\033s' h '$AGENTTIJ_HOST' '\r'
+wait 'drawn.sidebar=*⚠  ⇥api*' 'drawn.sidebar=*◐  ⇥web*' --timeout 20
+
+keys j j
+wait 'drawn.sidebar=›⚠  ⇥api*'
+keys p
+wait 'drawn.floating=*api: may I write to src/main.rs? (y/n)*'
+keys q
+wait floating=
+
+# Nothing over there answers the ask, so the pane is opened and the session
+# stacked: one pane more, and a stack.
+sh 'ssh -o BatchMode=yes -T "$AGENTTIJ_HOST" zellij -s box action list-panes | grep -c "^terminal_" > before'
+keys a
+sleep 5
+sh 'now=$(ssh -o BatchMode=yes -T "$AGENTTIJ_HOST" zellij -s box action list-panes | grep -c "^terminal_"); test "$now" = $(($(cat before) + 1))'
+sh 'ssh -o BatchMode=yes -T "$AGENTTIJ_HOST" zellij -s box action dump-layout | grep -q "stacked=true"'
+
+# Enter attaches, in a pane here - and since 0.45 Zellij asks what to do with
+# a session nested inside another. Esc lets this pane control it on focus.
+keys '\r'
+wait 'drawn.slot=*Nested Zellij session detected: box*' --timeout 15
+keys '\033'
+wait 'drawn.slot=*api: may I write to src/main.rs?*'
