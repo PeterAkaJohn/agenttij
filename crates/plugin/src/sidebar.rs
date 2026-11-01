@@ -2436,10 +2436,7 @@ impl Sidebar {
     /// last on.
     fn show_pane(&mut self, pane: u32) {
         let slot = self.slot();
-        if let Some(leaving) = slot
-            .and_then(|visible| self.groups.group_of(visible))
-            .map(|group| group.primary())
-        {
+        if let Some(leaving) = self.row_in(slot) {
             let arriving = self.groups.group_of(pane).map(|group| group.primary());
             if arriving != Some(leaving) {
                 self.previous_row = Some(leaving);
@@ -2478,13 +2475,21 @@ impl Sidebar {
         }
 
         let slot = self.slot();
+        let leaving = self.row_in(slot);
         if let Some(PaneId::Terminal(opened)) = actions::open_at(&cwd, slot, self.config.solo) {
+            self.previous_row = leaving.or(self.previous_row);
             self.took_slot(opened);
             self.selected = Some(Selection::Row {
                 session: self.current_session.clone(),
                 pane: opened,
             });
         }
+    }
+
+    /// The row whose pane holds the slot, by its primary.
+    fn row_in(&self, slot: Option<u32>) -> Option<u32> {
+        slot.and_then(|visible| self.groups.group_of(visible))
+            .map(|group| group.primary())
     }
 
     /// Flips to the row we were on before this one.
@@ -2501,10 +2506,7 @@ impl Sidebar {
     /// becomes the one `b` flips back to.
     fn switch_to_row(&mut self, primary: u32) {
         let slot = self.slot();
-        let leaving = slot
-            .and_then(|visible| self.groups.group_of(visible))
-            .map(|group| group.primary());
-        if let Some(leaving) = leaving.filter(|leaving| *leaving != primary) {
+        if let Some(leaving) = self.row_in(slot).filter(|leaving| *leaving != primary) {
             self.previous_row = Some(leaving);
         }
 
@@ -2726,10 +2728,15 @@ impl Sidebar {
     /// A row from a template that is not the layout's — what restoring a
     /// workspace opens, where each row remembers its own panes.
     fn build_row(&mut self, at: Option<&str>, template: &[String]) {
-        let (head, parked) = actions::open_row(self.slot(), self.config.solo, template, at);
+        let slot = self.slot();
+        let leaving = self.row_in(slot);
+        let (head, parked) = actions::open_row(slot, self.config.solo, template, at);
         let Some(pane) = head else {
             return;
         };
+        // The row you left is the one `b` flips back to, as with any other way
+        // of changing rows.
+        self.previous_row = leaving.or(self.previous_row);
 
         // A companion whose id never came back is the same story as an add's:
         // Zellij opened the pane and let the action time out. It is alive, in no
