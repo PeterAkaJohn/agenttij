@@ -261,6 +261,11 @@ since Zellij can only show panes it owns. That pane takes the slot and joins the
 row you were on, the way `a` does — so `v` gets you back to what you were doing,
 and it inherits that row's directory rather than arriving in no project at all. `p` peeks at either without moving.
 
+Since 0.45 that pane is a Zellij session nested inside yours, and Zellij asks what to do with it the first time: `1` zooms it to the whole screen, `2` or `Esc` lets the pane control it while it has focus.
+Either way your keys then go to the session over there while that pane has focus - `Alt m` included, which becomes that machine's to answer - and `Ctrl o` then `]` hands them back to this one.
+`nested_session_handling "descend"` in your Zellij config skips the question; it applies to every nested session, so it is yours to set.
+`a` with the cursor on the remote row adds a pane over there from the sidebar without going through the nested session.
+
 ### What the first column means
 
 `›` is the cursor — where the next key lands. `▪` is the row that is actually on

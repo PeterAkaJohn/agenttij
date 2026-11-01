@@ -340,6 +340,13 @@ rechecked against 0.45.1's source when the plugin moved to it, and the ones
 - **Focusing a scrolled pane enters Scroll mode** (0.45, #5299, read in source):
   `focus_pane_with_id` included, so showing a row whose pane was scrolled up
   leaves the client in Scroll mode. `scroll_mode_sync false` turns it off.
+- **An attach pane is a nested session since 0.45.** `Enter` on a remote row
+  opens `ssh -t host zellij attach`, and that client announces itself; the
+  session here then asks what to do (`nested_session_handling`, default `ask`),
+  and every answer, `Esc` included, ends with the pane sending its keys to the
+  session over there while it has focus - our own binds too. Measured against
+  the testbox. Per-pane control does not exist, and the option is global to the
+  user's Zellij, so it is documented rather than set.
 - **A command sent over ssh runs in the login shell over there.** The scripts
   `scan.rs` sends are POSIX, so `over_ssh` and `host_command` wrap them in
   `sh -c`. Under zsh an unquoted `$ids` stayed one word, so `stack-panes` got
