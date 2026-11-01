@@ -42,7 +42,8 @@ A pane P is terminal_N, plugin_N, `sidebar`, `slot` (the one terminal shown), or
 
 A scenario file is these commands one per line, without the session, starting
 with `start`; `sleep <seconds>` waits, `$VARIABLES` are expanded, and
-`needs VAR...` skips the scenario unless they are set. The session is stopped at the end either
+`needs VAR...` skips the scenario unless they are set; `$AGENTTIJ_SESSION_DIR`
+is the scenario's own directory. The session is stopped at the end either
 way, and a run the client broke is run once more before it counts as a failure.
 """
 
@@ -591,6 +592,7 @@ def run_scenario(path, parser):
     if home(session).exists():
         stop_session(session)
     status = "pass"
+    os.environ["AGENTTIJ_SESSION_DIR"] = str(home(session))
     print(f"== {path}")
     try:
         for number, line in enumerate(Path(path).read_text().splitlines(), 1):
