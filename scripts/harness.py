@@ -346,6 +346,7 @@ def start(a):
                             check=True).stdout
     config = re.sub(r"(?ms)^load_plugins \{.*?^\}", "load_plugins {\n}", config)
     config += 'default_shell "sh"\nshow_startup_tips false\nshow_release_notes false\n'
+    config += "".join(f"{option}\n" for option in a.option or [])
     (d / "config.kdl").write_text(config)
     helper("zellij-keybinds.py", "install", d / "config.kdl", url, *BINDS, next(iter(groups), ""))
     helper("grant-permissions.py", "grant", d / "cache/zellij/permissions.kdl", wasm)
@@ -664,6 +665,8 @@ def build_parser():
             p.add_argument("--group", help="the template every row starts with")
             p.add_argument("--set", action="append", metavar="KEY=VALUE",
                            help="more of the sidebar's configuration")
+            p.add_argument("--option", action="append", metavar="LINE",
+                           help="a line for Zellij's config, such as 'web_sharing \"on\"'")
             p.add_argument("--size", default="160x40", help="COLSxROWS of the client")
             p.add_argument("--wasm", default=str(WASM), help="the plugin to run")
         p.set_defaults(run=run)
