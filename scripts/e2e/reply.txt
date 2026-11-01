@@ -1,0 +1,16 @@
+# With `reply "true"`, R answers an agent waiting on you: what you type, then
+# Enter, into its pane.
+start layouts/agenttij-workspace.kdl --group ';;' --set reply=true
+keys '\033l'
+wait focus=slot
+keys 'read answer; echo "got $answer" > $AGENTTIJ_SESSION_DIR/answered\r'
+report terminal_0 needs-input
+wait 'drawn.sidebar=›⚠ *'
+
+keys '\033h'
+wait focus=sidebar
+keys R
+wait 'drawn.sidebar=reply: *'
+keys 'yes' '\r'
+sleep 1.5
+sh 'grep -qx "got yes" answered'

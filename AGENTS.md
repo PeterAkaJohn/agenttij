@@ -65,11 +65,17 @@ keep `crates/plugin` to wiring, host calls and drawing.
 - Comments explain *why*, especially where the code looks odd — it usually looks
   odd because a simpler version was tried and failed. Say what failed.
 - No `unwrap`/`expect` on host calls; a plugin that panics leaves a dead pane.
-- The sidebar is read-only: it navigates, and never types into an agent. The one
-  exception is `c`, which writes a single interrupt byte (`0x03`) and asks twice
-  before it does — Zellij's own `send_sigint_to_pane_id` signals the pane's shell,
-  which ignores it, so there is no other way to stop a runaway. Nothing else may
-  write, and adding anything that does means arguing with this line first.
+- The sidebar is read-only: it navigates, and never types into an agent. Two
+  exceptions, both asked for twice over. `c` writes a single interrupt byte
+  (`0x03`) and asks twice before it does - Zellij's own `send_sigint_to_pane_id`
+  signals the pane's shell, which ignores it, so there is no other way to stop a
+  runaway. `R` answers an agent that is waiting on you, and only where a layout
+  set `reply "true"` (off otherwise): the answer is typed into the sidebar and
+  sent with Enter, to a row of this session whose status is needs-input, checked
+  again as it is sent. The argument for it: a question you can read in a peek
+  and answer in two keys is the commonest reason to leave the sidebar at all.
+  Nothing else may write, and adding anything that does means arguing with this
+  line first.
 - No async runtime. Plugins run single-threaded on `wasmi`; the host *is* the
   runtime (`run_command` → `RunCommandResult`, `set_timeout` → `Timer`).
 

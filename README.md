@@ -46,6 +46,7 @@ screen — the same thing until you open a pane somewhere else.
 | `o` | open a workspace here on that row's project |
 | `w` | a new row in a fresh git worktree of that row's repository (`Alt w`) |
 | `s` | share this session on the web - a phone, say - with Zellij's own screen |
+| `R` | answer an agent waiting on you, without going to it (`reply "true"` only) |
 | `v`, `V` | cycle the panes *within* this row, either way (`Alt v`, `Alt V`) |
 | `1`–`9` | straight to that pane of the row (`Alt 1`–`Alt 9`) |
 | `'` | flip to the pane you were on before this one (`Alt '`) |
@@ -508,6 +509,10 @@ pane size="20%" {
         // run something when an agent becomes blocked on you, or finishes a
         // turn nobody was watching; it is given "agenttij" and the message
         notify "notify-send -u critical"
+        // "true" lets R answer an agent that is waiting on you: typed in the
+        // sidebar, sent with Enter. Off by default - the sidebar otherwise never
+        // types into an agent, bar `c`'s interrupt
+        // reply "true"
         // "false" to stop naming a row's panes "<row> 2/3"
         position "true"
         // the panes every new row starts with: `;` between them, the first

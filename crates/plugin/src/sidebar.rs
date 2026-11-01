@@ -62,6 +62,8 @@ enum Field {
     Hosts,
     /// A new name for this session, prefilled with the one it has.
     Session,
+    /// An answer for the agent in this pane, which is waiting on you.
+    Reply(u32),
 }
 
 /// Something that cannot be undone, waiting for the second press that does it.
@@ -1437,6 +1439,22 @@ impl Sidebar {
                 self.typing = Some((Field::Session, self.current_session.clone()));
                 true
             }
+            // An answer for an agent waiting on you, typed here and sent with
+            // Enter - only when the layout asked for it, and only to a row of
+            // this session that is waiting.
+            BareKey::Char('R') => {
+                let waiting = self.selected_agent().filter(|agent| {
+                    self.config.reply
+                        && agent.kind == Kind::Row
+                        && agent.status == Status::NeedsInput
+                        && agent.host.is_empty()
+                        && agent.session == self.current_session
+                });
+                if let Some(agent) = waiting {
+                    self.typing = Some((Field::Reply(agent.pane), String::new()));
+                }
+                true
+            }
             // A row somewhere else entirely: pick the directory first, and the
             // row is built there with everything the template asks for.
             BareKey::Char('G') => {
@@ -1646,6 +1664,21 @@ impl Sidebar {
         true
     }
 
+    /// Answers an agent that is waiting: what was typed, then Enter, as if typed
+    /// into its pane - which is also all an empty answer sends, for a prompt
+    /// whose default is the answer. Checked again here, because a second has
+    /// passed since `R` and the agent may have moved on.
+    fn reply(&mut self, pane: u32, answer: &str) {
+        let still_waiting = self.agents.iter().any(|agent| {
+            agent.pane == pane
+                && agent.session == self.current_session
+                && agent.status == Status::NeedsInput
+        });
+        if self.config.reply && still_waiting {
+            write_chars_to_pane_id(&format!("{answer}\r"), PaneId::Terminal(pane));
+        }
+    }
+
     /// Interrupts the agent: the byte Ctrl-C puts on the terminal, which makes
     /// the tty signal whatever is in the foreground. The pane stays; only what it
     /// is running stops.
@@ -1704,6 +1737,7 @@ impl Sidebar {
                 Field::Project(project) => self.name_project(&project.clone(), typed.trim()),
                 Field::Hosts => self.watch_hosts(&typed),
                 Field::Session => self.rename_session(typed.trim()),
+                Field::Reply(pane) => self.reply(*pane, &typed),
             },
             // Dropped: what was being typed was taken on the way in.
             BareKey::Esc => {}
@@ -2407,6 +2441,7 @@ impl Sidebar {
                 Field::Project(_) => "name",
                 Field::Hosts => "hosts",
                 Field::Session => "session",
+                Field::Reply(_) => "reply",
             };
             return Some(format!("{what}: {typed}▏"));
         }

@@ -25,6 +25,7 @@ working while the sidebar has focus.
 | `o` | open a workspace here on that row's project |
 | `w` | a new row in a fresh git worktree of that row's repository |
 | `s` | share this session on the web, with Zellij's own share screen |
+| `R` | answer an agent waiting on you - type it, `Enter` sends - with `reply "true"` in the layout |
 | `v` | cycle to the next pane *within* the row on screen |
 | `V` | and back the other way |
 | `1`–`9` | straight to that pane of the row — the number its frame shows |

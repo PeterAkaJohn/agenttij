@@ -4,7 +4,7 @@
 //! this, and a test checks it against nothing being forgotten.
 
 /// A key and what it does, in the order they are worth learning.
-pub const SIDEBAR_KEYS: [(&str, &str); 27] = [
+pub const SIDEBAR_KEYS: [(&str, &str); 28] = [
     ("j / k", "move"),
     ("Enter", "show this row"),
     ("Tab", "open a row, or fold a project"),
@@ -25,6 +25,7 @@ pub const SIDEBAR_KEYS: [(&str, &str); 27] = [
     ("G", "new row somewhere else — pick the directory"),
     ("w", "new row in a git worktree of that row's repo"),
     ("s", "share this session on the web (Zellij's screen)"),
+    ("R", "answer a waiting agent (with reply \"true\")"),
     ("/", "jump: everywhere you could go"),
     ("p", "peek without leaving"),
     ("d d", "close this row, or this pane"),

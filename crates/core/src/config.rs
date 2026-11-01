@@ -48,6 +48,9 @@ pub struct Config {
     /// Set on a help instance: this sidebar is the keybind list, and closes on
     /// any key.
     pub help: bool,
+    /// Whether `R` may answer an agent that is waiting on you: the one thing
+    /// besides `c` that types into an agent, so it is off unless a layout says.
+    pub reply: bool,
     /// Machines to watch besides this one, by ssh host. Their agents appear in
     /// the list marked with the host they are on.
     pub hosts: Vec<String>,
@@ -93,6 +96,7 @@ impl Default for Config {
             peek_host: String::new(),
             peek: None,
             help: false,
+            reply: false,
             jump: false,
             dirs: false,
             position: true,
@@ -125,6 +129,7 @@ impl Config {
         let solo = configuration.get("solo").map(|raw| raw.trim()) == Some("true")
             || configuration.get("remote").map(|raw| raw.trim()) == Some("true");
         let help = configuration.get("help").map(|raw| raw.trim()) == Some("true");
+        let reply = configuration.get("reply").map(|raw| raw.trim()) == Some("true");
         let dirs = configuration.get("dirs").map(|raw| raw.trim()) == Some("true");
         // A directory picker is a palette with a different list in it, so it
         // takes the same plumbing: one floating instance, typing, ranking.
@@ -214,6 +219,7 @@ impl Config {
             peek_host,
             peek,
             help,
+            reply,
             jump,
             dirs,
             position,
@@ -306,6 +312,13 @@ mod tests {
             Config::from_map(&map(&[("notify", "notify-send -u critical")])).notify,
             vec!["notify-send", "-u", "critical"]
         );
+    }
+
+    #[test]
+    fn replying_to_an_agent_is_off_unless_a_layout_says() {
+        assert!(!Config::from_map(&map(&[])).reply);
+        assert!(!Config::from_map(&map(&[("reply", "yes")])).reply);
+        assert!(Config::from_map(&map(&[("reply", "true")])).reply);
     }
 
     #[test]

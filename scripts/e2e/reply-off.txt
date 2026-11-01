@@ -1,0 +1,10 @@
+# Without `reply "true"`, R types nothing into anything: the sidebar does not
+# write to an agent unless a layout asked it to.
+start layouts/agenttij-workspace.kdl --group ';;'
+report terminal_0 needs-input
+wait 'drawn.sidebar=›⚠ *'
+keys '\033h'
+wait focus=sidebar
+keys R
+sleep 1
+expect 'drawn.sidebar!=*reply:*'
