@@ -1,0 +1,11 @@
+# A reload keeps the rows: the grouping is written down and put back around the
+# panes that are still there.
+start layouts/agenttij-workspace.kdl --group ';;'
+keys '\033g'
+wait terminals=6 'drawn.sidebar=›* agenttij * 3 *'
+# Long enough for the rows to have been written down.
+sleep 2
+reload
+wait title.sidebar=agents
+wait 'drawn.sidebar=* agenttij * 3 *' --timeout 8
+expect terminals=6

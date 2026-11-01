@@ -227,6 +227,9 @@ pub struct Sidebar {
     /// Which boot this is, so a snapshot of this session's rows is told apart
     /// from the live record of them. Empty until the answer lands.
     boot: String,
+    /// Whether that answer has landed - it may be empty, where there is no
+    /// boot id to read, and that is an answer too.
+    boot_known: bool,
     /// Directories from zoxide, best first, when this instance is the picker,
     /// and the home directory they are shortened against.
     frecent: Vec<String>,
@@ -460,6 +463,12 @@ impl ZellijPlugin for Sidebar {
                 // and zoxide was never started. This is the first moment a
                 // command of ours can run.
                 if self.permissions == Permissions::Granted {
+                    // At once rather than on the first tick: nothing about the
+                    // arrangement is saved until it has been read, so a row made
+                    // in a sidebar's first second was not written down.
+                    if !self.config.help {
+                        self.read_order();
+                    }
                     if self.config.dirs {
                         self.ask_for_dirs();
                     }
@@ -676,20 +685,17 @@ impl Sidebar {
             self.programs.remove(&pane);
         }
 
-        if self.permissions == Permissions::Denied || self.config.help {
+        // Not while the grant is pending either: a command issued then is
+        // dropped without a word, and the arrangement is read once - a first
+        // tick ahead of the grant left a sidebar that never loaded or saved its
+        // projects, hosts or rows for as long as it ran.
+        if self.permissions != Permissions::Granted || self.config.help {
             return;
         }
 
-        // The arrangement, once. It outlives the plugin, so a reload — or
-        // tomorrow — finds the projects where you left them.
-        if !self.order_read {
-            self.order_read = true;
-            let command = scan::read_order_command();
-            let words: Vec<&str> = command.iter().map(String::as_str).collect();
-            let context =
-                BTreeMap::from([(scan::CONTEXT_KEY.to_owned(), scan::CONTEXT_ORDER.to_owned())]);
-            run_command(&words, context);
-        }
+        // The backstop for reading the arrangement, should the grant's own
+        // moment have passed without it.
+        self.read_order();
 
         if let Some((session, pane)) = self.config.peek.clone() {
             let command = scan::dump_command(&self.config.peek_host, &session, pane);
@@ -789,6 +795,7 @@ impl Sidebar {
             // from the default one would take the file's projects, names and
             // rows with it.
             self.order_loaded = true;
+            self.settle_rows();
             self.rebuild();
             return true;
         }
@@ -799,7 +806,10 @@ impl Sidebar {
         }
         if context.get(scan::CONTEXT_KEY).map(String::as_str) == Some(scan::CONTEXT_BOOT) {
             self.boot = String::from_utf8_lossy(stdout).trim().to_owned();
-            return false;
+            self.boot_known = true;
+            self.settle_rows();
+            self.rebuild();
+            return true;
         }
         if context.get(scan::CONTEXT_KEY).map(String::as_str) == Some(scan::CONTEXT_DIRS) {
             let (home, frecent) = scan::parse_dirs(&String::from_utf8_lossy(stdout));
@@ -1838,6 +1848,13 @@ impl Sidebar {
         if !self.order_loaded || self.groups_restored || here.is_empty() {
             return;
         }
+        // The boot id and the arrangement are asked for separately and land in
+        // either order. Deciding before the boot id had landed read as "another
+        // boot", gave up for good, and the next save wrote the panes ungrouped
+        // over what was remembered: a reload took a row of four apart into four.
+        if !self.boot_known {
+            return;
+        }
         // Pane ids are a boot's business. A file written before the machine
         // restarted describes panes that no longer exist, and Zellij hands the
         // same numbers out again — restoring from it would bundle three
@@ -1870,14 +1887,46 @@ impl Sidebar {
         self.groups.restore(&live);
     }
 
+    /// Reads the arrangement, once. It outlives the plugin, so a reload - or
+    /// tomorrow - finds the projects where you left them.
+    fn read_order(&mut self) {
+        if self.order_read {
+            return;
+        }
+        self.order_read = true;
+        let command = scan::read_order_command();
+        let words: Vec<&str> = command.iter().map(String::as_str).collect();
+        let context =
+            BTreeMap::from([(scan::CONTEXT_KEY.to_owned(), scan::CONTEXT_ORDER.to_owned())]);
+        run_command(&words, context);
+    }
+
+    /// Puts the remembered rows back and writes the live ones down, as soon as
+    /// both halves of the answer - the arrangement and the boot it was written
+    /// in - have landed, not only on a pane update. Updates stop coming once the
+    /// pane list is quiet, which after a reload it is at once, so a row of three
+    /// sat apart as three until something unrelated moved.
+    fn settle_rows(&mut self) {
+        let here: Vec<u32> = self
+            .panes
+            .iter()
+            .filter(|pane| pane.session == self.current_session)
+            .map(|pane| pane.pane)
+            .collect();
+        self.restore_groups(&here);
+        self.remember_groups();
+    }
+
     /// Keeps the written-down grouping in step with the live one.
     ///
     /// Here rather than at every place that changes a row, because reconciling
     /// is the moment the grouping is *true* — and it writes only when the answer
     /// changed, which is when a pane is added or closed rather than every tick.
     fn remember_groups(&mut self) {
-        // Whichever instance wrote last would be what a reload restored.
-        if !self.order_loaded || !self.manages_rows() {
+        // Whichever instance wrote last would be what a reload restored - and
+        // nothing is written before restoring has had its turn, or the grouping
+        // still waiting to be put back is the first thing overwritten.
+        if !self.order_loaded || !self.groups_restored || !self.manages_rows() {
             return;
         }
         let rows = self.groups.remember();
