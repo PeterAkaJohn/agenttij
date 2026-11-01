@@ -421,7 +421,9 @@ pub fn host_command(host: &str) -> [String; 8] {
         "-T".to_owned(),
         host.to_owned(),
         // The rows a controller published come back with the same `cat`.
-        format!("cat {STATE_DIR}/*.state {STATE_DIR}/rows 2>/dev/null; true"),
+        in_sh(&format!(
+            "cat {STATE_DIR}/*.state {STATE_DIR}/rows 2>/dev/null; true"
+        )),
     ]
 }
 
@@ -489,12 +491,16 @@ fn stack(session: &str) -> String {
 /// configuration decides its identity and its title is whatever a layout called
 /// it, but a pane appearing is a pane appearing.
 pub fn remote_pane_command(host: &str, session: &str, cwd: Option<&str>) -> Vec<String> {
+    over_ssh(host, remote_pane_script(session, cwd))
+}
+
+fn remote_pane_script(session: &str, cwd: Option<&str>) -> String {
     let session = quoted(session);
     let count = format!("zellij -s {session} action list-panes | grep -c '^terminal_'");
 
     let mut fallback = format!("zellij -s {session} action new-pane");
     if let Some(cwd) = cwd.filter(|cwd| !cwd.is_empty()) {
-        // Three shells deep: this one is read by the remote shell, which hands
+        // Nested shells: this one is read by `sh` over there, which hands
         // the inner script to `sh -c` inside the pane. `--cwd` was measured being
         // ignored for a session started detached; a `cd` is honoured because it
         // happens inside the pane.
@@ -502,15 +508,14 @@ pub fn remote_pane_command(host: &str, session: &str, cwd: Option<&str>) -> Vec<
         fallback.push_str(&format!(" -- sh -c {}", quoted(&script)));
     }
 
-    let remote = format!(
+    format!(
         "before=$({count}); zellij -s {session} pipe --name add >/dev/null 2>&1; sleep 1; \
          [ \"$({count})\" != \"$before\" ] || {{ {fallback}; {} ; }}",
         stack(&session)
-    );
-    over_ssh(host, remote)
+    )
 }
 
-/// One ssh, one command string for the shell on the far side.
+/// One ssh, one script for the far side.
 fn over_ssh(host: &str, remote: String) -> Vec<String> {
     vec![
         "ssh".to_owned(),
@@ -518,8 +523,17 @@ fn over_ssh(host: &str, remote: String) -> Vec<String> {
         "BatchMode=yes".to_owned(),
         "-T".to_owned(),
         host.to_owned(),
-        remote,
+        in_sh(&remote),
     ]
+}
+
+/// A script for `sh`, whatever the login shell over there is: ssh hands its
+/// command to that shell, and these scripts are POSIX. Under zsh an unquoted
+/// `$ids` stays one word, so `stack-panes` got every id as one malformed
+/// argument, and a glob with no matches aborts the line, so a machine with rows
+/// and no state files read as empty. Both measured with `zsh -c`.
+fn in_sh(script: &str) -> String {
+    format!("sh -c {}", quoted(script))
 }
 
 /// Asks a controller on another machine to do something: add a pane, cycle the
@@ -799,8 +813,11 @@ mod tests {
     fn a_controller_is_asked_by_pipe() {
         let ask = remote_pipe_command("dev1", "box", "show", Some(3));
         assert_eq!(ask[0], "ssh");
-        assert_eq!(ask[5], "zellij -s 'box' pipe --name 'show' 3");
-        assert!(!remote_pipe_command("dev1", "box", "cycle", None)[5].ends_with(' '));
+        assert_eq!(ask[5], in_sh("zellij -s 'box' pipe --name 'show' 3"));
+        assert_eq!(
+            remote_pipe_command("dev1", "box", "cycle", None)[5],
+            in_sh("zellij -s 'box' pipe --name 'cycle'")
+        );
     }
 
     #[test]
@@ -970,7 +987,8 @@ mod tests {
         let command = remote_pane_command("dev1", "box", Some("/srv/api"));
         assert_eq!(command[0], "ssh");
         assert_eq!(command[4], "dev1");
-        let remote = &command[5];
+        let remote = &remote_pane_script("box", Some("/srv/api"));
+        assert_eq!(command[5], in_sh(remote));
 
         // Ask: every plugin in that session, so an agenttij there does it the way
         // it would locally.
@@ -987,11 +1005,11 @@ mod tests {
 
     #[test]
     fn a_directory_nobody_knows_is_not_an_empty_one() {
-        let remote = &remote_pane_command("dev1", "box", None)[5];
+        let remote = &remote_pane_script("box", None);
         assert!(remote.contains("action new-pane;"), "{remote}");
         assert!(!remote.contains("sh -c"));
         // And whatever the shell over there would have made of a quote.
-        assert!(remote_pane_command("dev1", "it's", None)[5].contains(r"-s 'it'\''s' pipe"));
+        assert!(remote_pane_script("it's", None).contains(r"-s 'it'\''s' pipe"));
     }
 
     #[test]
@@ -1001,7 +1019,9 @@ mod tests {
         assert!(command.contains(&"dev1".to_owned()));
         assert!(command.last().unwrap().ends_with("terminal_7"));
 
-        assert!(host_command("dev1").last().unwrap().contains(STATE_DIR));
+        let read = host_command("dev1");
+        assert!(read.last().unwrap().starts_with("sh -c '"));
+        assert!(read.last().unwrap().contains(STATE_DIR));
     }
 
     #[test]
