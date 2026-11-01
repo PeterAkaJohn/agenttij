@@ -8,6 +8,7 @@
     harness.py expect <session> <check>...
     harness.py wait <session> <check>... [--timeout 10]
     harness.py reload <session>
+    harness.py report <session> <pane> <status> [--cwd DIR]   what the hook says
     harness.py stop <session> [--keep]
     harness.py timeline <session> <layout> <delay>:<bytes>... [--group G]
     harness.py scenario <file>...
@@ -31,6 +32,7 @@ A check is <key>=<glob> or <key>!=<glob>:
     panes terminals parked procs   counts; procs is the session's processes
     running                        whether a process under the session matches
     title.P where.P width.P        where is tiled, parked, floating or gone
+    read.P                         yes once a look covers P's last report
 A pane P is terminal_N, plugin_N, `sidebar`, or `slot` (the one terminal shown).
 
 A scenario file is these commands one per line, without the session, starting
@@ -56,6 +58,9 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 WASM = os.environ.get("AGENTTIJ_WASM", REPO / "target/wasm32-wasip1/release/agenttij.wasm")
 ROOT = Path(tempfile.gettempdir()) / "agenttij-harness"
+# Where the hook and the plugin keep state, fixed in both: shared with the
+# user's own agents, so a session cleans out exactly its own files on the way out.
+STATE = Path("/tmp/agenttij")
 # install.sh's defaults: summon, cycle, back, focus, new, add, jump.
 BINDS = ("Alt a", "Alt v", "Alt b", "Alt s", "Alt g", "Alt m", "Alt t")
 # What a headless client leaves in the log when it, not the plugin, broke a run.
@@ -169,6 +174,7 @@ def snapshot(session):
 
     shown = [p["id"] for p in panes if p["where"] == "tiled" and p["id"].startswith("terminal")]
     return {
+        "session": session,
         "panes": panes,
         "focus": focus,
         "layer": layer,
@@ -178,6 +184,29 @@ def snapshot(session):
         "slot": shown[0] if len(shown) == 1 else None,
         "sidebar": next((p["id"] for p in panes if p["ours"] and p["where"] == "tiled"), None),
     }
+
+
+def read(session, pane):
+    """Whether a look the sidebar wrote down covers the pane's last report."""
+    number = (pane or "").rpartition("_")[2]
+
+    def field(suffix, index):
+        try:
+            line = (STATE / f"{session}.{number}.{suffix}").read_text()
+            return int(line.removeprefix("seen=").split("\t")[index])
+        except (OSError, IndexError, ValueError):
+            return None
+
+    reported, seen = field("state", 3), field("seen", 2)
+    return reported is not None and seen is not None and seen >= reported
+
+
+def report(a):
+    """Runs the real hook as an agent in that pane would."""
+    hook_env = {k: v for k, v in os.environ.items() if k not in ("PWD", "CLAUDE_PROJECT_DIR")}
+    hook_env.update(ZELLIJ_SESSION_NAME=a.session, ZELLIJ_PANE_ID=a.pane.rpartition("_")[2])
+    subprocess.run(["sh", str(REPO / "hooks/agenttij-state.sh"), a.status], env=hook_env,
+                   cwd=a.cwd, stdin=subprocess.DEVNULL, check=True)
 
 
 def show(state):
@@ -209,8 +238,10 @@ def value(state, key):
     if key == "floating":
         return ",".join(p["title"] for p in state["panes"] if p["where"] == "floating")
     field, _, pane = key.partition(".")
-    if field in ("title", "where", "width") and pane:
+    if field in ("title", "where", "width", "read") and pane:
         pane = state.get(pane, pane) if pane in ("sidebar", "slot") else pane
+        if field == "read":
+            return "yes" if read(state["session"], pane) else "no"
         found = next((p for p in state["panes"] if p["id"] == pane), None)
         if found is None:
             return "gone" if field == "where" else "<gone>"
@@ -371,6 +402,10 @@ def verdict(session):
     return status, "\n".join([f"log: {status}", *lines])
 
 
+def glob_escape(text):
+    return re.sub(r"([*?\[])", r"[\1]", text)
+
+
 def stop_session(session, keep=False):
     d = home(session)
     status, said = verdict(session)  # first: killing a session logs errors of its own
@@ -380,6 +415,8 @@ def stop_session(session, keep=False):
     except Failed:
         client = None
     subprocess.run(["zellij", "kill-session", session], env=env(session), capture_output=True)
+    for left in STATE.glob(f"{glob_escape(session)}.*"):
+        left.unlink(missing_ok=True)
     if client:
         try:
             os.killpg(client, signal.SIGTERM)
@@ -492,6 +529,8 @@ def build_parser():
     w = command("wait", lambda a: settle(a.session, a.checks, a.timeout), ("checks", "+"))
     w.add_argument("--timeout", type=float, default=10)
     command("reload", reload)
+    r = command("report", report, ("pane", None), ("status", None))
+    r.add_argument("--cwd", default=str(REPO), help="where the agent works")
     s = command("stop", lambda a: stop_session(a.session, a.keep) == "clean")
     s.add_argument("--keep", action="store_true", help="keep its directory and log")
     command("timeline", timeline, ("layout", None), ("steps", "+"), starts=True)
