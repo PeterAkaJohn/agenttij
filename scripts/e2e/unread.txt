@@ -6,10 +6,10 @@ wait visible=terminal_3
 
 # Row 1 finishes while parked.
 report terminal_0 done
-sleep 2.5
+wait 'drawn.sidebar=*● agenttij*'
 expect read.terminal_0=no
 keys '\033b'
-wait visible=terminal_0 read.terminal_0=yes
+wait visible=terminal_0 read.terminal_0=yes 'drawn.sidebar=*✓ agenttij*' 'drawn.sidebar!=*●*'
 
 # Finishing in front of you is reading it.
 sleep 1.1

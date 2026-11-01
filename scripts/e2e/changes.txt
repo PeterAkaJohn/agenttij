@@ -4,7 +4,7 @@ start layouts/agenttij-workspace.kdl --group ';;'
 sh 'git init -q work && cd work && printf "a\nb\n" > f && printf "x\n" > gone && git add -A && git -c user.email=e2e@agenttij -c user.name=e2e commit -qm one && printf "a\nc\nd\n" > f && rm gone && mkdir sub && printf "n1\nn2\n" > sub/new'
 
 report terminal_0 done --cwd work/sub
-wait 'title.slot=✓ work 1/3 +4−2'
+wait 'title.slot=✓ work 1/3 +4−2' 'drawn.sidebar=›✓ sub*+4−2 3 *'
 
 # Still working is not something to review yet.
 report terminal_0 running --cwd work/sub
