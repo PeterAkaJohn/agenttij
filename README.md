@@ -19,7 +19,8 @@ jump to it.
 ```
 
 A finished agent stays `●` until its row has been on screen with you looking at
-it, then turns `✓`: work you have not read yet, told apart from work you have.
+it, or you have peeked at it, then turns `✓`: work you have not read yet, told
+apart from work you have.
 One that finishes while you watch it is read as it finishes; one on screen in a
 session or tab nobody has open is not.
 

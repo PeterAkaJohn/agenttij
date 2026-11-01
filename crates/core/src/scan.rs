@@ -52,15 +52,21 @@ pub fn seen_command(session: &str, pane: u32, at: u64) -> [String; 7] {
     [
         "sh".to_owned(),
         "-c".to_owned(),
-        format!(
-            "mkdir -p {STATE_DIR} && printf '{SEEN_PREFIX}%s\\t%s\\t%s\\n' \"$0\" \"$1\" \"$2\" \
-             > \"{STATE_DIR}/$3.$1.seen\""
-        ),
+        record_look("\"$2\""),
         session.to_owned(),
         pane.to_string(),
         at.to_string(),
         session.replace('/', "_"),
     ]
+}
+
+/// The shell that writes a look down: `$0` the session, `$1` the pane, `$3`
+/// the session as a file name, and `at` whatever says when.
+fn record_look(at: &str) -> String {
+    format!(
+        "mkdir -p {STATE_DIR} && printf '{SEEN_PREFIX}%s\\t%s\\t%s\\n' \"$0\" \"$1\" {at} \
+         > \"{STATE_DIR}/$3.$1.seen\""
+    )
 }
 
 /// A directory picker asking for a row: `at=<session>\t<unix>\t<path>`.
@@ -460,27 +466,42 @@ pub fn host_command(host: &str) -> [String; 8] {
 /// Plain text rather than `--ansi`: a peek pane is usually narrower than what it
 /// mirrors, and truncating a line through an escape sequence corrupts the rest
 /// of the frame.
+///
+/// On this machine it also writes the look down, as the sidebar does for a row
+/// on screen: peeking at finished work is reading it. In the same shell, so a
+/// peek still costs one fork a second; and from any session, which is fine for
+/// a file that only ever holds the time of a look.
 pub fn dump_command(host: &str, session: &str, pane: u32) -> Vec<String> {
-    let mut command = Vec::new();
-    if !host.is_empty() {
-        // Another machine's pane is read the same way, one ssh further out.
-        command.extend([
-            "ssh".to_owned(),
-            "-o".to_owned(),
-            "BatchMode=yes".to_owned(),
-            "-T".to_owned(),
-            host.to_owned(),
-        ]);
+    if host.is_empty() {
+        return vec![
+            "sh".to_owned(),
+            "-c".to_owned(),
+            format!(
+                "{}; exec zellij --session \"$0\" action dump-screen --pane-id=\"terminal_$1\"",
+                record_look("\"$(date +%s)\"")
+            ),
+            session.to_owned(),
+            pane.to_string(),
+            String::new(),
+            session.replace('/', "_"),
+        ];
     }
-    command.extend([
-        "zellij".to_owned(),
-        "--session".to_owned(),
-        session.to_owned(),
-        "action".to_owned(),
-        "dump-screen".to_owned(),
-        format!("--pane-id=terminal_{pane}"),
-    ]);
-    command
+    // Another machine's pane is read the same way, one ssh further out.
+    [
+        "ssh",
+        "-o",
+        "BatchMode=yes",
+        "-T",
+        host,
+        "zellij",
+        "--session",
+        session,
+        "action",
+        "dump-screen",
+        &format!("--pane-id=terminal_{pane}"),
+    ]
+    .map(str::to_owned)
+    .to_vec()
 }
 
 /// Quotes a word for the shell on the far side of an ssh, which sees a command
@@ -1110,10 +1131,25 @@ mod tests {
     }
 
     #[test]
-    fn the_dump_command_names_the_pane() {
+    fn a_peek_reads_the_pane_and_writes_the_look_down() {
         let command = dump_command("", "main", 7);
-        assert_eq!(command[2], "main");
-        assert!(command.last().unwrap().ends_with("terminal_7"));
+        assert_eq!(&command[..2], ["sh", "-c"]);
+        assert_eq!(&command[3..], ["main", "7", "", "main"]);
+        let script = &command[2];
+        assert!(
+            script.contains("dump-screen --pane-id=\"terminal_$1\""),
+            "{script}"
+        );
+        assert!(
+            script.contains(&format!("{STATE_DIR}/$3.$1.seen")),
+            "{script}"
+        );
+        // The same line the sidebar writes, with the time of the look.
+        assert!(
+            script.contains(&format!("printf '{SEEN_PREFIX}")),
+            "{script}"
+        );
+        assert!(script.contains("\"$(date +%s)\""), "{script}");
     }
 
     #[test]

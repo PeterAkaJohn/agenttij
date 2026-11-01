@@ -105,6 +105,7 @@ Both are resolved by the hook, once when an agent reports, rather than once per 
 
 Beside each state file the sidebar of that row's session keeps `<session>.<pane>.seen`: when the row was last on screen with someone looking.
 A finished row reported after its last look is unread.
+A peek writes the look too, in the same shell as its `dump-screen`, from whichever session it is in: a file holding only the time of a look can have any writer.
 The scan reads both with the same `cat`, so a look in one session reaches every other sidebar on its next tick.
 
 Files, not plugin memory or pipes, because a sidebar in a session that started

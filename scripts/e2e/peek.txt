@@ -1,0 +1,15 @@
+# Peeking at finished work is reading it.
+start layouts/agenttij-workspace.kdl --group ';;'
+keys '\033g'
+wait visible=terminal_3
+
+report terminal_0 done
+wait 'drawn.sidebar=*● agenttij*' read.terminal_0=no
+
+# The unread row sorts to the top; put the cursor on it, and peek.
+keys '\033s' k
+wait 'drawn.sidebar=›● agenttij*'
+keys p
+wait floating=peek* read.terminal_0=yes
+keys q
+wait floating= 'drawn.sidebar=*✓ agenttij*'
