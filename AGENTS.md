@@ -89,10 +89,10 @@ Anything a key does gets a scenario; `harness.py --help` lists the commands and 
 - **A test passes only if it failed first.** Run a new scenario against the build before the fix (`AGENTTIJ_WASM` points the harness at another wasm) and watch it fail.
   The scenarios in `scripts/e2e/` were checked that way against `b09de72`.
 - **Check titles and focus, not counts.** The bugs fixed alongside the harness (a palette relabelling the pane on screen, `Alt b` with nowhere to go) left every count right; only a title and the focus were wrong.
-- **The sidebar's cursor cannot be seen**, because plugin pane content cannot be read (next).
-  A key that acts on what the cursor is on (`d`, `c`) needs a cursor you put there: a new row takes it, and so does `Enter`.
+- **Read what the sidebar draws off the client, not off Zellij.** Zellij will not hand out a plugin pane's content (next), so the harness replays the client's raw output through just enough of a terminal and cuts the pane out of it: `drawn.sidebar=›*` checks the line the cursor is on (`›` in column one), and `state` prints every line drawn.
+  That is how a row on this machine turned out never to show how many panes it owns - every count and title was right, and the `3` was simply not on screen.
 - **Plugin pane content cannot be read.** `dump-screen` and `subscribe` both return nothing for plugin panes, including third-party ones.
-  Verify behaviour through side effects instead: `list-panes`, `list-clients`, `dump-layout`, or a file the plugin touches.
+  Verify behaviour through side effects instead - `list-panes`, `list-clients`, `dump-layout`, a file the plugin touches - or through what the client draws, as the harness does.
   A pane *frame* is not pane content either - the client draws it, so `dump-screen` never shows it.
   The harness keeps each client's raw output in `client.out` in the session's directory, and the frame line is in there to grep.
   Capturing one by hand (`script -qfc "zellij ..." out >/dev/null`), keep the `>/dev/null`: a 0.45 client announces itself on stdout, and the Zellij pane that receives it marks itself a nested guest and swallows keys.

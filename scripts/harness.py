@@ -34,6 +34,8 @@ A check is <key>=<glob> or <key>!=<glob>:
     running                        whether a process under the session matches
     title.P where.P width.P        where is tiled, parked, floating or gone
     read.P                         yes once a look covers P's last report
+    drawn.P                        a line P has on screen (`!=`: none does);
+                                   the sidebar's cursor is the `›` in column one
 A pane P is terminal_N, plugin_N, `sidebar`, or `slot` (the one terminal shown).
 
 A scenario file is these commands one per line, without the session, starting
@@ -54,6 +56,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import unicodedata
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
@@ -230,6 +233,11 @@ def show(state):
         role = "sidebar" if p["id"] == state["sidebar"] else "slot" if p["id"] == state["slot"] else ""
         size = "-" if p["where"] == "parked" else f"{p['cols']}x{p['rows']}"
         print(f"  {mark} {p['id']:<12} {p['where']:<9} {role:<8} {size:<8} {p['title']}")
+    if state["sidebar"]:
+        print("  the sidebar draws:")
+        for number, line in enumerate(drawn(state["session"], state["sidebar"])):
+            if line.strip():
+                print(f"    {number:>2} {line}")
 
 
 def value(state, key):
@@ -269,6 +277,12 @@ def check(state, text):
     if key == "running":
         hit = state is not None and any(fnmatch.fnmatchcase(c, want) for c in state["running"])
         return hit == (op == "="), "a match" if hit else "no match"
+    if key.startswith("drawn."):
+        pane = key.partition(".")[2]
+        pane = (state or {}).get(pane) or pane
+        lines = drawn(state["session"], pane) if state else []
+        hit = any(fnmatch.fnmatchcase(line, want) for line in lines)
+        return hit == (op == "="), " | ".join(line for line in lines if line.strip())
     if key == "focus" and want in ("sidebar", "slot") and state is not None:
         want = state[want] or f"<no {want}>"
     got = value(state, key)
@@ -332,7 +346,7 @@ def start(a):
         start_new_session=True,
     )
     os.close(reader)
-    (d / "meta.json").write_text(json.dumps({"client": client.pid, "url": url}))
+    (d / "meta.json").write_text(json.dumps({"client": client.pid, "url": url, "size": a.size}))
 
     if not settle(a.session, ["where.sidebar=tiled", "title.sidebar!=*.wasm*"], 20, quiet=True):
         show(snapshot(a.session))
@@ -343,6 +357,80 @@ def start(a):
         raise Failed(f"{a.session}: the sidebar never came up")
     print(f"{a.session} up, raw client output in {d / 'client.out'}")
     show(snapshot(a.session))
+
+
+# An escape sequence, or a run of text between them.
+TOKEN = re.compile(
+    r"\x1b(?:\[([0-9;?<>=]*)[ -/]*([@-~])|\][^\x07\x1b]*(?:\x07|\x1b\\)|[P_^X].*?\x1b\\"
+    r"|[()][0-9A-Za-z]|.)|([^\x1b]+)",
+    re.S,
+)
+
+
+def screen(session):
+    """What the client has on screen, as lines: its raw output replayed through
+    just enough of a terminal - Zellij draws by placing the cursor and writing,
+    and the rest (colour, links, modes) changes nothing a check can read."""
+    d = home(session)
+    cols, rows = map(int, meta(session)["size"].split("x"))
+    grid = [[" "] * cols for _ in range(rows)]
+    row = col = 0
+    raw = (d / "client.out").read_bytes().decode(errors="replace")
+    for params, final, text in TOKEN.findall(raw):
+        if text:
+            for char in text:
+                if char == "\r":
+                    col = 0
+                elif char == "\n":
+                    row = min(row + 1, rows - 1)
+                elif char == "\b":
+                    col = max(col - 1, 0)
+                elif ord(char) < 32 or unicodedata.combining(char):
+                    continue
+                else:
+                    wide = unicodedata.east_asian_width(char) in "WF"
+                    if col < cols:
+                        grid[row][col] = char
+                        if wide and col + 1 < cols:
+                            grid[row][col + 1] = ""
+                    col += 2 if wide else 1
+            continue
+        if not final:
+            continue  # not a CSI sequence: links, titles, modes
+        numbers = [int(n) if n.isdigit() else 0 for n in params.split(";")] if params else []
+        first = (numbers or [0])[0]
+        if final in "Hf":
+            row = min(max((numbers + [1])[0], 1), rows) - 1
+            col = min(max((numbers[1:] + [1])[0], 1), cols) - 1
+        elif final == "J" and first == 2:
+            grid = [[" "] * cols for _ in range(rows)]
+        elif final == "K":
+            grid[row][col:] = [" "] * (cols - col)
+        elif final in "ABCD":
+            step = max(first, 1)
+            row = min(max(row + {"A": -step, "B": step}.get(final, 0), 0), rows - 1)
+            col = min(max(col + {"D": -step, "C": step}.get(final, 0), 0), cols - 1)
+        elif final == "G":
+            col = min(max(first, 1), cols) - 1
+        elif final == "d":
+            row = min(max(first, 1), rows) - 1
+    return ["".join(line) for line in grid]
+
+
+def drawn(session, pane):
+    """The lines a pane's content occupies on the client's screen."""
+    listed = json.loads(action(session, "list-panes", "-j", "-a").stdout or "[]")
+    kind, _, number = pane.partition("_")
+    found = next((p for p in listed if str(p["id"]) == number
+                  and p["is_plugin"] == (kind == "plugin")), None)
+    if found is None:
+        return []
+    x, y = found["pane_content_x"], found["pane_content_y"]
+    width, height = found["pane_content_columns"], found["pane_content_rows"]
+    lines = [line[x:x + width].rstrip() for line in screen(session)[y:y + height]]
+    while lines and not lines[-1]:
+        lines.pop()
+    return lines
 
 
 def said_by_client(path):
