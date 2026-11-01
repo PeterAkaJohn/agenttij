@@ -331,6 +331,12 @@ def start(a):
         layout = re.sub(r'(?m)^ *group ".*"\n', "", layout)
         if a.group:
             layout = re.sub(r'(?m)^( *)solo "true"$', lambda m: f'{m[0]}\n{m[1]}group "{a.group}"', layout)
+    # Anything else for the sidebar's configuration. Global keys reach only a
+    # sidebar whose configuration they repeat, and they repeat `group` alone -
+    # so a scenario using `--set` drives the sidebar with its own keys.
+    for setting in a.set or []:
+        key, _, value = setting.partition("=")
+        layout = re.sub(r'(?m)^( *)solo "true"$', lambda m: f'{m[0]}\n{m[1]}{key} "{value}"', layout)
     groups = set(re.findall(r'(?m)^ *group "(.*)"$', layout))
     if len(groups) > 1:
         raise Failed("the layout disagrees with itself about `group`")
@@ -656,6 +662,8 @@ def build_parser():
             p.add_argument(positional, nargs=nargs)
         if starts:
             p.add_argument("--group", help="the template every row starts with")
+            p.add_argument("--set", action="append", metavar="KEY=VALUE",
+                           help="more of the sidebar's configuration")
             p.add_argument("--size", default="160x40", help="COLSxROWS of the client")
             p.add_argument("--wasm", default=str(WASM), help="the plugin to run")
         p.set_defaults(run=run)
