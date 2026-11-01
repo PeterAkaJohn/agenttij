@@ -60,7 +60,7 @@ screen — the same thing until you open a pane somewhere else.
 | `/` | jump: everywhere you could go, filtered by typing (`Alt t` anywhere) |
 | `p` | peek at an agent without leaving your session |
 | `q`, `Esc` | dismiss a peek |
-| `?` | show every key and what it does |
+| `?` | show every key and what it does (`Alt ?` from any pane) |
 
 Every one of those that makes sense away from the sidebar has a global binding,
 installed for you: `Alt s` focuses the sidebar, `Alt v` cycles a row's panes,

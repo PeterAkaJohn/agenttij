@@ -286,20 +286,34 @@ fn own_cwd() -> PathBuf {
 /// Same shape as a peek and for the same reason — a plugin pane can hold focus
 /// and read the key that dismisses it, which no other kind of pane can.
 pub fn help(own_url: &str) -> Option<PaneId> {
+    // Exactly what the `Alt ?` binding says, or it would open a second list.
     let configuration = BTreeMap::from([
         ("help".to_owned(), "true".to_owned()),
         ("pane_title".to_owned(), "keys".to_owned()),
     ]);
-    let coordinates = FloatingPaneCoordinates::new(
-        Some("15%".to_owned()),
-        Some("15%".to_owned()),
-        Some("70%".to_owned()),
-        Some("70%".to_owned()),
-        None,
-        None,
-    );
+    open_plugin_pane_floating(own_url, configuration, help_coordinates(), BTreeMap::new())
+}
 
-    open_plugin_pane_floating(own_url, configuration, coordinates, BTreeMap::new())
+/// Most of the screen: the list is long, and at 70% the half for the keys that
+/// work anywhere did not fit on a laptop.
+fn help_coordinates() -> Option<FloatingPaneCoordinates> {
+    FloatingPaneCoordinates::new(
+        Some("5%".to_owned()),
+        Some("5%".to_owned()),
+        Some("90%".to_owned()),
+        Some("90%".to_owned()),
+        None,
+        None,
+    )
+}
+
+/// Gives the keybind list its size when it was opened by a binding, which can
+/// say floating but not how big - Zellij's default is half the screen, too
+/// small for two columns.
+pub fn size_help(plugin_id: u32) {
+    if let Some(coordinates) = help_coordinates() {
+        change_floating_panes_coordinates(vec![(PaneId::Plugin(plugin_id), coordinates)]);
+    }
 }
 
 /// Asks the controller on another machine to do something to one of its rows.

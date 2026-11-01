@@ -38,43 +38,59 @@ pub const SIDEBAR_KEYS: [(&str, &str); 28] = [
 /// The Zellij-level bindings the installer writes. Shown with their defaults;
 /// a user who rebound them will see the default, which is the one honest
 /// limitation of listing them here at all.
-pub const GLOBAL_KEYS: [(&str, &str); 11] = [
+pub const GLOBAL_KEYS: [(&str, &str); 18] = [
+    ("Alt ?", "this list, from any pane"),
     ("Alt s", "focus the sidebar"),
-    ("Alt v", "cycle panes in this row"),
+    ("Alt a", "a sidebar in any session, floating"),
+    ("Alt v", "cycle panes in the row on screen"),
     ("Alt V", "and back the other way"),
     ("Alt 1-9", "straight to that pane of the row"),
     ("Alt '", "flip to the pane before this one"),
-    ("Alt b", "previous row"),
+    ("Alt b", "flip to the previous row"),
     ("Alt g", "new row"),
     ("Alt G", "new row in a directory you pick"),
-    ("Alt m", "add a pane to this row"),
-    (
-        "Alt t",
-        "jump, from anywhere — type `restore` for a workspace",
-    ),
-    ("Alt ]", "fold the sidebar to a rail (Alt [ unfolds)"),
+    ("Alt w", "new row in a git worktree"),
+    ("Alt m", "add a pane to the row on screen"),
+    ("Alt t", "jump - type `restore` for a workspace"),
+    ("Alt ]", "fold the sidebar to a rail"),
+    ("Alt [", "unfold it"),
+    // Zellij's own, and the ones these features lean on.
+    ("Ctrl o s", "share this session on the web (Zellij)"),
+    ("Ctrl o ]", "keys back from a remote session (Zellij)"),
+    ("Ctrl o f", "a remote session full screen (Zellij)"),
 ];
 
-/// The help pane's lines, wrapped to a width.
-pub fn lines(width: usize) -> Vec<String> {
-    let heading = |text: &str| crate::format::truncate(text, width);
+/// A column holds an entry at this width; two side by side need twice that.
+const COLUMN: usize = 46;
 
-    let mut out = vec![heading("in the sidebar"), String::new()];
-    out.extend(
-        SIDEBAR_KEYS
-            .iter()
-            .map(|(key, what)| entry(key, what, width)),
-    );
+/// The help pane's lines, wrapped to a width: the sidebar's keys and the
+/// ones that work from any pane side by side where both columns fit, one
+/// above the other where they do not.
+pub fn lines(width: usize) -> Vec<String> {
+    let section = |title: &str, keys: &[(&str, &str)], width: usize| {
+        let mut out = vec![crate::format::truncate(title, width), String::new()];
+        out.extend(keys.iter().map(|(key, what)| entry(key, what, width)));
+        out
+    };
+    let gap = 2;
+    if width >= 2 * COLUMN + gap {
+        let column = (width - gap) / 2;
+        let left = section("in the sidebar", &SIDEBAR_KEYS, column);
+        let right = section("anywhere", &GLOBAL_KEYS, column);
+        return (0..left.len().max(right.len()))
+            .map(|row| {
+                let left = left.get(row).map(String::as_str).unwrap_or_default();
+                let right = right.get(row).map(String::as_str).unwrap_or_default();
+                let padding = column + gap - left.chars().count();
+                format!("{left}{}{right}", " ".repeat(padding))
+                    .trim_end()
+                    .to_owned()
+            })
+            .collect();
+    }
+    let mut out = section("in the sidebar", &SIDEBAR_KEYS, width);
     out.push(String::new());
-    out.push(heading("anywhere"));
-    out.push(String::new());
-    out.extend(
-        GLOBAL_KEYS
-            .iter()
-            .map(|(key, what)| entry(key, what, width)),
-    );
-    out.push(String::new());
-    out.push(heading("any key closes this"));
+    out.extend(section("anywhere", &GLOBAL_KEYS, width));
     out
 }
 
@@ -108,8 +124,20 @@ mod tests {
 
     #[test]
     fn both_sections_are_there() {
-        let text = lines(40).join("\n");
-        assert!(text.contains("in the sidebar") && text.contains("anywhere"));
-        assert!(text.contains("Tab") && text.contains("Alt ]"));
+        for width in [40, 120] {
+            let text = lines(width).join("\n");
+            assert!(text.contains("in the sidebar") && text.contains("anywhere"));
+            assert!(text.contains("Tab") && text.contains("Alt ]") && text.contains("Alt w"));
+        }
+    }
+
+    #[test]
+    fn a_wide_pane_puts_them_side_by_side() {
+        let wide = lines(120);
+        assert_eq!(wide.len(), SIDEBAR_KEYS.len().max(GLOBAL_KEYS.len()) + 2);
+        assert!(wide[0].starts_with("in the sidebar") && wide[0].ends_with("anywhere"));
+        assert!(wide.iter().all(|line| line.chars().count() <= 120));
+        // Narrow, one above the other.
+        assert_eq!(lines(60).len(), SIDEBAR_KEYS.len() + GLOBAL_KEYS.len() + 5);
     }
 }

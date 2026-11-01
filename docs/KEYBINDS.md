@@ -413,6 +413,7 @@ is why the bindings go in there.
 
 | Key | Does |
 |---|---|
+| `Alt ?` | every key - the sidebar's and these - from any pane |
 | `Alt s` | focus the sidebar |
 | `Alt v` | cycle to the next pane in the row on screen |
 | `Alt b` | flip back to the row you were on before |

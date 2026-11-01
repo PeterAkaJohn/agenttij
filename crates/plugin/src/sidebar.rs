@@ -292,6 +292,8 @@ pub struct Sidebar {
     /// Whether our own pane floats - a sidebar summoned with `Alt a` - rather
     /// than sitting in the layout.
     floating: bool,
+    /// How far the keybind list is scrolled.
+    help_offset: usize,
     /// How many are watching this session on the web, while it is shared.
     shared: Option<usize>,
     banner: String,
@@ -483,6 +485,9 @@ impl ZellijPlugin for Sidebar {
                 // and nothing says so — measured, the picker asked twice there
                 // and zoxide was never started. This is the first moment a
                 // command of ours can run.
+                if self.permissions == Permissions::Granted && self.config.help {
+                    actions::size_help(self.plugin_id);
+                }
                 if self.permissions == Permissions::Granted {
                     // At once rather than on the first tick: nothing about the
                     // arrangement is saved until it has been read, so a row made
@@ -620,7 +625,16 @@ impl ZellijPlugin for Sidebar {
 
     fn render(&mut self, rows: usize, cols: usize) {
         if self.config.help {
-            render::draw_peek(&agenttij_core::help::lines(cols), rows, cols);
+            // Scrolls when it still does not fit; says so only then.
+            let lines = agenttij_core::help::lines(cols);
+            let room = lines.len().saturating_sub(rows.saturating_sub(1));
+            self.help_offset = self.help_offset.min(room);
+            let hint = if room > 0 {
+                "j/k scroll · any other key closes"
+            } else {
+                "any key closes"
+            };
+            render::draw_lines(&lines, self.help_offset, rows, cols, hint);
             return;
         }
         if self.config.peek.is_some() {
@@ -1230,6 +1244,21 @@ impl Sidebar {
             };
         }
 
+        // The keybind list scrolls where it does not fit, and closes on
+        // anything else.
+        if self.config.help {
+            match bare_key {
+                BareKey::Char('j') | BareKey::Down => {
+                    self.help_offset += 1;
+                    return true;
+                }
+                BareKey::Char('k') | BareKey::Up => {
+                    self.help_offset = self.help_offset.saturating_sub(1);
+                    return true;
+                }
+                _ => {}
+            }
+        }
         // A peek is a still picture of someone else's pane: there is nothing to
         // type into it, so any key dismisses it.
         if self.config.peek.is_some() || self.config.help {

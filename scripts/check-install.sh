@@ -54,6 +54,7 @@ for permission in ReadApplicationState ChangeApplicationState RunCommands OpenTe
 done
 check "keybinds inside the first keybinds block" 'grep -q "agenttij:begin" "$config"'
 check "Alt w bound" 'grep -q "bind \"Alt w\"" "$config"'
+check "Alt ? bound" 'grep -q "bind \"Alt ?\"" "$config"'
 check "the config still parses" 'zellij --config "$config" setup --check 2>&1 | grep -q "Well defined"'
 
 echo "install again"

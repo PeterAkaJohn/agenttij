@@ -1,0 +1,15 @@
+# Every key, the sidebar's and the ones that work from any pane, side by side on
+# a wide screen - opened with ? in the sidebar, or Alt ? from anywhere.
+start layouts/agenttij-workspace.kdl --group ';;'
+expect focus=slot
+keys '\033?'
+wait floating=keys
+wait 'drawn.floating=in the sidebar*anywhere'
+expect 'drawn.floating=?*this list' 'drawn.floating=*Ctrl o f*' 'drawn.floating=*Alt w*new row in a git worktree*' 'drawn.floating=any key closes'
+keys q
+wait floating=
+
+keys '\033s' ?
+wait floating=keys
+keys x
+wait floating=

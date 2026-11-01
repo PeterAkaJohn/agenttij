@@ -39,6 +39,8 @@ def block(url, summon, cycle, back, focus, new, add, jump, group, indent):
     pick = f"{new_modifier} {new_key.upper()}"
     # And one in a fresh git worktree is that modifier with `w`.
     worktree = f"{new_modifier} w"
+    # Every key, from any pane, is that modifier with `?`.
+    keys = f"{modifier} ?"
     # What every binding that has to *find* the docked sidebar must repeat,
     # exactly as the layout writes it.
     matched = ['            scope "session"', '            solo "true"']
@@ -58,6 +60,18 @@ def block(url, summon, cycle, back, focus, new, add, jump, group, indent):
         '            jump "true"',
         '            pane_title "jump"',
         '            solo "true"',
+        "            floating true",
+        "            move_to_focused_tab true",
+        "        }",
+        "    }",
+        "}",
+        "// Every key, the sidebar's and these, from any pane: the list `?` opens in",
+        "// the sidebar, with the configuration that opens it there.",
+        f'shared_except "locked" {{',
+        f'    bind "{keys}" {{',
+        f'        LaunchOrFocusPlugin "{url}" {{',
+        '            help "true"',
+        '            pane_title "keys"',
         "            floating true",
         "            move_to_focused_tab true",
         "        }",

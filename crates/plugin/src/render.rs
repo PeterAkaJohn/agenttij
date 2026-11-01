@@ -167,22 +167,28 @@ pub fn entry_at(content: &str, row: usize, cols: usize, selected: bool, color: &
 /// Draws lines into a floating pane — a peek's mirrored screen, or the keybind
 /// list — with a hint that any key closes it.
 pub fn draw_peek(lines: &[String], rows: usize, cols: usize) {
+    draw_lines(lines, 0, rows, cols, "any key closes");
+}
+
+/// Lines from `offset` on, and a hint on the last row: a pane you cannot tell
+/// how to close is worse than no pane.
+pub fn draw_lines(lines: &[String], offset: usize, rows: usize, cols: usize, hint: &str) {
     if lines.is_empty() {
         line("waiting for the pane…", 0, cols);
         return;
     }
-
-    // Keep the last row for the hint: a pane you cannot tell how to close is
-    // worse than no pane.
     let capacity = rows.saturating_sub(1);
-    for (row, content) in lines.iter().take(capacity).enumerate() {
+    for row in 0..capacity {
+        let content = lines
+            .get(offset + row)
+            .map(String::as_str)
+            .unwrap_or_default();
         let text = format::truncate(content, cols);
         let padding = cols.saturating_sub(text.chars().count());
         at(row);
         print!("{text}{}", " ".repeat(padding));
     }
-
     if rows > 0 {
-        line("any key closes", rows - 1, cols);
+        line(hint, rows - 1, cols);
     }
 }

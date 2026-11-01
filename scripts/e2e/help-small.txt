@@ -1,0 +1,10 @@
+# On a small screen the list does not fit: one column, and j scrolls to the end
+# of it rather than cutting the keys that work anywhere off.
+start layouts/agenttij-workspace.kdl --group ';;' --size 80x24
+keys '\033?'
+wait floating=keys 'drawn.floating=j/k scroll*'
+expect 'drawn.floating!=*Ctrl o f*'
+keys j j j j j j j j j j j j j j j j j j j j j j j j j j j j j j j j j j j j j j j j j j j j j j j j j j --gap 0.05
+wait 'drawn.floating=*Ctrl o f*a remote session full screen*'
+keys q
+wait floating=
