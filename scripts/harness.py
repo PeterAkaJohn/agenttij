@@ -87,6 +87,10 @@ def env(session):
     clean = {k: v for k, v in os.environ.items() if not k.startswith("ZELLIJ")}
     clean.update(
         ZELLIJ_CONFIG_FILE=str(d / "config.kdl"),
+        # Not only tidier: with no Zellij config directory in $HOME, as on a CI
+        # runner, `-n <layout>` came up with the default layout instead, config
+        # file or not. Measured on 0.45.1 with an empty $HOME.
+        ZELLIJ_CONFIG_DIR=str(d),
         ZELLIJ_SOCKET_DIR=str(d / "sock"),
         XDG_CACHE_HOME=str(d / "cache"),
         TMPDIR=str(d / "tmp"),
@@ -332,10 +336,25 @@ def start(a):
 
     if not settle(a.session, ["where.sidebar=tiled", "title.sidebar!=*.wasm*"], 20, quiet=True):
         show(snapshot(a.session))
+        print("  the client said, last:")
+        for line in said_by_client(d / "client.out")[-12:]:
+            print(f"    {line}")
         stop_session(a.session, keep=True)
         raise Failed(f"{a.session}: the sidebar never came up")
     print(f"{a.session} up, raw client output in {d / 'client.out'}")
     show(snapshot(a.session))
+
+
+def said_by_client(path):
+    """The client's own output as plain lines: escapes and blank lines gone."""
+    try:
+        raw = path.read_bytes().decode(errors="replace")
+    except OSError:
+        return []
+    plain = re.sub(r"\x1b(\[[0-9;?<>=]*[ -/]*[@-~]|\][^\x07\x1b]*(\x07|\x1b\\)|[P_^X].*?\x1b\\|[()][0-9A-Za-z]|.)",
+                   "", raw, flags=re.S)
+    lines = (line.strip() for line in re.split(r"[\r\n]+", plain))
+    return [line for line in lines if line]
 
 
 def unescape(text):
@@ -433,7 +452,11 @@ def stop_session(session, keep=False):
     subprocess.run(["zellij", "delete-session", "--force", session], env=env(session),
                    capture_output=True)
     if keep or status != "clean":
-        print(f"kept {d}")
+        # Out of the way, so the same session can start again - a retry used to
+        # find this one and refuse.
+        kept = d.with_name(f"{d.name}.kept-{int(time.time())}")
+        d.rename(kept)
+        print(f"kept {kept}")
     else:
         shutil.rmtree(d, ignore_errors=True)
     return status
