@@ -512,8 +512,14 @@ fn remote_pane_script(session: &str, cwd: Option<&str>) -> String {
         fallback.push_str(&format!(" -- sh -c {}", quoted(&script)));
     }
 
+    // The pipe is given two seconds, which is what it took when it was waited
+    // for (Zellij's one-second action timeout, then a `sleep 1`), and then let
+    // go: a pipe can stay blocked when nothing releases it - seen twice on
+    // 0.45.1, one for five minutes - and that was an ssh hung for as long.
+    // Without a payload it also reads stdin, hence `</dev/null`.
     format!(
-        "before=$({count}); zellij -s {session} pipe --name add >/dev/null 2>&1; sleep 1; \
+        "before=$({count}); zellij -s {session} pipe --name add </dev/null >/dev/null 2>&1 & \
+         asked=$!; sleep 2; kill $asked 2>/dev/null; \
          [ \"$({count})\" != \"$before\" ] || {{ {}; {fallback}; }}",
         stack(&session)
     )
