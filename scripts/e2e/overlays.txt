@@ -1,0 +1,27 @@
+# The floating instances: palette, peek and the keybind list.
+start layouts/agenttij-workspace.kdl --group ';;'
+
+# The palette leaves the pane's title alone (6089c21).
+keys '\033t'
+wait floating=jump
+expect title.slot=*1/3
+keys '\033'
+wait floating=
+
+# A peek or the list hidden with the floating layer closes itself (4f7d81e).
+keys '\033s' p
+wait floating=peek* layer=shown
+keys '\033f'
+wait floating=
+keys '\033s' ?
+wait floating=keys
+keys '\033f'
+wait floating=
+
+# A reloaded sidebar still knows its own url, so it can open a peek (515c37b).
+reload
+wait title.sidebar=agents
+keys '\033s' p
+wait floating=peek*
+keys q
+wait floating=

@@ -1,0 +1,21 @@
+# Rows built from a template, moving inside one, and flipping between two.
+start layouts/agenttij-workspace.kdl --group ';;'
+expect terminals=3 parked=2 focus=slot title.slot=*1/3
+
+keys '\033g'
+wait terminals=6 visible=terminal_3 focus=terminal_3
+
+keys '\033v'
+wait visible=terminal_4 title.slot=*2/3
+keys '\033V'
+wait visible=terminal_3
+keys '\e2'
+wait visible=terminal_4
+keys '\033\x27'
+wait visible=terminal_3
+
+# A row just opened is one of the last two (6a21eef).
+keys '\033b'
+wait visible=terminal_0 focus=terminal_0
+keys '\033b'
+wait visible=terminal_3

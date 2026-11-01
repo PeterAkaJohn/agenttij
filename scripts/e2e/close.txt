@@ -1,0 +1,19 @@
+# Closing a row and interrupting an agent, both asked twice.
+start layouts/agenttij-workspace.kdl --group ';;'
+
+# A new row takes the cursor, so `d d` is aimed at it.
+keys '\033g'
+wait terminals=6 visible=terminal_3 procs=6
+keys '\033s' d
+expect terminals=6
+keys d
+wait terminals=3 procs=3 visible=terminal_0
+
+keys '\033l'
+wait focus=slot
+keys 'sleep 300\r'
+wait 'running=sleep 300'
+keys '\033s' c
+expect 'running=sleep 300'
+keys c
+wait 'running!=sleep 300'

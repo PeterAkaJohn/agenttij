@@ -1,0 +1,13 @@
+# The rail swap layout, and a new row not unfolding it.
+start layouts/agenttij-workspace.kdl --group ';;'
+expect width.sidebar=32
+
+# Filling the first row has already moved Zellij to the `sidebar` swap layout,
+# so the rail is one press away.
+keys '\033]'
+wait width.sidebar=5
+keys '\033g'
+wait terminals=6
+expect width.sidebar=5
+keys '\033['
+wait width.sidebar=32
