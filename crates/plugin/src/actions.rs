@@ -362,11 +362,10 @@ pub fn jump(own_url: &str, solo: bool) -> Option<PaneId> {
 /// Opens a peek: another instance of this plugin, floating, mirroring an
 /// agent's pane once a second.
 ///
-/// A peek has to be a plugin pane. A command pane cannot read the keyboard —
-/// Zellij gives it /dev/null for stdin, and even a real keypress is not
-/// readable from /dev/tty — and a floating pane is only on screen while it holds
-/// focus. So a command pane peek is either invisible or undismissable. A plugin
-/// pane receives keys, so it can hold focus, stay visible, and close itself.
+/// A peek has to be a plugin pane: a floating pane is only on screen while it
+/// holds focus, so whatever holds it has to be able to take a key and close
+/// itself. A plugin pane can; a command pane would need a program of its own to
+/// read the key, and the mirroring is already done here.
 pub fn preview(agent: &Agent, own_url: &str, config: &Config) -> Option<PaneId> {
     let mut configuration = BTreeMap::from([
         (

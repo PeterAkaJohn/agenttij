@@ -1022,10 +1022,7 @@ impl Sidebar {
         }
 
         // A peek is a still picture of someone else's pane: there is nothing to
-        // type into it, so any key dismisses it. This is why a peek is a plugin
-        // pane and not a command pane — a command pane cannot read a key at all,
-        // and a floating pane is only visible while it holds focus, so the two
-        // together made a peek impossible to dismiss.
+        // type into it, so any key dismisses it.
         if self.config.peek.is_some() || self.config.help {
             close_self();
             return false;

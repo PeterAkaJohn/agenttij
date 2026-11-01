@@ -295,11 +295,11 @@ access to a pane.
 panes anywhere — another session, a background tab, a session nobody is attached
 to — and does not disturb the target.
 
-The peek is another instance of this plugin, which is what makes it work at all:
-a floating pane is only on screen while it holds focus, and a *command* pane
-cannot read a key, so a command-pane peek was either invisible or impossible to
-dismiss. Any key dismisses a peek and then still does its own job; `q` and `Esc`
-are the two that only dismiss.
+The peek is another instance of this plugin, because a floating pane is only on
+screen while it holds focus: whatever holds it has to take a key and close
+itself, which a plugin pane can do on its own.
+Any key dismisses a peek and then still does its own job; `q` and `Esc` are the
+two that only dismiss.
 
 `r` names the project the cursor is on: type, `Enter` keeps it, `Esc` drops it,
 and while you are typing the keyboard belongs to the name — a `d` in a project

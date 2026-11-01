@@ -79,9 +79,12 @@ keep `crates/plugin` to wiring, host calls and drawing.
   behaviour through side effects instead: `list-panes`, `list-clients`,
   `dump-layout`, or a file the plugin touches. A pane *frame* is not pane
   content either - it is drawn by the client, so `dump-screen` never shows it.
-  Capture a client instead: `sleep 90 | script -qfc "zellij -s x -n l.kdl" out`
-  keeps a client alive and writes its raw output, and the frame line is in there
-  to grep.
+  Capture a client instead: `sleep 90 | script -qfc "zellij -s x -n l.kdl" out
+  >/dev/null` keeps a client alive and writes its raw output, and the frame line
+  is in there to grep. Keep that `>/dev/null`: a 0.45 client announces itself on
+  stdout, and the Zellij pane that receives it marks itself a nested guest and
+  swallows keys. Since 0.45 the default frame (`pane_frame_style` titles) is one
+  title row with the name centred, not a box.
 - **Test anything input-related with `scripts/press-keys.sh`.** It pipes real
   bytes into a throwaway client's stdin and prints a second-by-second timeline of
   panes and focus, which is the only way to see what a key actually did:
@@ -92,6 +95,12 @@ keep `crates/plugin` to wiring, host calls and drawing.
   focus from inside the keystream (`\033h` is Alt+h, focus left); an external
   `focus-pane-id` gets overridden on startup. And `printf %b` reads `\0333` as one
   octal byte rather than Esc then 3, so Alt and a digit has to be written `\e3`.
+  A lone Esc typed into a zsh pane makes the next key a Meta key - `echo` ran as
+  `cho` - which is zsh, not Zellij. Global keys (`Alt v`, `Alt m`) are the
+  config's, and reach the sidebar only if the layout says the same `group`; with
+  a layout that does not, you are testing a second sidebar. Run the harness with
+  `ZELLIJ_CONFIG_FILE` pointing at a copy rebound by `zellij-keybinds.py` with the
+  layout's own `group`, so your real template (and real agents) stay out of it.
 - **`zellij setup --check` proves a config parses, not that it works.** A second
   `keybinds` block passes the check and is then ignored.
 - **`dump-layout` prints the live layout *and* the templates.** Cut at the first
@@ -115,7 +124,9 @@ keep `crates/plugin` to wiring, host calls and drawing.
 
 ## Zellij traps worth knowing
 
-Each of these cost a debugging round already:
+Each of these cost a debugging round already. Measured on 0.44; all were
+rechecked against 0.45.1's source when the plugin moved to it, and the ones
+0.45 changed say so.
 
 - **Every host command needs a permission**, and a missing one fails *silently*.
   `open_terminal*` needs `OpenTerminalsOrPlugins`, distinct from `RunCommands`.
@@ -132,7 +143,9 @@ Each of these cost a debugging round already:
   shorten against was empty too. Read it out of the passwd entry instead
   (`getent passwd "$(id -u)" | cut -d: -f6`) and hand it to whatever needs it.
   The command otherwise runs fine with no environment at all — verified with
-  `env -i`.
+  `env -i`. Zellij's own source (0.44.3 and 0.45.1, `background_jobs.rs`) passes
+  the server's environment on, so this depends on how the server was started;
+  keep reading the passwd entry either way.
 - **A denied permission is remembered as an empty grant, and everything then
   fails silently.** Zellij's prompt is answered with `y`/`n` — so a `press-keys`
   run that types `n` into a session whose plugin is *waiting* on that prompt
@@ -141,12 +154,14 @@ Each of these cost a debugging round already:
   nothing: no new panes, no floating panes, no scan. Check that file first when a
   plugin stops acting, and re-grant before testing anything that adds a
   permission.
-- **A running session rewrites `permissions.kdl` from its own memory.** Granting
-  a *new* permission while any session is up is undone the moment one of them
-  writes the file back, so the next session asks for something the cache no
-  longer has, gets no answer, and the command fails silently. Grant before
-  starting sessions — and check the file again afterwards, because it may not say
-  what you just wrote.
+- **A running session rewrites `permissions.kdl` with what it asks for.** Every
+  permission request re-reads the file and replaces the plugin's entry with
+  exactly the set that instance asked for (`cache_plugin_permissions`,
+  `wasm_bridge.rs`), granted or not. So a session still running an older build -
+  whose next peek is a new instance asking again - shrinks a grant you just
+  widened, the next session asks for something the cache no longer has, gets no
+  answer, and the command fails silently. Grant before starting sessions, and
+  check the file again afterwards, because it may not say what you just wrote.
 - **Permission grants are keyed by the plugin's path with no `file:` prefix.**
   Zellij writes `~/.cache/zellij/permissions.kdl` as bare paths, so an entry
   written as `"file:/path/x.wasm"` is never matched: the plugin loads, asks, and
@@ -168,8 +183,9 @@ Each of these cost a debugging round already:
   session is not mirrored (`frame_color`, `ui/pane_contents_and_ui.rs`): client 1
   gets magenta, client 2 blue, and the theme's `frame_selected` is not used at
   all. The same condition adds `MY FOCUS AND:` plus a block per other client to
-  the middle of the title (`render_my_and_others_focus`,
-  `ui/pane_boundaries_frame.rs`); our pane name stays on the left. Measured with
+  the title (`render_my_and_others_focus`, `ui/pane_boundaries_frame.rs`): in the
+  middle with the name on the left in the `full` frame style, on the left with
+  the name centred in 0.45's default `titles` style. Measured on 0.44 with
   two captured clients: `[38;2;255;94;241m` for client 1 and
   `[38;2;94;161;255m` for client 2, both titled `· agenttij`. So a blue border
   and a title nobody set means something else is attached - switching to a
@@ -279,11 +295,16 @@ Each of these cost a debugging round already:
 - **A floating pane is only on screen while it holds focus.** Focus a tiled pane
   and Zellij sets the tab's `hide_floating_panes`; `pinned` does not override it.
   So a floating pane that needs to stay visible must be one that can hold focus
-  usefully — which again means a plugin pane.
+  usefully — which again means a plugin pane. Hidden is not closed: before 0.45
+  a peek hidden with `Alt f` lived on unseen, re-reading its pane every second.
+  0.45 sends floating plugins `Visible(false)` when their layer hides, and a peek
+  or the keybind list closes itself on it.
 - **`get_session_environment_variables()` panics**, taking the plugin down with
-  it, and `SessionInfo.plugins` is empty in practice. To learn your own plugin
-  url, read your own pane's title from the manifest *before* renaming it — Zellij
-  sets it to the url.
+  it, and `SessionInfo.plugins` is empty in practice. Your own plugin url is your
+  pane's `PaneInfo.plugin_url`. It used to be read from the pane's title, which
+  is the url only until something renames it: a sidebar reloaded after naming
+  itself never learned it (no peek, no palette, no help), and one launched at
+  runtime is titled `(<cwd>) - file:/…`.
 - **A pane opened from a plugin steals focus after the call returns**, so taking
   focus back has to wait for a later event, not the same handler.
 - **Assert a swap *happened*, not just that panes survived.** Until grouping
@@ -306,12 +327,36 @@ Each of these cost a debugging round already:
 - **`list-panes` counts suppressed panes; `dump-layout` does not.** So a pane
   count from `list-panes` says nothing about what is on screen — in solo mode it
   reads exactly like a pane that refused to park, which cost a long chase after a
-  bug that was not there. Use `dump-layout` for what is visible. It has the
-  opposite blind spot: it prints an empty tab when only plugin panes are left, so
-  it cannot tell you the sidebar survived something — `list-panes` can. Neither
+  bug that was not there. Since 0.45 it also lists background plugins
+  (`load_plugins`, `zellij:link`) as suppressed plugin panes, so count terminals,
+  or leave out plugins that are suppressed. Use `dump-layout` for what is visible.
+  Before 0.45 it printed an empty tab when only plugin panes were left; 0.45.1
+  prints a lone sidebar (measured). Neither
   proves a *hidden* pane was closed rather than merely parked; for that count the
   processes the session's server owns
   (`ps --ppid "$(pgrep -f "^[^ ]*zellij --server .*/<session>$")"`).
+- **0.45 turns a stack into suppressed panes.** `stacked_pane_list` is on by
+  default: on every render the collapsed members of a stack leave the tiled
+  panes and are filed as suppressed, under their own ids (`groupify_all`,
+  `tab/mod.rs`). In a `PaneManifest` they look exactly like a pane the sidebar
+  parked, and `hide_pane_with_id` on one does nothing. The sidebar never stacks,
+  so this only reaches a pane the user stacked. And `stack-panes` leaves a grid
+  alone: on a session of three panes, `new-pane` then `stack-panes` left four
+  tiled, while `stack-panes` then `new-pane` left one stack of four (measured,
+  0.45.1) - which is why the remote fallback stacks first.
+- **Focusing a scrolled pane enters Scroll mode** (0.45, #5299, read in source):
+  `focus_pane_with_id` included, so showing a row whose pane was scrolled up
+  leaves the client in Scroll mode. `scroll_mode_sync false` turns it off.
+- **A command sent over ssh runs in the login shell over there.** The scripts
+  `scan.rs` sends are POSIX, so `over_ssh` and `host_command` wrap them in
+  `sh -c`. Under zsh an unquoted `$ids` stayed one word, so `stack-panes` got
+  every id as one malformed argument, and `cat dir/*.state dir/rows` with no
+  state files aborted on the glob and lost the rows. Measured over ssh into
+  `scripts/testbox.sh`, whose login shell is zsh for that reason.
+- **`zellij pipe` without a payload reads stdin, and can stay blocked.** Feed it
+  `</dev/null`. Even then, on 0.45.1 a broadcast pipe stayed blocked twice in one
+  session (five minutes, then until killed) and could not be made to again; the
+  remote fallback therefore gives it two seconds and lets it go.
 - **Replacing a pane that is itself a replacement destroys the pane in the
   middle.** Zellij stacks suppressed panes behind a replacement, and
   `open_*_in_place_of_pane_id` on top of that stack drops the middle one
