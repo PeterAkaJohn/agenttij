@@ -1,0 +1,515 @@
+#!/usr/bin/env python3
+"""Drives throwaway Zellij sessions with real keystrokes, to test the plugin.
+
+    harness.py start <session> <layout> [--group G] [--size 160x40] [--wasm W]
+                                            (W defaults to $AGENTTIJ_WASM, or the build)
+    harness.py keys <session> <bytes>...    '\\033h' or '\\eh' is Alt+h, '\\r' Enter
+    harness.py state <session>
+    harness.py expect <session> <check>...
+    harness.py wait <session> <check>... [--timeout 10]
+    harness.py reload <session>
+    harness.py stop <session> [--keep]
+    harness.py timeline <session> <layout> <delay>:<bytes>... [--group G]
+    harness.py scenario <file>...
+
+Keys go into a real client's stdin: `zellij action send-keys` bypasses keybind
+resolution and `write-chars` never reaches a command pane, so nothing else tests
+what a key does. The client holds its own end of the key pipe, so it never reads
+end-of-file between keys - running out of keys used to take a pane with it.
+
+Each session is sealed off: Zellij's default config with `sh` for a shell, no
+background plugins and agenttij's binds carrying the layout's own `group`, plus
+its own cache (permissions, resurrection, agenttij's files), log and sockets. So
+`zellij ls` never shows it, nothing it writes reaches yours, and nothing here can
+address a session of yours. It runs the plugin you built, not the one installed.
+
+A check is <key>=<glob> or <key>!=<glob>:
+    focus                          the focused pane
+    visible                        tiled terminals on screen, comma separated
+    floating                       floating pane titles, comma separated
+    layer                          the floating layer: shown or hidden
+    panes terminals parked procs   counts; procs is the session's processes
+    running                        whether a process under the session matches
+    title.P where.P width.P        where is tiled, parked, floating or gone
+A pane P is terminal_N, plugin_N, `sidebar`, or `slot` (the one terminal shown).
+
+A scenario file is these commands one per line, without the session, starting
+with `start`; `sleep <seconds>` waits. The session is stopped at the end either
+way, and a run the client broke is run once more before it counts as a failure.
+"""
+
+import argparse
+import codecs
+import fnmatch
+import json
+import os
+import re
+import shlex
+import shutil
+import signal
+import subprocess
+import sys
+import tempfile
+import time
+from pathlib import Path
+
+REPO = Path(__file__).resolve().parent.parent
+WASM = os.environ.get("AGENTTIJ_WASM", REPO / "target/wasm32-wasip1/release/agenttij.wasm")
+ROOT = Path(tempfile.gettempdir()) / "agenttij-harness"
+# install.sh's defaults: summon, cycle, back, focus, new, add, jump.
+BINDS = ("Alt a", "Alt v", "Alt b", "Alt s", "Alt g", "Alt m", "Alt t")
+# What a headless client leaves in the log when it, not the plugin, broke a run.
+CLIENT_TROUBLE = (
+    "Input/output error",
+    "Failed to apply cached resizes",
+    "consecutive unknown messages",
+)
+# Logged by Zellij itself on ordinary operations.
+NOISE = ("Vertical relayout of tab failed", "did not complete within 1s timeout")
+
+
+class Failed(Exception):
+    pass
+
+
+def home(session):
+    return ROOT / session
+
+
+def env(session):
+    d = home(session)
+    clean = {k: v for k, v in os.environ.items() if not k.startswith("ZELLIJ")}
+    clean.update(
+        ZELLIJ_CONFIG_FILE=str(d / "config.kdl"),
+        ZELLIJ_SOCKET_DIR=str(d / "sock"),
+        XDG_CACHE_HOME=str(d / "cache"),
+        TMPDIR=str(d / "tmp"),
+        TERM="xterm-256color",
+    )
+    clean.setdefault("LANG", "C.UTF-8")
+    return clean
+
+
+def action(session, *args):
+    return subprocess.run(
+        ["zellij", "-s", session, "action", *args],
+        env=env(session),
+        capture_output=True,
+        text=True,
+    )
+
+
+def meta(session):
+    try:
+        return json.loads((home(session) / "meta.json").read_text())
+    except FileNotFoundError:
+        raise Failed(f"{session} is not running here")
+
+
+# --- state ---------------------------------------------------------------
+
+
+def processes():
+    table = {}
+    for entry in Path("/proc").iterdir():
+        if not entry.name.isdigit():
+            continue
+        try:
+            ppid = int((entry / "stat").read_text().rsplit(")", 1)[1].split()[1])
+            cmd = (entry / "cmdline").read_bytes().replace(b"\0", b" ").decode(errors="replace")
+        except (OSError, IndexError, ValueError):
+            continue
+        table[int(entry.name)] = (ppid, cmd.strip())
+    return table
+
+
+def snapshot(session):
+    """Everything a check can ask about, or None when the session is gone."""
+    url = meta(session)["url"]
+    try:
+        listed = json.loads(action(session, "list-panes", "-j", "-a").stdout)
+    except ValueError:
+        return None
+
+    panes = []
+    for p in sorted(listed, key=lambda p: (not p["is_plugin"], p["id"])):
+        if p["is_plugin"] and p["is_suppressed"]:
+            continue  # a background plugin, which nobody sees
+        where = "floating" if p["is_floating"] else "parked" if p["is_suppressed"] else "tiled"
+        panes.append(
+            {
+                "id": f"{'plugin' if p['is_plugin'] else 'terminal'}_{p['id']}",
+                "where": where,
+                "cols": p["pane_columns"],
+                "rows": p["pane_rows"],
+                "title": p["title"],
+                "tab": p["tab_id"],
+                "ours": p["is_plugin"] and p.get("plugin_url") == url,
+            }
+        )
+
+    clients = action(session, "list-clients").stdout.splitlines()
+    focus = clients[1].split()[1] if len(clients) > 1 else "-"
+    tab = next((p["tab"] for p in panes if p["id"] == focus), None)
+    layer = "-"
+    if tab is not None:
+        answer = action(session, "are-floating-panes-visible", "-t", str(tab))
+        # "false" arrives on stderr with exit 2, whatever --help says.
+        layer = {"true": "shown", "false": "hidden"}.get((answer.stdout + answer.stderr).strip(), "-")
+
+    table = processes()
+    sock = f"{home(session)}/sock/"
+    server = next((pid for pid, (_, cmd) in table.items() if "--server" in cmd and sock in cmd), None)
+    children = [pid for pid, (ppid, _) in table.items() if ppid == server]
+    under, frontier = [], list(children)
+    while frontier:
+        pid = frontier.pop()
+        under.append(table[pid][1])
+        frontier += [child for child, (ppid, _) in table.items() if ppid == pid]
+
+    shown = [p["id"] for p in panes if p["where"] == "tiled" and p["id"].startswith("terminal")]
+    return {
+        "panes": panes,
+        "focus": focus,
+        "layer": layer,
+        "procs": len(children),
+        "running": under,
+        "visible": shown,
+        "slot": shown[0] if len(shown) == 1 else None,
+        "sidebar": next((p["id"] for p in panes if p["ours"] and p["where"] == "tiled"), None),
+    }
+
+
+def show(state):
+    if state is None:
+        print("  (no session)")
+        return
+    print(f"  focus {state['focus']}  floating layer {state['layer']}  procs {state['procs']}")
+    for p in state["panes"]:
+        mark = "*" if p["id"] == state["focus"] else " "
+        role = "sidebar" if p["id"] == state["sidebar"] else "slot" if p["id"] == state["slot"] else ""
+        size = "-" if p["where"] == "parked" else f"{p['cols']}x{p['rows']}"
+        print(f"  {mark} {p['id']:<12} {p['where']:<9} {role:<8} {size:<8} {p['title']}")
+
+
+def value(state, key):
+    if state is None:
+        return "<no session>"
+    counts = {
+        "panes": len(state["panes"]),
+        "terminals": sum(p["id"].startswith("terminal") for p in state["panes"]),
+        "parked": sum(p["where"] == "parked" for p in state["panes"]),
+    }
+    if key in counts:
+        return str(counts[key])
+    if key in ("focus", "layer", "procs"):
+        return str(state[key])
+    if key == "visible":
+        return ",".join(state["visible"])
+    if key == "floating":
+        return ",".join(p["title"] for p in state["panes"] if p["where"] == "floating")
+    field, _, pane = key.partition(".")
+    if field in ("title", "where", "width") and pane:
+        pane = state.get(pane, pane) if pane in ("sidebar", "slot") else pane
+        found = next((p for p in state["panes"] if p["id"] == pane), None)
+        if found is None:
+            return "gone" if field == "where" else "<gone>"
+        return str({"title": found["title"], "where": found["where"], "width": found["cols"]}[field])
+    raise Failed(f"no such check: {key}")
+
+
+def check(state, text):
+    """(passed, what was there) for one check."""
+    match = re.fullmatch(r"([\w.]+)(!?=)(.*)", text)
+    if not match:
+        raise Failed(f"not a check: {text}")
+    key, op, want = match.groups()
+    if key == "running":
+        hit = state is not None and any(fnmatch.fnmatchcase(c, want) for c in state["running"])
+        return hit == (op == "="), "a match" if hit else "no match"
+    if key == "focus" and want in ("sidebar", "slot") and state is not None:
+        want = state[want] or f"<no {want}>"
+    got = value(state, key)
+    return fnmatch.fnmatchcase(got, want) == (op == "="), got
+
+
+# --- commands ------------------------------------------------------------
+
+
+def helper(script, *args):
+    subprocess.run([sys.executable, str(REPO / "scripts" / script), *map(str, args)], check=True,
+                   stdout=subprocess.DEVNULL)
+
+
+def start(a):
+    d = home(a.session)
+    if (d / "meta.json").exists():
+        raise Failed(f"{a.session} is already running; stop it first")
+    wasm = Path(a.wasm).resolve()
+    if not wasm.exists():
+        raise Failed(f"no {wasm}: cargo build -p agenttij --target wasm32-wasip1 --release")
+    shutil.rmtree(d, ignore_errors=True)
+    for sub in ("cache/zellij", "tmp", "sock"):
+        (d / sub).mkdir(parents=True)
+    url = f"file:{wasm}"
+
+    # The plugin url, and `group` on both sides, as install.sh writes them.
+    source = Path(a.layout)
+    if not source.exists() and (REPO / source).exists():
+        source = REPO / source
+    layout = re.sub(r"file:[^\"]*agenttij\.wasm", url, source.read_text())
+    if a.group is not None:
+        layout = re.sub(r'(?m)^ *group ".*"\n', "", layout)
+        if a.group:
+            layout = re.sub(r'(?m)^( *)solo "true"$', lambda m: f'{m[0]}\n{m[1]}group "{a.group}"', layout)
+    groups = set(re.findall(r'(?m)^ *group "(.*)"$', layout))
+    if len(groups) > 1:
+        raise Failed("the layout disagrees with itself about `group`")
+    (d / "layout.kdl").write_text(layout)
+
+    config = subprocess.run(["zellij", "setup", "--dump-config"], capture_output=True, text=True,
+                            check=True).stdout
+    config = re.sub(r"(?ms)^load_plugins \{.*?^\}", "load_plugins {\n}", config)
+    config += 'default_shell "sh"\nshow_startup_tips false\nshow_release_notes false\n'
+    (d / "config.kdl").write_text(config)
+    helper("zellij-keybinds.py", "install", d / "config.kdl", url, *BINDS, next(iter(groups), ""))
+    helper("grant-permissions.py", "grant", d / "cache/zellij/permissions.kdl", wasm)
+
+    fifo = d / "keys"
+    os.mkfifo(fifo)
+    reader = os.open(fifo, os.O_RDWR)
+    cols, rows = a.size.split("x")
+    command = (f"stty cols {cols} rows {rows}; exec zellij -s {shlex.quote(a.session)} "
+               f"-n {shlex.quote(str(d / 'layout.kdl'))}")
+    client = subprocess.Popen(
+        ["script", "-qfc", command, str(d / "client.out")],
+        stdin=reader,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        env=env(a.session),
+        start_new_session=True,
+    )
+    os.close(reader)
+    (d / "meta.json").write_text(json.dumps({"client": client.pid, "url": url}))
+
+    if not settle(a.session, ["where.sidebar=tiled", "title.sidebar!=*.wasm*"], 20, quiet=True):
+        show(snapshot(a.session))
+        stop_session(a.session, keep=True)
+        raise Failed(f"{a.session}: the sidebar never came up")
+    print(f"{a.session} up, raw client output in {d / 'client.out'}")
+    show(snapshot(a.session))
+
+
+def unescape(text):
+    # Python reads at most three octal digits, so `\0333` is Esc then 3 - which
+    # `printf %b` got wrong - and `\e` is Esc as in a shell.
+    text = re.sub(r"(?<!\\)\\e", r"\\x1b", text)
+    return codecs.decode(text.encode("latin-1", "backslashreplace"), "unicode_escape").encode()
+
+
+def send(session, chunks, gap=0.2):
+    try:
+        fd = os.open(home(session) / "keys", os.O_WRONLY | os.O_NONBLOCK)
+    except OSError:
+        raise Failed(f"{session}: no client is reading keys")
+    with os.fdopen(fd, "wb", buffering=0) as stream:
+        for i, chunk in enumerate(chunks):
+            if i:
+                time.sleep(gap)
+            stream.write(unescape(chunk))
+
+
+def settle(session, checks, timeout, quiet=False):
+    deadline = time.monotonic() + timeout
+    while True:
+        state = snapshot(session)
+        results = [(text, *check(state, text)) for text in checks]
+        if all(ok for _, ok, _ in results):
+            return True
+        if time.monotonic() > deadline:
+            if not quiet:
+                for text, ok, got in results:
+                    if not ok:
+                        print(f"  FAILED {text} (got {got!r})")
+                show(state)
+            return False
+        time.sleep(0.25)
+
+
+def reload(a):
+    url = meta(a.session)["url"]
+    layout = (home(a.session) / "layout.kdl").read_text()
+    block = re.search(re.escape(url) + r'"\s*\{(.*?)\}', layout, re.S)
+    pairs = re.findall(r'(?m)^\s*(\w+) "(.*)"$', block[1]) if block else []
+    # The configuration has to be the layout's, all of it, or this starts a
+    # second sidebar instead of reloading the first.
+    args = ["-c", ",".join(f"{k}={v}" for k, v in pairs)] if pairs else []
+    action(a.session, "start-or-reload-plugin", *args, url)
+
+
+def verdict(session):
+    """('clean' | 'panic' | 'client', what to say), from the session's own log."""
+    log = next(home(session).glob("tmp/zellij-*/zellij-log/zellij.log"), None)
+    text = log.read_text(errors="replace") if log else ""
+    entries = re.split(r"(?m)^(?=(?:ERROR|WARN|INFO|DEBUG|TRACE) +\|)", text)
+    panics = [e for e in entries if "PANIC IN PLUGIN" in e or "panicked" in e]
+    client = [e for e in entries if e.startswith("ERROR") and any(t in e for t in CLIENT_TROUBLE)]
+    other = [e for e in entries if e.startswith("ERROR") and e not in panics and e not in client
+             and not any(n in e for n in NOISE)]
+
+    def gist(entry):
+        lines = entry.strip().splitlines()
+        found = re.search(r"\.rs:\d+: (.*)", lines[0])
+        said = found[1].strip() if found else lines[0]
+        if said == "a non-fatal error occurred" and len(lines) > 1:
+            said = re.sub(r"^\s*\d+: ", "", lines[-1]).strip()  # the innermost cause
+        return said[:160]
+
+    lines = [f"  panic: {gist(e)}" for e in panics] + [f"  client: {gist(e)}" for e in client[:3]]
+    lines += [f"  error: {g}" for g in sorted({gist(e) for e in other})]
+    status = "panic" if panics else "client" if client else "clean"
+    return status, "\n".join([f"log: {status}", *lines])
+
+
+def stop_session(session, keep=False):
+    d = home(session)
+    status, said = verdict(session)  # first: killing a session logs errors of its own
+    print(said)
+    try:
+        client = meta(session)["client"]
+    except Failed:
+        client = None
+    subprocess.run(["zellij", "kill-session", session], env=env(session), capture_output=True)
+    if client:
+        try:
+            os.killpg(client, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+    time.sleep(0.5)
+    subprocess.run(["zellij", "delete-session", "--force", session], env=env(session),
+                   capture_output=True)
+    if keep or status != "clean":
+        print(f"kept {d}")
+    else:
+        shutil.rmtree(d, ignore_errors=True)
+    return status
+
+
+def timeline(a):
+    start(a)
+    due, at = [], 0.0
+    for step in a.steps:
+        delay, _, data = step.partition(":")
+        at += float(delay)
+        due.append((at, data))
+    began, sample, end = time.monotonic(), 0, at + 8
+    try:
+        while sample <= end:
+            now = time.monotonic() - began
+            while due and due[0][0] <= now:
+                send(a.session, [due.pop(0)[1]])
+            if now >= sample:
+                state = snapshot(a.session)
+                print(f"{sample:3d}s  " + "  ".join(
+                    f"{key}={value(state, key) or '-'}"
+                    for key in ("panes", "parked", "floating", "layer", "focus", "visible")))
+                sample += 1
+            time.sleep(0.05)
+    finally:
+        stop_session(a.session)
+
+
+def run_scenario(path, parser):
+    session = re.sub(r"[^a-z0-9-]", "-", f"e2e-{Path(path).stem}".lower())[:24]
+    if home(session).exists():
+        stop_session(session)
+    status = "pass"
+    print(f"== {path}")
+    try:
+        for number, line in enumerate(Path(path).read_text().splitlines(), 1):
+            words = shlex.split(line, comments=True)
+            if not words:
+                continue
+            print(f"  > {line.strip()}")
+            if words[0] == "sleep":
+                time.sleep(float(words[1]))
+                continue
+            a = parser.parse_args([words[0], session, *words[1:]])
+            if a.run(a) is False:
+                status = "fail"
+                print(f"  {path}:{number}: failed")
+                break
+    except (Failed, subprocess.CalledProcessError, SystemExit) as error:
+        status = "fail"
+        print(f"  {error}")
+    finally:
+        if home(session).exists():
+            logged = stop_session(session)
+            if logged == "panic":
+                status = "fail"
+            elif logged == "client" and status == "fail":
+                status = "client"
+    return status
+
+
+def scenario(a, parser):
+    failed = []
+    for path in a.files:
+        status = run_scenario(path, parser)
+        if status == "client":
+            print("  the client broke that run, not the plugin; once more")
+            status = run_scenario(path, parser)
+        print(f"== {path}: {status}\n")
+        if status != "pass":
+            failed.append(path)
+    if failed:
+        print("failed: " + " ".join(failed))
+    return not failed
+
+
+def build_parser():
+    parser = argparse.ArgumentParser(description=__doc__,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    def command(name, run, *positionals, starts=False):
+        p = sub.add_parser(name)
+        p.add_argument("session")
+        for positional, nargs in positionals:
+            p.add_argument(positional, nargs=nargs)
+        if starts:
+            p.add_argument("--group", help="the template every row starts with")
+            p.add_argument("--size", default="160x40", help="COLSxROWS of the client")
+            p.add_argument("--wasm", default=str(WASM), help="the plugin to run")
+        p.set_defaults(run=run)
+        return p
+
+    command("start", start, ("layout", None), starts=True)
+    k = command("keys", lambda a: send(a.session, a.bytes, a.gap), ("bytes", "+"))
+    k.add_argument("--gap", type=float, default=0.2, help="seconds between arguments")
+    command("state", lambda a: show(snapshot(a.session)))
+    command("expect", lambda a: settle(a.session, a.checks, 0), ("checks", "+"))
+    w = command("wait", lambda a: settle(a.session, a.checks, a.timeout), ("checks", "+"))
+    w.add_argument("--timeout", type=float, default=10)
+    command("reload", reload)
+    s = command("stop", lambda a: stop_session(a.session, a.keep) == "clean")
+    s.add_argument("--keep", action="store_true", help="keep its directory and log")
+    command("timeline", timeline, ("layout", None), ("steps", "+"), starts=True)
+    files = sub.add_parser("scenario")
+    files.add_argument("files", nargs="+")
+    files.set_defaults(run=lambda a: scenario(a, parser))
+    return parser
+
+
+def main():
+    parser = build_parser()
+    a = parser.parse_args()
+    try:
+        ok = a.run(a)
+    except Failed as error:
+        sys.exit(str(error))
+    sys.exit(1 if ok is False else 0)
+
+
+if __name__ == "__main__":
+    main()
