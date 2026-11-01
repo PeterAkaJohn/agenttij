@@ -926,6 +926,15 @@ impl Sidebar {
         self.label_positions();
     }
 
+    /// Whether this instance is the sidebar that owns the rows. A palette, a
+    /// peek, the keybind list and a bar run the same update path with a grouping
+    /// of their own - every pane a row of one - and acting on it does damage:
+    /// the palette, launched with `solo`, renamed the pane on screen from
+    /// `· api 1/3` to `· api`, and the sidebar's cache kept it that way.
+    fn manages_rows(&self) -> bool {
+        !(self.config.jump || self.config.bar || self.config.help || self.config.peek.is_some())
+    }
+
     /// Keeps the cursor on a real row after the list changes underneath it.
     fn resync_selection(&mut self) {
         let still_there = self
@@ -1701,9 +1710,7 @@ impl Sidebar {
             self.groups_restored = true;
             return;
         }
-        // Same reason as `remember_groups`: these instances have a grouping
-        // because every instance reconciles one, not because they use it.
-        if self.config.jump || self.config.bar || self.config.help {
+        if !self.manages_rows() {
             return;
         }
         self.groups_restored = true;
@@ -1732,11 +1739,8 @@ impl Sidebar {
     /// is the moment the grouping is *true* — and it writes only when the answer
     /// changed, which is when a pane is added or closed rather than every tick.
     fn remember_groups(&mut self) {
-        // Only an instance that *manages* rows may write them down. A palette, a
-        // peek, the keybind list and a bar all run this same update path with a
-        // grouping they never use — and whichever of them wrote last would be
-        // what a reload restored.
-        if !self.order_loaded || self.config.jump || self.config.bar || self.config.help {
+        // Whichever instance wrote last would be what a reload restored.
+        if !self.order_loaded || !self.manages_rows() {
             return;
         }
         let rows = self.groups.remember();
@@ -2283,7 +2287,7 @@ impl Sidebar {
     /// Renaming pins a pane's title, which otherwise follows the running command
     /// — hence `position "false"` for anyone who would rather keep that.
     fn label_positions(&mut self) {
-        if !self.config.position || !self.config.solo {
+        if !self.config.position || !self.config.solo || !self.manages_rows() {
             return;
         }
 
@@ -2690,9 +2694,7 @@ impl Sidebar {
     /// already holding the whole row — from doubling it. Both matter: the
     /// manifest carries suppressed panes, so a filled row never reads as one.
     fn fill_first_row(&mut self, here: &[u32]) {
-        // A bar shares this code path and must never open a pane, whatever a
-        // copied-and-pasted configuration asks it for.
-        if self.filled || self.config.bar || self.config.group.len() < 2 || here.len() != 1 {
+        if self.filled || !self.manages_rows() || self.config.group.len() < 2 || here.len() != 1 {
             return;
         }
         self.filled = true;
