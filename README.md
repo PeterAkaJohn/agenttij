@@ -1,9 +1,7 @@
 # agenttij
 
-A Zellij sidebar that tracks coding agents — Claude Code and friends — across
-every session on the machine. It shows what each one is doing, sorts whatever
-needs you to the top, holds the rest still, and lets you peek at an agent or
-jump to it.
+A Zellij sidebar for running coding agents: Claude Code, Codex, opencode and friends, across every session on the machine.
+It shows what each agent is doing, puts whatever needs you at the top, holds the rest still, and gets you to any of them in a key or two.
 
 ```
 ┌ agents ────────────┐
@@ -18,69 +16,203 @@ jump to it.
 └────────────────────┘
 ```
 
-A finished agent stays `●` until its group has been on screen with you looking at
-it, or you have peeked at it, then turns `✓`: work you have not read yet, told
-apart from work you have.
-One that finishes while you watch it is read as it finishes; one on screen in a
-session or tab nobody has open is not.
+It thinks in **projects**, made of **groups**, made of **panes**.
+A group is one row of the sidebar: an agent and whatever you keep beside it, an editor, a log, a shell, with one of them on screen at a time and the rest parked, still running.
+A project is every group working on one codebase.
 
-A finished group also says what its agent left uncommitted, `+120−30`, new files
-included — on the group while there is room for it next to the name, and on the
-pane's frame. It is counted once, when the agent finishes, so it costs the
-sidebar nothing.
+## Contents
 
-The sidebar is an ordinary pane: focus it with your usual pane navigation (or
-`Alt s`), then. In the first column, `›` is the cursor and `▪` is the group on
-screen — the same thing until you open a pane somewhere else.
+- [Quick start](#quick-start)
+- [Reading the sidebar](#reading-the-sidebar)
+- [What you can do with it](#what-you-can-do-with-it)
+- [Keys](#keys)
+- [Layouts](#layouts)
+- [Configuration](#configuration)
+- [Installing, in detail](#installing-in-detail)
+- [Building and developing](#building-and-developing)
+- [How it works](#how-it-works)
+- [Troubleshooting](#troubleshooting)
+- [Known limits](#known-limits)
 
-| key | |
+## Quick start
+
+You need:
+
+- Zellij 0.45 or newer.
+- Rust, with the `wasm32-wasip1` target.
+- `python3`, which the installer's helpers run on.
+
+And, for the parts that use them: `git` 2.31 or newer (worktrees, and counting what an agent changed), `zoxide` (ranking the directory picker), `ssh` (watching other machines), something like `notify-send` (notifications), and Claude Code or another agent.
+It is developed and tested on Linux.
+
+```sh
+git clone https://github.com/PeterAkaJohn/agenttij
+cd agenttij
+rustup target add wasm32-wasip1
+./scripts/install.sh
+zellij -n agenttij-workspace
+```
+
+The installer builds the plugin and the `agenttij` command, installs the layouts, adds keybindings to your Zellij config, pre-grants the plugin's permissions, and registers the hook that lets Claude Code report its status.
+Keybindings are read when a session starts, so use a new session after installing.
+
+Then, in that session:
+
+1. Press `n` in the sidebar (or `Alt g` from anywhere) to start a new group, and run your agent in it.
+2. Press `a` (or `Alt m`) to add a pane to that group, an editor, say.
+   It opens on screen, and the agent is parked behind it.
+3. Press `v` (or `Alt v`) to cycle between them, and `Enter` on any row to put that group on screen.
+4. Press `?` (or `Alt ?`) for every key.
+
+If you use Claude Code, also install its plugin, which carries the status hooks, the tools that let agents open panes, and two skills:
+
+```
+/plugin install agenttij --marketplace PeterAkaJohn/agenttij
+```
+
+Then run `./scripts/install.sh` once more, so it takes its own copy of the hooks out of `~/.claude/settings.json`.
+
+## Reading the sidebar
+
+Each row is a group, or a project header above its groups.
+From left to right: a status glyph, the name, how many panes the group owns (when more than one), and how long ago its agent last reported (`now`, `12s`, `5m`, `2h`, `3d`).
+
+| Glyph | Means |
 |---|---|
-| `j` / `k`, `↓` / `↑` | move |
-| `Enter` | show that group — switches session if the agent is elsewhere |
-| `Tab` | open a group up: its panes listed underneath — or fold a project |
-| `[`, `]` | jump between projects |
-| `J`, `K` | move a project, or a group within its project |
-| `r` | name a project — two with the same name are one |
-| `b` | flip back to the previous group (`Alt b` anywhere) |
-| `B` | back to the session you came from |
-| `o` | open a workspace here on that group's project |
-| `w` | a new group in a fresh git worktree of that group's repository (`Alt w`) |
-| `s` | share this session on the web - a phone, say - with Zellij's own screen |
-| `R` | answer an agent waiting on you, without going to it (`reply "true"` only) |
-| `v`, `V` | cycle the panes *within* this group, either way (`Alt v`, `Alt V`) |
-| `1`–`9` | straight to that pane of the group (`Alt 1`–`Alt 9`) |
-| `'` | flip to the pane you were on before this one (`Alt '`) |
-| `a` | add a pane to this group: an editor, a log, whatever (`Alt m`) |
-| `m` | move what the cursor is on into the group on screen |
-| `n` | new agent pane — a new group (`Alt g`) |
-| `G` | a new group in a directory you pick, template and all (`Alt G`) |
-| `d` `d` | close the group, the pane under it, or a whole project — asks first |
-| `c` `c` | interrupt the agent, without going to it — asks first |
-| `!` | only what needs you |
-| `/` | jump: everywhere you could go, filtered by typing (`Alt t` anywhere) |
-| `p` | peek at an agent without leaving your session |
-| `q`, `Esc` | dismiss a peek |
-| `?` | show every key and what it does (`Alt ?` from any pane) |
+| `⚠` | needs input: the agent is waiting on you |
+| `◐` | running |
+| `●` | done, and you have not looked yet |
+| `✓` | done, and read |
+| `○` | idle |
+| `?` | unknown |
+| `·` | a pane with no agent in it |
+| `▾` `▸` | a project, open or folded; folded, it shows the worst status inside it |
+| `├` `└` | the panes of a group you opened with `Tab` |
+| `⇢` | a group in another session on this machine; `Enter` switches session |
+| `⇥` | a group on another machine |
 
-Every one of those that makes sense away from the sidebar has a global binding,
-installed for you: `Alt s` focuses the sidebar, `Alt v` cycles a group's panes,
-`Alt b` flips groups, `Alt g` starts a new group, `Alt w` starts one in a fresh git
-worktree, `Alt m` adds a pane to the group on screen, `Alt a` summons a sidebar in any session, and `Alt ]` (`Alt [` back) - Zellij's own
-swap-layout key — folds the sidebar to a status rail. Full reference:
-[docs/KEYBINDS.md](docs/KEYBINDS.md).
+In the first column, `›` is the cursor and `▪` marks the group on screen: the same thing, until you move.
 
-Jumping is the other half of it. `Alt t` anywhere — or `/` in the sidebar — opens
-a floating list of every agent, pane, session and resurrectable session on the
-machine; three letters and `Enter` puts you there, wherever "there" turned out to
-be.
+Whatever needs you sorts first, then the rest in a fixed order, so rows never move under the cursor because something else got busy.
 
-Peeking is the point. Checking on an agent shouldn't cost you a detach and a
-reattach, so `p` gives you a live view of its pane wherever it is — another
-session, a background tab, a session nobody is attached to.
+A finished agent stays `●` until its group has been on screen with someone looking at it, or you peeked at it; then it turns `✓`.
+One that finishes while you watch it is read as it finishes.
 
-## One line instead of a column
+A finished group also shows what its agent left uncommitted, `+120−30`, new files included: on the row when there is room next to the name, and on the pane's frame.
+It is counted once, when the agent finishes.
 
-The same plugin in bar mode: counts, then whoever most wants you.
+## What you can do with it
+
+### Run several agents in one workspace
+
+The `agenttij-workspace` layout gives the sidebar a column and the rest of the tab a single slot holding one pane.
+Picking a group puts that group's current pane in the slot and **parks** whatever was there: Zellij calls it suppressed, and it keeps running.
+The sidebar never moves and never reloads; `Enter` is a pane swap, not a detach.
+
+```
+┌ agents ────┬──────────────────────────┐
+│ ⚠ bravo    │                          │
+│ ◐ delta  2 │  delta's editor          │ ← the group on screen is showing
+│    nvim    │                          │   its second pane; Tab opened
+│ ✓ alpha    │                          │   the group to list it
+│ · scratch  │  (every other pane is    │
+│            │   parked, still running) │
+└────────────┴──────────────────────────┘
+```
+
+- `n` (`Alt g`) starts a new group; `a` (`Alt m`) adds a pane to the group you are on.
+  Both park what was on screen instead of splitting it.
+- `v` and `V` (`Alt v`, `Alt V`) cycle through a group's panes, `1`-`9` (`Alt 1`-`Alt 9`) go straight to one by the number its frame shows (`· api 3/5`), and `'` (`Alt '`) flips between the two you were alternating.
+- `b` (`Alt b`) flips back to the previous group.
+- `Tab` lists a group's panes underneath it, named after what runs in them, so you can pick one.
+- `d` `d` closes a group and every pane parked behind it, or just the pane under the cursor in an opened group, and puts the next group on screen.
+  It asks first.
+- `m` moves the pane or group under the cursor into the group on screen, for a pane that ended up on its own.
+
+Each group remembers which pane you were last on.
+A pane the sidebar does not recognise, one you opened with Zellij's own keys, say, becomes a group of its own, so nothing is ever out of reach.
+
+### Start every group the same way
+
+If every group you build comes out the same, say so once in the layout:
+
+```kdl
+plugin location="file:~/.config/zellij/plugins/agenttij.wasm" {
+    scope "session"
+    solo "true"
+    group "claude; nvim .; lazygit"
+}
+```
+
+Now `n` and `Alt g` open all three at once: `claude` on screen, the editor and `lazygit` parked behind it.
+`;` separates panes, the first is the one you see, and an empty entry is a plain shell: `group "; nvim ."` is a shell with an editor behind it.
+The group the session starts with is filled out the same way.
+`a` stays a single plain pane on purpose: it means "one more", not "one more group".
+
+`agenttij-template` is that layout, ready to run.
+
+Words are split on whitespace, so an argument with a space in it belongs in a script whose path goes in the template.
+The template is part of the sidebar's configuration, and Zellij identifies a plugin by its configuration, so `Alt g` in your keybindings has to carry the same one.
+The installer reads it from the layouts and writes it into the bindings: edit the layout, re-run `./scripts/install.sh`, and start a new session.
+That makes the template machine-wide; `AGENTTIJ_GROUP="..."` overrides the layouts, and `AGENTTIJ_GROUP=""` installs none.
+
+### Keep work organised by project
+
+Groups gather into projects: everything under one git root, so an agent started in `crates/core` sits with one started at the top of the repository, and worktrees of one repository are one project.
+
+- `r` names a project.
+  Two projects given the same name are one: a front end and a back end in separate repositories, say.
+- A `.agenttij` file above a directory does the same from the filesystem: its first line is the project's name (empty means the directory's own), and it travels with the checkout.
+- `Tab` on a project header folds it to one line that still shows the worst status inside it.
+- `[` and `]` jump between projects, and `J` and `K` move a project, or a group within its project.
+
+The order and what you folded are remembered in `~/.cache/agenttij/order`, so a reload or a new day finds them where you left them.
+Headers only appear once there is more than one project to tell apart.
+
+### Check on an agent without going there
+
+- `p` peeks: a floating, live view of an agent's pane wherever it is, in another session, a background tab, or a session nobody is attached to.
+  Any key closes it.
+- `/` in the sidebar, or `Alt t` from anywhere, opens the jump palette: every agent, pane, session and resurrectable session on the machine.
+  Three letters and `Enter` take you there.
+- `!` shows only what needs you.
+- `B` goes back to the session you came from, so jumping to another session is a round trip.
+- `o` opens a new group here on the selected group's project, when you want to work on the same code without moving the agent.
+
+Jumping to another session is a detach and reattach, because that is what switching sessions is in Zellij.
+Peeking exists so you rarely need it.
+
+### Answer or stop an agent from the sidebar
+
+- `R` answers an agent that is waiting on you: type the answer in the sidebar and `Enter` sends it, after checking the agent is still waiting.
+  It is off unless the layout sets `reply "true"`.
+- `c` `c` interrupts an agent without going to it, by sending it a Ctrl-C.
+  It asks first.
+
+Apart from those two, the sidebar never types into an agent.
+
+### Run agents side by side on one repository
+
+`w` on a group, or `Alt w` from anywhere for the group on screen, makes a git worktree beside that group's repository and starts a new group in it, template and all: `api.worktrees/api-2` on a branch `api-2`, from the commit the group is on.
+Two agents on one repository then never write over each other's files.
+Closing the group removes the worktree with `git worktree remove`, which refuses one holding uncommitted work: that one stays, and the sidebar says so.
+
+### Start work in another directory
+
+`n` starts a group where the group on screen already is.
+`G` (`Alt G`) opens a directory picker first, ranked by `zoxide` when it is installed, or takes a path you type.
+Which project the new group files under is still decided by `.agenttij` or the git root.
+
+### Get told when an agent needs you
+
+```kdl
+notify "notify-send -u critical"
+```
+
+`notify` runs a command when an agent becomes blocked on you, and when one finishes a turn nobody was watching.
+It is given `agenttij` and a message such as `api needs input`.
+
+The same plugin also comes as a one-line bar, counts first, then whoever most wants you:
 
 ```kdl
 pane size=1 borderless=true {
@@ -95,18 +227,17 @@ pane size=1 borderless=true {
 ⚠2 ◐1 ✓5 · api-refactor 2m
 ```
 
-It counts every agent on the machine unless you add `scope "session"` — a summary
-is usually a summary of everything, while a sidebar is usually about where you
-are. It never takes focus, the way a status bar should not, and it works with or
-without a sidebar — including `notify`, so a bar is also how you get desktop
-notifications in a session that has no sidebar at all. `notify` runs when an agent
-becomes blocked on you, and when one finishes a turn nobody was looking at.
+A bar counts every agent on the machine unless you add `scope "session"`, never takes focus, and works with or without a sidebar, so it is also how a session with no sidebar gets notifications.
 
-## A session per folder
+### Name sessions after their folder
 
-Zellij names a new session `quadratic-donkey`, which is fine until four of them
-are `EXITED` and you have to guess which was which. Name it after the folder when
-you *create* it, and the name is stable across restarts:
+Zellij names a new session `quadratic-donkey`, which is fine until four of them are `EXITED` and you have to guess which was which.
+`session_name "folder"` in the sidebar's configuration renames a session after the directory it was started in, once, and only when Zellij made the name up; a folder whose name is taken gets `-2`.
+`S` in the sidebar renames it by hand.
+
+Renaming is safe for agents already running: they keep reporting under the old name, which the sidebar keeps as an alias.
+
+Or name it when you create it, so attaching finds it again and resurrects it if it died:
 
 ```sh
 zj() {
@@ -115,106 +246,38 @@ zj() {
 }
 ```
 
-Same folder, same session — attaching resurrects it if it died, and `attach -f`
-runs a resurrected session's commands straight away instead of leaving them
-suspended. A new folder gets a new session with the template.
+### Come back after a restart
 
-Or let the layout do it: `session_name "folder"` in the sidebar's configuration
-names the session after the directory it was started in, once, and only when
-Zellij made the name up - two lowercase words and a dash, the shape of its
-generator.
-A session you named yourself is left alone, and a folder whose name is already
-taken gets `-2`.
+With `session_serialization true` in your Zellij config, a reboot leaves your sessions listed as `EXITED - attach to resurrect`.
+`zellij attach <name>` brings back every pane that was on screen, in its directory, with its command, waiting for `Enter`.
 
-`S` in the sidebar renames it by hand, prefilled with the current name.
-
-Renaming used to be the unsafe option and no longer is.
-A pane keeps the `ZELLIJ_SESSION_NAME` it was born with - measured through
-`/proc/<pid>/environ`, unchanged by `rename-session` - so every agent already
-running keeps writing state under the old name, and an agent whose session is not
-live is one the sidebar drops.
-The old name is kept as an alias, which is what makes those files still count:
-measured, a running agent kept its `◐` across a rename rather than vanishing.
-
-For the sessions already sitting in `zellij ls` with animal names, the palette
-says what each one was working on instead of leaving you to guess.
-`⊘` marks the ones that had a sidebar in them, and those sort first:
+What Zellij cannot bring back is what was parked: it does not save suppressed panes.
+So agenttij keeps its own record of each session's groups, the directory each worked in and the programs its panes ran, in `~/.cache/agenttij/sessions/<name>`.
+In the jump palette, type `restore`:
 
 ```
-⊘ adept-petunia       agenttij · 21d
-⊘ arcadian-quasar     sheald · 20d
-⊗ someone-elses       resurrect · 4d
-```
-
-That works for sessions that died long before any of this was written, because
-the labels come from Zellij's own serialized layouts rather than from agenttij:
-the pane titles in them are the ones the sidebar wrote, so the project is still
-in there.
-Measured on 186 saved sessions: 48 had a sidebar, and all 48 could be named.
-
-So `Alt t` and `sheald` finds the session that had it, and `Enter` resurrects it.
-Live sessions carry the same information, and everything that can say how long
-ago it was says that too:
-
-```
-⊙ contentchef-serverless   contentchef · session
-⊘ quadratic-donkey         agenttij lara-app · 3d
-⊞ contentchef              4 groups · 2h
-```
-
-Identifying one is not the same as rebuilding it.
-Zellij records a directory for a pane only sometimes (11 of those 186 layouts had
-one), so a session from before agenttij kept its own snapshots can be resurrected
-into whatever Zellij saved and no further.
-Sessions from now on are written down properly, groups and directories both.
-
-## After a restart
-
-Two halves, because they answer different questions.
-
-Zellij's own serialization brings a *session* back: turn on `session_serialization
-true` and a machine that reboots leaves its sessions listed as `EXITED - attach to
-resurrect`. `zellij attach <name>` rebuilds the tab, and every pane that was on
-screen comes back in its directory, with its command, suspended until you press
-Enter — measured, including the sidebar with its own configuration.
-
-What it cannot bring back is what was parked. Zellij serializes tiled and floating
-panes; a pane suppressed to keep a group to one pane at a time is not in the file at
-all. In solo mode that means one group per tab survives, and its companions are then
-refilled by the layout's `group`.
-
-So agenttij writes its groups down itself, as something a restart cannot invalidate:
-per group, the directory it worked in and the programs its panes ran. `Alt t`, type
-`restore`, and every remembered workspace is in the list with its size:
-
-```
-⊞ contentchef      4 groups
+⊞ contentchef      4 groups · 2h
 ⊞ agenttij         2 groups
 ```
 
-Picking one rebuilds those groups — a group per second, in their own directories, with
-their own panes. Groups already open are skipped, *counted* rather than merely
-matched: three groups on one project restore two when one of them is already there,
-which is what a project you work on from several angles looks like. Program *arguments* are not kept, because a pane only
-reports the program it runs: `nvim` comes back, `nvim +42 file` comes back as
-`nvim`.
+Picking one rebuilds those groups, one a second, each in its own directory with its own panes.
+Groups already open are skipped, counted rather than merely matched, so three groups on one project restore two when one is already there.
+Program arguments are not kept, because a pane only reports the program it runs: `nvim +42 file` comes back as `nvim`.
 
-Each session writes its own file (`~/.cache/agenttij/sessions/<name>`) and reads
-everyone's: one shared file rewritten by whichever sidebar saved last is fine for
-the order of projects and hopeless for a record belonging to a session, which the
-next sidebar to save would erase.
+The palette also says what each old session was working on, so you are not guessing from animal names:
 
-The snapshots are stamped with the boot that wrote them, which is what keeps a
-session's own sidebar from overwriting the thing it is meant to restore: this
-boot's entry for a session is the live record of it, every earlier one is a
-snapshot, and only the earlier ones are offered. Pane ids are treated the same way
-and thrown away across a restart — Zellij hands the same numbers out again, and
-grouping strangers is worse than losing the grouping.
+```
+⊙ contentchef-serverless   contentchef · session
+⊘ adept-petunia            agenttij · 21d
+⊗ someone-elses            resurrect · 4d
+```
 
-## Another machine
+`⊙` is a live session, `⊘` a dead one that had a sidebar in it (named after its projects, and sorted first), and `⊗` any other dead one.
+The names come from the pane titles in Zellij's own saved layouts, so this works even for sessions older than the snapshots.
 
-Agents on a dev box show up in the sidebar next to the local ones, marked `⇥`
-with the host they are on:
+### Watch agents on other machines
+
+Agents on a dev box can show up next to the local ones, marked `⇥` with the host they are on:
 
 ```kdl
 plugin location="file:~/.config/zellij/plugins/agenttij.wasm" {
@@ -222,41 +285,17 @@ plugin location="file:~/.config/zellij/plugins/agenttij.wasm" {
 }
 ```
 
-On the machine being watched, `zellij -n agenttij-remote` adds a *controller*: the
-same plugin with no column, no keys and nothing on screen, which keeps that
-session to one pane at a time and does what this sidebar asks of it. Its groups then
-appear here as groups — `⇥ api 3`, openable with `Tab` — and `v`, `a`, `d` and
-`Enter` on them are carried out over there, with real suppressed panes, because
-only a plugin inside a session can suppress one.
+Or press `h` in the sidebar and type them; that list is remembered for the session you typed it in.
 
-Or press `h` in the sidebar and type them. That list belongs to the session you
-typed it in and is remembered for it, so a box you care about this afternoon does
-not have to go in a layout file — and does not turn up in tomorrow's session for
-something else. Hosts named in a layout are watched wherever that layout is used,
-which is the other half of the choice.
+Install agenttij on the watched machine too, since its hook is what writes the state, and give each host key-based ssh login.
+Starting the session there with `zellij -n agenttij-remote` adds a *controller*: the same plugin, invisible, which keeps that session to one pane at a time and does what your sidebar asks.
+Its groups then appear here as groups, `Tab` lists their panes, and `v`, `a`, `d` and `Enter` on them act over there.
 
-The state files are the whole protocol, so watching a machine is reading them
-over ssh — install agenttij there too (the hook is what writes them), and give
-each host key-based login. No second machine handy? `scripts/testbox.sh up`
-starts a container running sshd and a zellij session with two panes, one state
-file each, and prints the host string to paste into `h` — enough that peeking
-shows real pane contents and `Enter` attaches to a real session. `Enter` on a remote group opens a pane here attached to
-that session, because Zellij cannot show a pane it does not own; `p` peeks at it
-without leaving. Since Zellij 0.45 that pane is a nested session: Zellij asks what
-to do with it, and while it has focus your keys go to the session over there
-(`Ctrl o` then `]` brings them back) - see "Groups somewhere else" in
-[docs/KEYBINDS.md](docs/KEYBINDS.md). And `a` on a remote group, or `Alt m` from a
-pane attached to one with the keys still here, adds a pane *on that machine*, in the directory its agent is working in — Zellij's own
-CLI over ssh, so the pane belongs to that session rather than to a second
-connection pretending to. If agenttij is running in that
-session too, it receives the same message `Alt m` sends here and parks the
-previous pane exactly as it would locally — which is the reason to install it on
-the machines you watch, not just the hook. If it is not, the pane is opened
-directly and the session is gathered into a Zellij stack instead: one pane
-expanded, the rest as title lines. Suppressing a pane is a plugin call, so it
-needs a plugin in that session; a stack is the same promise kept by Zellij.
+`Enter` on a remote group opens a pane here attached to that session, because Zellij cannot show a pane it does not own; `p` peeks without attaching.
+Since Zellij 0.45 that pane is a nested session: while it has focus your keys go to the machine over there, and `Ctrl o` then `]` brings them back.
 
-Set up connection sharing for those hosts or every scan pays for a handshake:
+Hosts are asked every five seconds, and one that fails is left alone for a minute.
+Set up connection sharing for them, or every one of those asks pays for an ssh handshake:
 
 ```
 Host dev1 build2
@@ -265,46 +304,48 @@ Host dev1 build2
     ControlPersist 10m
 ```
 
-Hosts are asked every five seconds, and a host that fails is left alone for a
-minute — a closed laptop should cost one connection attempt a minute, not one a
-second. Its groups disappear while it is away rather than being marked stale,
-because "what is running over there" is a question only it can answer.
+No second machine handy?
+`scripts/testbox.sh up` starts a Docker container running sshd and a Zellij session with two panes, and prints the host string to give `h`.
 
-## Agents that use the sidebar
+### Follow along from a phone
+
+`s` opens Zellij's own web-sharing screen, where the session is shared and Zellij's web server started.
+While it is shared, the sidebar's first line says so, with how many are watching.
+For a phone, the server has to listen on an address the phone can reach, with a certificate: `web_server_ip`, `web_server_cert` and `web_server_key` in your Zellij config.
+It serves a live terminal, so mind who can reach it.
+
+### Let agents use the sidebar
 
 An agent can ask the sidebar for panes the way you do with `a` and `n`: a dev server beside it, a log to tail, a second agent in a fresh worktree.
-The sidebar thinks in **projects**, made of **groups** (its rows), made of **panes**, and so does the API.
 
-| Command | MCP tool | |
+| Command | MCP tool | Does |
 |---|---|---|
 | `agenttij list` | `list_groups` | projects, their groups and panes, what is on screen, each group's status |
 | `agenttij pane add [--run CMD] [--cwd DIR] [--group N] [--show]` | `add_pane` | a pane in the caller's group, or group `N` |
-| `agenttij group new [--run CMD] [--cwd DIR] [--worktree] [--show]` | `new_group` | a group from the layout's template, its first pane running `CMD` |
+| `agenttij group new [--run CMD] [--cwd DIR] [--worktree] [--show]` | `new_group` | a group from the template, its first pane running `CMD` |
 | `agenttij show PANE` | `show_pane` | puts a pane on screen, as `Enter` would |
 | `agenttij read PANE [--lines N]` | `read_pane` | what a pane shows, or the last `N` lines of its scrollback |
-| `agenttij pane close PANE` | `close_pane` | closes a pane an agent opened - never one of yours |
-| `agenttij wait GROUP [--timeout S]` | `wait_group` | until the agent in that group is done or waiting on you |
+| `agenttij pane close PANE` | `close_pane` | closes a pane an agent opened, never one of yours |
+| `agenttij wait GROUP [--timeout S]` | `wait_group` | waits until the group's agent is done or waiting on you (300 seconds by default) |
 
-What an agent opens is **parked**: it runs, it joins the group, and the screen and the focus stay where they were.
+What an agent opens is **parked**: it runs and joins the group, and your screen and focus stay where they were.
 `--show` puts it on screen, for when you asked to look at it.
-"The caller's group" is the group holding the pane the command runs in (`$ZELLIJ_PANE_ID`), so an agent's server lands next to that agent.
-Answers are one line of JSON, `{"ok":false,"error":"..."}` when the sidebar says no, with exit code 1; `read` prints the pane's text.
-So an agent can start a dev server beside itself, read whether it came up, and close it when it is done with it.
-The sidebar remembers which panes agents opened, and refuses to close any other; a reload forgets, and they become yours.
+"The caller's group" is the one holding the pane the command runs in (`$ZELLIJ_PANE_ID`), so an agent's dev server lands next to that agent.
+Answers are one line of JSON, `{"ok":false,"error":"..."}` with exit code 1 when the sidebar says no; `read` prints the pane's text.
+The sidebar remembers which panes agents opened and refuses to close any other; a plugin reload forgets, and they become yours.
 
 Handing a task to a second agent is the same pieces: a group in a fresh worktree running `claude '<task>'`, `wait` until it is done, `read` what it said.
-The Claude Code plugin's `delegate` skill does that (`/agenttij:delegate <task>`), and leaves the worktree for you to review.
+The Claude Code plugin's `delegate` skill does exactly that, `/agenttij:delegate <task>`, and leaves the worktree for you to review.
 
-The installer puts `agenttij` in `~/.local/bin` (`AGENTTIJ_BIN_DIR` to change it).
-For **Claude Code**, the plugin in this repository adds the MCP tools, the skills saying when to use them, and the status hooks, so `install.sh` leaves `~/.claude/settings.json` alone once it is installed (re-run the installer after installing the plugin, or each hook runs twice):
+**Claude Code**: the plugin adds the MCP tools, a skill saying when to use them, the `delegate` skill and the status hooks.
 
 ```
 /plugin install agenttij --marketplace PeterAkaJohn/agenttij
 ```
 
-or from a shell, `claude plugin marketplace add PeterAkaJohn/agenttij` and then `claude plugin install agenttij@agenttij`.
+From a shell: `claude plugin marketplace add PeterAkaJohn/agenttij`, then `claude plugin install agenttij@agenttij`.
 
-Any other agent that speaks MCP runs the same server, `agenttij mcp` - in Codex's `~/.codex/config.toml`, for one:
+**Other agents that speak MCP** run the same server, `agenttij mcp`; in Codex's `~/.codex/config.toml`:
 
 ```toml
 [mcp_servers.agenttij]
@@ -312,309 +353,23 @@ command = "agenttij"
 args = ["mcp"]
 ```
 
-One that does not can run the command: a line in its `AGENTS.md` saying "start long-running processes with `agenttij pane add --run '<command>'`" is enough.
-Outside Zellij the server lists no tools, so it can be configured everywhere.
+**Any other agent** can run the command: a line in its `AGENTS.md` saying "start long-running processes with `agenttij pane add --run '<command>'`" is enough.
 
-A request is a `zellij pipe` that only the sidebar keeping the groups acts on, and the answer comes back in a file under `/tmp/agenttij/api/` - see [docs/PLAN.md](docs/PLAN.md) for why not over the pipe.
-It needs the layout's sidebar with `solo` on, which every layout here has; `list` works without it.
+Outside Zellij the MCP server lists no tools, so it can be configured everywhere.
+It needs a sidebar with `solo "true"` in the session, which every layout here has except `agenttij-left` and `agenttij-right`; `list` works without one.
 
-## Install
+### Use agents other than Claude Code
 
-Needs the `wasm32-wasip1` target and Zellij 0.45+.
-
-```sh
-rustup target add wasm32-wasip1
-./scripts/install.sh
-zellij --new-session-with-layout agenttij-left
-```
-
-To see everything at once — sidebar, bar, projects, the lot — start with
-`zellij -n agenttij-everything` and press `?`. For groups that come out of the
-layout already built, `zellij -n agenttij-template` (see below).
-
-The installer builds the plugin and drops it in `~/.config/zellij/plugins`,
-puts the `agenttij` command in `~/.local/bin`,
-installs the sidebar layouts, registers the Claude Code hook in
-`~/.claude/settings.json` (unless Claude Code's agenttij plugin is installed,
-which carries it), binds `Alt a` in your Zellij config, and pre-grants
-the plugin's permissions. Re-run it after updating: a version that asks for a
-permission the old one did not will otherwise wait on a prompt too wide to fit in
-a sidebar. Everything is backed up first, other tools' entries
-are left alone, and re-running replaces rather than duplicates. The config edit
-is checked with `zellij setup --check` and rolled back if Zellij dislikes it.
-`--no-keybind` and `--no-grant` opt out; `--uninstall` reverses all of it. The
-bindings go *inside* your existing `keybinds` block, because Zellij only reads
-the first one it finds — see [docs/KEYBINDS.md](docs/KEYBINDS.md).
-
-Keybindings are read when a session starts, so start a new session after
-installing.
-
-Permissions are pre-granted because Zellij asks by drawing a prompt *over* the
-plugin's pane, and that prompt does not fit in 26 columns — the first launch
-would otherwise be a blank pane waiting on a keypress you cannot see. Revoke by
-deleting the entry from `~/.cache/zellij/permissions.kdl`. Note the cache is
-keyed by plugin URL, so a rebuild installed elsewhere gets asked again.
-
-The layouts are examples. Which side the sidebar sits on, how wide it is, what
-else is in the tab — all of that is yours to write; ours only shows the sidebar
-next to a working area, with Zellij's tab bar and status bar commented out
-because your config probably supplies its own. Copy one and edit it, or lift the
-`plugin` block into a layout you already have. The only part worth keeping
-verbatim is the `rail` swap layout, which has to repeat the sidebar's
-configuration exactly for `Alt ]` to fold the pane you have rather than launch a
-second one.
-
-### Workspace mode: a sidebar that never reloads
+The hook is not tied to Claude Code.
+It takes a status word as its argument and reads `$ZELLIJ_SESSION_NAME` and `$ZELLIJ_PANE_ID` from the environment, so anything that can run a command on an event can report:
 
 ```sh
-zellij --new-session-with-layout agenttij-workspace
+~/.claude/hooks/agenttij-state.sh running
 ```
 
-This is the layout to use if you want the sidebar to *stay put* while the area
-beside it changes. The sidebar owns a column; the rest of the tab is a single
-slot holding exactly one pane. Picking a group puts that group's current pane in the
-slot and **parks** whatever was there — Zellij calls it suppressed, and it keeps
-running. The sidebar never moves, never re-renders from scratch, and there is no
-detach: `Enter` is a pane swap.
+The statuses are `idle`, `running`, `needs-input`, `done` and `gone`.
 
-```
-┌ agents ────┬──────────────────────────┐
-│ ⚠ bravo    │                          │
-│ ◐ delta  2 │  delta's editor          │ ← the group on screen is showing
-│    nvim    │                          │   its second pane; Tab opened
-│ ✓ alpha    │                          │   the group to list it
-│ · scratch  │  (every other pane is    │
-│            │   parked, still running) │
-└────────────┴──────────────────────────┘
-     ▲            ▲
-     │            └─ one pane, whichever member of the group you were last on
-     └─ one group per agent; "2" means that group owns two panes
-```
-
-Start agents with `n` (or `Alt g`) and add panes to a group with `a` (or `Alt m`).
-Both park what was on screen instead of splitting it. `d` `d` closes a group and
-everything parked behind it — or one pane of a group, if you opened the group with
-`Tab` — and puts the next group on screen rather than leaving it empty. Opening
-panes any other way works too: the first swap parks the extras, and anything
-ungrouped becomes a group of its own.
-
-Groups gather into **projects**: everything working on one codebase, under the git
-root the hook records, so an agent started in `crates/core` sits with one started
-at the top of the repo. A front end and a back end in separate repositories are
-one project the moment you say so — `r`, name both `acme`, and they are together
-from then on, including agents you start in either later. When the grouping
-belongs to the code rather than to you, put a `.agenttij` file above them holding
-the name (or empty, to use its directory's): it travels with the checkout, works
-on every machine, and needs nobody to press anything. A project folds to a line that still shows the worst
-status inside it, `[` and `]` step between them, `J` and `K` put them in the
-order you want, and both the order and which projects you folded are remembered
-in `~/.cache/agenttij/order`, so a reload or a new day finds them as you left
-them — and headers only appear once there is more
-than one project to tell apart. Four repositories become four
-lines you can open, instead of fifteen you have to read.
-
-In solo mode a **group holds several panes**, not a single pane. `a` adds a pane to
-the group you are on — an editor next to the agent, a log next to that — and
-exactly one member is on screen at a time. Companions never get groups of their
-own: the group *is* the agent session. `Alt v` cycles through the group's panes from
-anywhere, including while you are typing at the agent, which is the point of it.
-
-Getting around a group is meant to take one press: `v` and `V` step forward and
-back through it, `1`–`9` go straight to a pane by the number its frame already
-shows (`· api 3/5`), and `'` flips between the two you have been alternating. All
-four have global twins — `Alt v`, `Alt V`, `Alt 1`–`Alt 9`, `Alt '` — since the
-usual moment for them is while the agent has the keyboard.
-
-Each group remembers which member you were last looking at. Every pane belongs to
-exactly one group, and a pane the sidebar does not recognise becomes a group of its
-own — so a reload costs you the grouping, never access to a pane.
-
-### A group from a template
-
-If every group you build by hand comes out the same, say so once in the layout and
-stop building it:
-
-```kdl
-plugin location="file:~/.config/zellij/plugins/agenttij.wasm" {
-    scope "session"
-    solo "true"
-    group "claude; nvim .; lazygit"
-}
-```
-
-Now `n` (and `Alt g`) opens all three at once: `claude` on screen, the editor and
-`lazygit` parked behind it on `v`. `;` separates panes, the first entry is the one
-you see, and an entry with nothing in it is a plain shell — `group "; nvim ."` is
-a shell with an editor behind it. The group the session *starts* with gets the same
-treatment, once, since no layout can park a pane itself.
-
-`layouts/agenttij-template.kdl` is that, ready to run: `zellij -n
-agenttij-template`.
-
-Two things to know. Words are split on whitespace, so an argument with a space in
-it does not survive — put that in a script and name the script here. And the
-template is part of the sidebar's configuration, which is part of its *identity*:
-`Alt g` from your Zellij config has to say the same `group` as the layout does, or
-it addresses a sidebar that does not exist and Zellij starts one — a pane appears
-out of nowhere and every pane you had becomes a group of its own.
-
-So write it in the layout and re-run the installer, which reads that line and puts
-it in the keybinds too:
-
-```sh
-./scripts/install.sh
-```
-
-Because the keybinds are machine-wide, so is the template: every layout the
-installer writes carries the same one, and two layouts asking for different
-templates is the one thing this cannot do (it says so and installs none).
-`AGENTTIJ_GROUP="…"` overrides the layouts, and `AGENTTIJ_GROUP=""` installs no
-template at all. A layout you keep somewhere else is yours to hold in step — the
-same string, character for character, in every plugin block it has, the `sidebar`
-and `rail` swap layouts included. And a session already running keeps the
-configuration it started with, so a template reaches the sessions you start after
-installing it, not that one.
-
-`a` stays a plain pane on purpose: it means "one more", not "one more group".
-The layout ships `scope "session"`, so the sidebar lists only this session's
-agents and `Enter` can never throw you out of the workspace, and `solo "true"`,
-which is what parks the others instead of leaving them on screen.
-
-When you want the width back, `Alt ]` folds the sidebar to a status rail and
-`Alt [` folds it out again - same side, same percentage width, because it is a swap
-layout defined alongside the main one rather than something the plugin does to
-itself. Each layout's `rail` block repeats that layout's plugin configuration,
-since Zellij identifies a plugin by url *and* configuration; change one, change
-both.
-
-There is a second swap layout, `sidebar`, listed before the rail and identical to
-the layout you start in. It is there because Zellij re-applies a swap layout
-every time a pane is added and registers your base layout with an exact pane
-count, so with only a rail to fall through to, opening a pane folded the sidebar
-by itself. Unfold with `Alt [` rather than a second `Alt ]`: going forward past
-the rail wraps round to the layout you started in, and the next `Alt ]` would
-land on `sidebar` first. With `Alt ]` to fold and `Alt [` to unfold, every press
-does one thing, and a rail you chose stays a rail when you open panes. The one
-press left over is a session that has never had a pane added, whose first `Alt ]`
-lands on `sidebar`.
-
-The catch is a hard one: **panes belong to the session that owns them.** Zellij
-has no way to render another session's pane inside yours, so this only works for
-agents running here. That is also why jumping to another session "reloads" the
-sidebar — it is a real detach and reattach, with a different plugin instance on
-the other side. If you want the persistent-sidebar feel, run your agents in one
-workspace session rather than one session each.
-
-Tabs cannot do this: switching tabs replaces the whole screen, sidebar
-included. You can put a sidebar in every tab via `new_tab_template`, but that is
-one plugin instance per tab with its own selection, not one that persists.
-
-A pane stack (`stacked=true`) is the other way to arrange this, and it keeps
-every agent on screen as a one-line title. Solo mode exists because that is not
-always what you want. Two things to know if you try a stack anyway: a stack
-declared with a single pane is not treated as a stack, and panes opened beside
-it split instead of joining; and agenttij never calls `stack_panes` itself,
-since new panes join a real stack on their own.
-
-Outside workspace mode the sidebar lists agents everywhere, sorting this
-session's agents first and marking the rest with `⇢` — so a group that will cost
-you a detach always says so before you press `Enter`.
-
-### Landing in a session with no sidebar
-
-Jumping to a session that has no sidebar leaves you nothing to jump back with.
-That is what `Alt a` is for: it summons the sidebar as a floating pane in
-whatever session you are in, and focuses the existing one rather than stacking
-up duplicates.
-
-Keybindings are read when a session starts, so sessions that were already
-running when you installed won't have it. From one of those, summon it by hand
-— the `--` is required, Zellij will not take the URL without it:
-
-```sh
-zellij plugin --floating -- "file:$HOME/.config/zellij/plugins/agenttij.wasm"
-```
-
-To give every new session its own docked sidebar instead, set
-`default_layout "agenttij-left"` in your Zellij config.
-
-## Configuration
-
-The knobs:
-
-```kdl
-pane size="20%" {
-    plugin location="file:~/.config/zellij/plugins/agenttij.wasm" {
-        // process names used to spot agents that are not reporting
-        agents "claude,codex,opencode,aider,gemini,my-agent"
-        // "all" (default) or "session" to list only this session's agents
-        scope "session"
-        // "true": a group is several panes, one on screen at a time
-        solo "true"
-        // what the pane frame calls itself (not `title`: Zellij keeps that one)
-        pane_title "agents"
-        // per-status colours: a name, a 256-colour index, or #rrggbb.
-        // statuses are needs-input, unread, running, done, idle, unknown, pane
-        colors "needs-input=yellow,running=blue,done=green,idle=bright-black"
-        // run something when an agent becomes blocked on you, or finishes a
-        // turn nobody was watching; it is given "agenttij" and the message
-        notify "notify-send -u critical"
-        // "true" lets R answer an agent that is waiting on you: typed in the
-        // sidebar, sent with Enter. Off by default - the sidebar otherwise never
-        // types into an agent, bar `c`'s interrupt
-        // reply "true"
-        // "false" to stop naming a group's panes "<group> 2/3"
-        position "true"
-        // the panes every new group starts with: `;` between them, the first
-        // being the one you see and the rest parked behind it. An entry with
-        // nothing in it is a plain shell — see "A group from a template"
-        group "claude; nvim .; lazygit"
-    }
-}
-```
-
-A percentage width rather than `size=26`, because a fixed-width pane cannot be
-resized — which is what `Alt ]` needs in order to fold it to a rail.
-
-## How it works
-
-State flows one way. The agent reports, a file records, the sidebar reads.
-
-```
-Claude Code hook ──> /tmp/agenttij/<session>.<pane>.state
-                          │
-                     sh + cat, 1/tick
-                          v
-   SessionUpdate ──> [ sidebar plugin ] ──> Enter: switch_session_with_focus
-   (this session)        ^             └──> p:     dump-screen, polled
-                         │
-              get_session_list() — which sessions are alive
-```
-
-The hook is registered once per Claude Code event and passes its state as an
-argument, so it needs no JSON parsing — 20 lines of `sh`, no dependencies. It
-keys state by `$ZELLIJ_SESSION_NAME` and `$ZELLIJ_PANE_ID`, which is what ties
-an agent process to a Zellij pane.
-
-| Hook event | Status |
-|---|---|
-| `SessionStart` | idle |
-| `UserPromptSubmit` | running |
-| `Notification` | needs input |
-| `Stop` | done |
-| `SessionEnd` | removed |
-
-State goes in files rather than plugin memory so that a sidebar in a session
-that started later still sees every running agent, and a reload loses nothing.
-
-### Other agents
-
-The hook is not Claude-specific: it takes a state word as its argument and reads
-`$ZELLIJ_SESSION_NAME` / `$ZELLIJ_PANE_ID` from the environment, so anything that
-can run a command on an event can feed the sidebar.
-
-**opencode** ships a plugin system, and `integrations/opencode/agenttij.js` uses
-it. Copy that file to `~/.config/opencode/plugins/`:
+**opencode** has a plugin for it: copy `integrations/opencode/agenttij.js` to `~/.config/opencode/plugins/`.
 
 | opencode event | Status |
 |---|---|
@@ -624,75 +379,271 @@ it. Copy that file to `~/.config/opencode/plugins/`:
 | `session.idle` | done |
 | `session.deleted` | removed |
 
-For anything else, call `agenttij-state.sh <state>` from whatever event
-mechanism it has. Without one, a tool still appears — by pane title if its name
-is in `agents`, and always in a solo workspace, just without a live status.
+An agent with no hook at all is still found, by its pane title or by the program the pane runs (any name in `agents`), and its status is read off its screen, one agent every other second.
+A screen that keeps changing is working (`◐`), one that went still after working has finished (`✓`), and a question at the bottom, `(y/n)` or "Do you want...", is waiting on you (`⚠`).
+That is a reading, not a report, so a hook stays the better way for any tool that has one.
 
-A group is named after the folder it is working in — the last component, not the
-whole path. An agent reports its own through the hook; a plain pane is asked for
-its cwd, since its title is a shell prompt and says whatever your prompt says.
+## Keys
 
-Agents that never report are still listed: found by pane title, or by what the
-pane is running (`codex`, or `node .../codex.js`), since the sidebar renames the
-pane on screen and that replaces the agent's own title. Their status is read off
-their screen, one agent every other second: a screen that keeps changing is
-working (`◐`), one that went still after working has finished (`✓`, unread until
-you look), and a question at the bottom - `(y/n)`, "Do you want…" - is waiting on
-you (`⚠`). It is a reading, not a report: a hooked agent says exactly, so hooks
-stay the better way for any tool that has them.
+In the sidebar:
 
-Nothing reaches the sidebar without something alive behind it. Every tick
-reconciles against the live session list and, where available, the pane list —
-which is what covers `kill -9`, closed panes and dead sessions, where no hook
-ever fires.
+| Key | Does |
+|---|---|
+| `j` `k`, `↓` `↑` | move |
+| `Enter` | show that group; switches session if it is elsewhere |
+| `Tab` | open a group to list its panes, or fold a project |
+| `[` `]` | previous / next project |
+| `J` `K` | move a project, or a group within its project |
+| `r` | name a project; the same name joins two |
+| `S` | rename this session |
+| `h` | machines to watch, over ssh |
+| `b` | flip back to the previous group |
+| `B` | back to the session you came from |
+| `o` | a new group here, on that group's project |
+| `v` `V` | cycle the panes of this group, either way |
+| `1`-`9` | straight to that pane of the group |
+| `'` | flip to the pane before this one |
+| `a` | add a pane to this group |
+| `m` | move what the cursor is on into the group on screen |
+| `n` | new group |
+| `G` | new group in a directory you pick |
+| `w` | new group in a git worktree of that group's repository |
+| `s` | share this session on the web (Zellij's own screen) |
+| `R` | answer a waiting agent (with `reply "true"`) |
+| `/` | jump: everywhere you could go |
+| `p` | peek without leaving |
+| `d` `d` | close this group, this pane, or a project; asks first |
+| `c` `c` | interrupt the agent; asks first |
+| `!` | only what needs you |
+| `q`, `Esc` | dismiss a peek |
+| `?` | every key |
 
-### No async runtime
+From any pane, installed into your Zellij config:
 
-Zellij plugins are single-threaded WASI modules run by the `wasmi` interpreter:
-no threads, no reactor, so no `tokio` — and none is wanted. The host is the
-runtime. Anything slow is handed over and comes back as an event:
-`run_command` → `RunCommandResult`, `set_timeout` → `Timer`.
+| Key | Does |
+|---|---|
+| `Alt ?` | every key |
+| `Alt s` | focus the sidebar |
+| `Alt a` | summon a sidebar in any session, floating |
+| `Alt v` `Alt V` | cycle the panes of the group on screen |
+| `Alt 1`-`Alt 9` | straight to that pane of the group |
+| `Alt '` | flip to the pane before this one |
+| `Alt b` | flip back to the previous group |
+| `Alt g` | new group |
+| `Alt G` | new group in a directory you pick |
+| `Alt w` | new group in a git worktree |
+| `Alt m` | add a pane to the group on screen |
+| `Alt t` | jump; type `restore` for a workspace |
+| `Alt ]` `Alt [` | fold the sidebar to a one-column status rail, and back |
 
-## Layout
+[docs/KEYBINDS.md](docs/KEYBINDS.md) has every key in full, how to change them, and how to do the same without keybindings.
 
-```
-crates/core    agenttij-core — zero dependencies, all the decisions, unit-tested
-crates/plugin  agenttij — the wasm plugin: lifecycle, rendering, navigation
-crates/cli     agenttij - the command agents run, and its MCP server
-plugins/       the Claude Code plugin: MCP tools, skills, and the shell hook
-               agents run (plugins/agenttij/hooks/, tool-agnostic)
-integrations/  per-tool glue that calls it (an opencode plugin)
-layouts/       left, right, workspace, everything (sidebar + bar), each with
-               `sidebar` and `rail` swap layouts
-scripts/       installer, its helpers, and a real-keystroke test harness
-docs/KEYBINDS.md  every key, and how to change them
-docs/ROADMAP.md   what could come next, and what Zellij will not allow
-docs/PLAN.md      design notes and the Zellij constraints they follow from
-```
+## Layouts
 
-`core` deliberately does not depend on `zellij-tile`; the plugin crate adapts
-`SessionInfo` into `core`'s own types at the boundary. That is what lets
-`cargo test` run on the host instead of needing a WASM host.
+The installer copies these to `~/.config/zellij/layouts/`; start one with `zellij -n <name>`.
+
+| Layout | What it is |
+|---|---|
+| `agenttij-workspace` | the sidebar and one slot: groups of panes, one on screen at a time, this session's agents only. Start here. |
+| `agenttij-template` | the workspace, with every new group built from `group "claude; nvim .; lazygit"` |
+| `agenttij-machine` | the template, listing the agents of every session on the machine |
+| `agenttij-everything` | the workspace sidebar with a bar under it, to see it all at once |
+| `agenttij-left`, `agenttij-right` | a plain sidebar beside Zellij's usual panes, listing every agent on the machine |
+| `agenttij-remote` | for a machine you watch from elsewhere: your panes and an invisible controller |
+
+They are examples: which side the sidebar sits on, how wide it is and what else is in the tab are yours to change.
+Copy one, or lift its `plugin` block into a layout you already have.
+Two things to keep when you do:
+
+- **A percentage width.**
+  A pane declared with a fixed `size=26` cannot be resized, by a plugin or by Zellij itself, and folding to the rail needs to.
+- **The `sidebar` and `rail` swap layouts, with the same configuration.**
+  `Alt ]` folds by switching swap layout, and Zellij identifies a plugin by its url *and* its configuration: a swap layout that says anything different starts a second sidebar instead of folding the one you have.
+  The `sidebar` swap layout, listed before the rail, keeps Zellij from folding the sidebar by itself when a pane is added.
+
+To give every new session a sidebar, set `default_layout "agenttij-workspace"` in your Zellij config.
+For a session started without one, `Alt a` summons a floating sidebar, or by hand (the `--` is required):
 
 ```sh
-cargo test -p agenttij-core
-cargo clippy -p agenttij --target wasm32-wasip1
+zellij plugin --floating -- "file:$HOME/.config/zellij/plugins/agenttij.wasm"
 ```
+
+## Configuration
+
+Everything is set in the layout, inside the plugin block:
+
+```kdl
+pane size="20%" {
+    plugin location="file:~/.config/zellij/plugins/agenttij.wasm" {
+        scope "session"
+        solo "true"
+        group "claude; nvim .; lazygit"
+        notify "notify-send -u critical"
+    }
+}
+```
+
+| Key | Default | Does |
+|---|---|---|
+| `scope` | `all` | `session` lists only this session's agents, plus any machines you watch |
+| `solo` | `false` | `true` makes a group several panes with one on screen, the others parked |
+| `group` | one plain shell | the panes every new group starts with, `;` between them |
+| `agents` | `claude,codex,opencode,aider,gemini` | names that mark a pane as an agent when it has no hook |
+| `notify` | nothing | a command to run when an agent needs you or finishes unwatched |
+| `reply` | `false` | `true` lets `R` type an answer into a waiting agent |
+| `position` | `true` | with `solo`, names the pane on screen after its group's status, name and place, `◐ api 2/3`; `false` stops it |
+| `session_name` | nothing | `folder` names a session after its directory, once, if Zellij made the name up |
+| `hosts` | nothing | ssh hosts to watch, comma-separated |
+| `pane_title` | `agents` | what the sidebar's own pane frame says |
+| `colors` | built in | per-status colours: `needs-input=yellow,running=blue,done=green`, by name, 256-colour index or `#rrggbb`; the statuses are `needs-input`, `unread`, `running`, `done`, `idle`, `unknown` and `pane` |
+| `bar` | `false` | `true` draws one line of counts instead of a column |
+| `remote` | `false` | `true` is a controller: no column, no keys, for `agenttij-remote` |
+
+A setting is part of the plugin's identity, so a layout's `sidebar` and `rail` swap layouts must repeat it, and a `group` template must match your keybindings (the installer takes care of that).
+
+## Installing, in detail
+
+```sh
+./scripts/install.sh               # install, or update: re-running replaces rather than duplicates
+./scripts/install.sh --uninstall   # remove everything it installed
+```
+
+What it does:
+
+- Builds the plugin into `~/.config/zellij/plugins/agenttij.wasm` and the `agenttij` command into `~/.local/bin`.
+- Copies the layouts to `~/.config/zellij/layouts/`.
+- Copies the hook to `~/.claude/hooks/agenttij-state.sh` and registers it in `~/.claude/settings.json`, unless Claude Code's agenttij plugin is installed, which carries the hooks itself.
+- Adds the keybindings inside your Zellij config's existing `keybinds` block (Zellij only reads the first one), checks the result with `zellij setup --check`, and rolls back if Zellij rejects it.
+- Pre-grants the plugin's permissions in `~/.cache/zellij/permissions.kdl`.
+  Zellij asks by drawing a prompt over the plugin's pane, and that prompt does not fit in a sidebar: the first launch would otherwise be a blank pane waiting on a key you cannot see.
+
+Everything is backed up first, and other tools' entries are left alone.
+Re-run it after updating: a version that asks for a new permission would otherwise wait on that invisible prompt.
+
+| Option | |
+|---|---|
+| `--no-keybind` | skip the keybindings |
+| `--no-grant` | skip pre-granting permissions |
+| `--uninstall` | reverse all of it |
+| `AGENTTIJ_BIN_DIR` | where the `agenttij` command goes, `~/.local/bin` by default |
+| `AGENTTIJ_GROUP` | the group template for every layout and binding; empty for none |
+| `AGENTTIJ_KEYBIND`, `AGENTTIJ_FOCUS_KEYBIND`, `AGENTTIJ_CYCLE_KEYBIND`, `AGENTTIJ_BACK_KEYBIND`, `AGENTTIJ_NEW_KEYBIND`, `AGENTTIJ_ADD_KEYBIND`, `AGENTTIJ_JUMP_KEYBIND` | other keys for `Alt a`, `Alt s`, `Alt v`, `Alt b`, `Alt g`, `Alt m` and `Alt t` |
+
+## Building and developing
+
+```sh
+rustup target add wasm32-wasip1
+
+cargo build -p agenttij --target wasm32-wasip1 --release   # the plugin
+cargo build -p agenttij-cli --release                      # the agenttij command
+
+cargo test -p agenttij-core                                # the logic, on the host
+cargo test -p agenttij-cli
+cargo clippy -p agenttij-core --all-targets -- -D warnings
+cargo clippy -p agenttij-cli --all-targets -- -D warnings
+cargo clippy -p agenttij --target wasm32-wasip1 -- -D warnings
+cargo fmt --all
+```
+
+The plugin is tested in real Zellij sessions by `scripts/harness.py`, which types real keystrokes into a real client and reads back what the sidebar drew:
+
+```sh
+python3 scripts/harness.py scenario scripts/e2e/*.txt     # every scenario
+python3 scripts/harness.py --help                         # driving a session step by step
+sh scripts/check-install.sh                               # the installer, in a throwaway home
+scripts/testbox.sh up                                     # a second machine, in Docker
+```
+
+Each harness session is sealed off, with its own config, cache and sockets, and runs the plugin you built rather than the one installed, so it never touches your own sessions.
+CI runs all of the above, plus the remote scenarios against the testbox.
+
+```
+crates/core    agenttij-core: zero dependencies, all the decisions, unit-tested
+crates/plugin  agenttij: the wasm plugin, lifecycle, rendering, navigation
+crates/cli     agenttij-cli: the agenttij command and its MCP server
+plugins/       the Claude Code plugin: MCP tools, skills, and the shell hook
+integrations/  per-tool glue that calls the hook (an opencode plugin)
+layouts/       the layouts above, each with sidebar and rail swap layouts
+scripts/       installer and its helpers, the harness and its scenarios, testbox
+docs/          KEYBINDS.md (every key), PLAN.md (design), ROADMAP.md (what next)
+```
+
+`core` deliberately does not depend on `zellij-tile`: the plugin crate adapts Zellij's types into `core`'s own at the boundary, which is what lets `cargo test` run without a WASM host.
+[AGENTS.md](AGENTS.md) holds the conventions and the Zellij traps behind most of the odd-looking code; read it before changing behaviour.
+
+## How it works
+
+State flows one way: the agent reports, a file records it, the sidebar reads it.
+
+```
+agent hook ──> /tmp/agenttij/<session>.<pane>.state
+                         │
+                    one cat a second
+                         v
+  SessionUpdate ──> [ sidebar plugin ] ──> Enter: switch session, show pane
+  (panes, clients)       ^            └──> p:     dump-screen, once a second
+                         │
+             get_session_list(): which sessions are alive
+```
+
+| Claude Code event | Status |
+|---|---|
+| `SessionStart` | idle |
+| `UserPromptSubmit` | running |
+| `Notification` | needs input |
+| `Stop` | done, with what it left uncommitted |
+| `SessionEnd` | removed |
+
+State lives in files rather than in the plugin, so a sidebar in a session started later still sees every running agent, and a reload loses nothing.
+The hook also works out the project (`.agenttij`, then the git root), once per report, because the sidebar cannot afford a `git` call per group per second.
+Nothing stays listed without something alive behind it: every update reconciles against the live sessions and their panes, which covers `kill -9`, closed panes and dead sessions, where no hook ever fires.
+
+| File | Holds |
+|---|---|
+| `/tmp/agenttij/<session>.<pane>.state` | an agent's status, written by its hook |
+| `/tmp/agenttij/<session>.<pane>.seen` | when a group was last looked at, for read and unread |
+| `/tmp/agenttij/api/` | answers to agents' requests |
+| `~/.cache/agenttij/order` | project order, names and folds |
+| `~/.cache/agenttij/sessions/<name>` | a session's groups, hosts and snapshots for restoring |
+
+An agent's request is a `zellij pipe` that only the sidebar holding the groups acts on, and the answer comes back in a file under `/tmp/agenttij/api/`; [docs/PLAN.md](docs/PLAN.md) explains why not over the pipe.
+
+Zellij plugins are single-threaded WASI modules run by an interpreter, so there is no async runtime: anything slow is handed to the host and comes back as an event.
+The sidebar polls once a second; idle beside five groups of three, it costs about 8ms of CPU a second.
+
+## Troubleshooting
+
+- **The sidebar draws but does nothing**: no new panes, no statuses.
+  A denied permission is remembered as an empty grant in `~/.cache/zellij/permissions.kdl`.
+  Re-run `./scripts/install.sh`, which grants them again, and start a new session.
+- **A blank pane where the sidebar should be.**
+  It is waiting on a permission prompt too wide to show, usually after installing with `--no-grant` or building the plugin somewhere else.
+  Re-run the installer.
+- **The `Alt` keys do nothing.**
+  Keybindings are read when a session starts: start a new one.
+- **`Alt g` opened a second sidebar, or every pane became its own group.**
+  The binding's configuration does not match the layout's, usually a `group` template edited in one place only.
+  Re-run the installer and start a new session.
+- **Every Claude Code event reports twice.**
+  The Claude Code plugin was installed after the installer ran, so both carry the hooks.
+  Re-run the installer.
+- **Keys go to another machine.**
+  A pane attached to a remote session is a nested session; `Ctrl o` then `]` brings the keys back.
+- **The client is in Scroll mode after showing a pane.**
+  Zellij 0.45 enters Scroll mode when focusing a pane that was scrolled up; `scroll_mode_sync false` in your Zellij config turns that off.
 
 ## Known limits
 
-- **Switching sessions detaches and reattaches.** That is what switching a
-  session *is* in Zellij; `p` exists so you rarely need it, and `Alt a` gets
-  you a sidebar in whatever session you end up in.
-- **Peeking polls once a second** rather than streaming. `zellij subscribe`
-  streams, but it is fed by the render pipeline, which skips tabs nobody is
-  watching — so it goes silent for exactly the background agents you wanted to
-  check on. `dump-screen` queries the pane directly and always works.
-- **Cross-session pane detail depends on `session_serialization`.** With it
-  off, Zellij never publishes other sessions' pane manifests, so agents there
-  are tracked at session resolution. Jumping still lands on the right pane;
-  discovery of non-reporting agents elsewhere does not work.
-- **Read-only.** The sidebar navigates; it never types into an agent.
-- **A fixed-width pane cannot be resized.** A pane declared `size=26` is
-  immovable, by Zellij's own `resize` action as much as by a plugin, which is why
-  the layouts use a percentage width and fold via a swap layout.
+- **Switching sessions detaches and reattaches.**
+  That is what switching a session is in Zellij; `p` exists so you rarely need to, and `Alt a` gets you a sidebar wherever you end up.
+- **Panes belong to the session that owns them.**
+  Zellij cannot show another session's pane inside yours, so the one-slot workspace only works for agents running in it; keep the agents you want side by side in one session.
+- **Peeking polls once a second** rather than streaming: `zellij subscribe` goes silent for exactly the background panes you want to check on, while `dump-screen` always answers.
+- **Pane detail in other sessions depends on `session_serialization`.**
+  With it off, Zellij publishes no other session's panes, so agents there are tracked by session, and agents with no hook there are not found.
+- **Parked panes do not survive a restart on their own**, since Zellij does not save them; restoring from the palette rebuilds them, without program arguments.
+- **One group template per machine**, because the keybindings that carry it are machine-wide.
+
+## License
+
+[MIT](LICENSE)
