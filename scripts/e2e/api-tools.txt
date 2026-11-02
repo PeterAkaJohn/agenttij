@@ -1,0 +1,42 @@
+# What an agent can do with what it opened: read it, wait on it, close it.
+start layouts/agenttij-workspace.kdl --group ';;'
+keys '\033l'
+wait focus=terminal_0
+
+# A server that printed more than a screen, parked: its screen, and the end of
+# everything it printed.
+keys 'agenttij pane add --run "echo up-on-3000; seq 1 300; sleep 300"\r'
+wait terminals=4 where.terminal_3=parked
+sleep 1
+keys 'agenttij read 3 > $AGENTTIJ_SESSION_DIR/screen.txt; agenttij read 3 --lines 400 > $AGENTTIJ_SESSION_DIR/all.txt\r'
+sleep 1
+sh 'tail -n1 screen.txt | grep -qx 300 && ! grep -q up-on-3000 screen.txt'
+sh 'head -n1 all.txt | grep -qx up-on-3000 && test "$(wc -l < all.txt)" -eq 301'
+# A pane that is not there is not a blank screen.
+keys 'agenttij read 42 > $AGENTTIJ_SESSION_DIR/no.json; echo $? > $AGENTTIJ_SESSION_DIR/no.code\r'
+sleep 1
+sh 'grep -q "no pane 42 in this session" no.json && grep -qx 1 no.code'
+
+# Closing: the pane an agent opened goes, the user's own stays.
+keys 'agenttij pane close 1 > $AGENTTIJ_SESSION_DIR/mine.json\r'
+sleep 1
+sh 'grep -q "pane 1 was not opened by an agent" mine.json'
+expect terminals=4
+keys 'agenttij pane close 3; echo $? > $AGENTTIJ_SESSION_DIR/closed.code\r'
+wait terminals=3 where.terminal_3=gone 'drawn.sidebar=›· * 3 *'
+expect visible=terminal_0 focus=terminal_0
+sh 'grep -qx 0 closed.code'
+
+# Waiting on another agent: not while it runs, and with an answer once it is done.
+keys 'agenttij group new --run "sleep 600"\r'
+wait terminals=6 where.terminal_4=parked
+report terminal_4 running
+wait 'drawn.sidebar=*◐*'
+keys 'agenttij wait 4 --timeout 1 > $AGENTTIJ_SESSION_DIR/early.json\r'
+sleep 4
+sh 'grep -q "group 4 is still running after 1s" early.json'
+keys '(agenttij wait 4 > $AGENTTIJ_SESSION_DIR/done.json; echo $? > $AGENTTIJ_SESSION_DIR/done.code) &\r'
+sleep 1
+report terminal_4 done
+sleep 4
+sh 'grep -qx "{\"ok\":true,\"group\":4,\"status\":\"unread\"}" done.json && grep -qx 0 done.code'

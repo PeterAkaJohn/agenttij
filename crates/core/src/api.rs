@@ -45,6 +45,8 @@ pub enum Request {
     },
     /// Puts a pane on screen, the way Enter does.
     Show { pane: u32 },
+    /// Closes a pane an agent opened through this API, and only such a pane.
+    Close { pane: u32 },
 }
 
 impl Request {
@@ -54,6 +56,7 @@ impl Request {
             Self::NewGroup { .. } => "group.new",
             Self::AddPane { .. } => "pane.add",
             Self::Show { .. } => "show",
+            Self::Close { .. } => "pane.close",
         }
     }
 
@@ -93,7 +96,7 @@ impl Request {
                 add("run", run.clone());
                 add("show", flag(*show));
             }
-            Self::Show { pane } => add("target", Some(pane.to_string())),
+            Self::Show { pane } | Self::Close { pane } => add("target", Some(pane.to_string())),
         }
         let args = args
             .iter()
@@ -142,6 +145,9 @@ impl Request {
                 },
                 "show" => Request::Show {
                     pane: number("target")?.ok_or("show needs a pane")?,
+                },
+                "pane.close" => Request::Close {
+                    pane: number("target")?.ok_or("close needs a pane")?,
                 },
                 other => return Err(format!("no such request: {other}")),
             };
@@ -350,6 +356,7 @@ mod tests {
                 show: true,
             },
             Request::Show { pane: 7 },
+            Request::Close { pane: 8 },
         ];
         for request in requests {
             let (name, args) = request.to_pipe("41-7", Some(4));

@@ -310,6 +310,9 @@ pub struct Sidebar {
     /// This session's rows and the project each is in, before folding hides
     /// some of them: what `agenttij list` reports.
     rows_here: Vec<(String, Agent)>,
+    /// Panes agents opened through the API: the only ones an agent may close.
+    /// Not written down, so a reload forgets them and they become the user's.
+    opened_by_agents: BTreeSet<u32>,
 }
 
 impl ZellijPlugin for Sidebar {
@@ -3083,6 +3086,7 @@ impl Sidebar {
                     api::error(&format!("no pane {pane} in this session"))
                 }
             }
+            Request::Close { pane } => self.close_for_agent(pane),
         };
         self.write_answer(&call.id, &answer);
         true
@@ -3118,9 +3122,11 @@ impl Sidebar {
             return api::error("Zellij opened no pane");
         };
         self.groups.start(head);
+        self.opened_by_agents.insert(head);
         for at in 1..template.len() {
             if let Some(pane) = actions::open_background(command(at), cwd) {
                 self.groups.add_parked(head, pane);
+                self.opened_by_agents.insert(pane);
             }
         }
         if show {
@@ -3167,10 +3173,37 @@ impl Sidebar {
             return api::error("Zellij opened no pane");
         };
         self.groups.add_parked(head, pane);
+        self.opened_by_agents.insert(pane);
         if show {
             self.show_and_follow(pane);
         }
         api::opened(pane, head)
+    }
+
+    /// Closes a pane for an agent, the way `d` would - but only one an agent
+    /// opened: whatever the user opened is theirs to close.
+    fn close_for_agent(&mut self, pane: u32) -> String {
+        if !self.opened_by_agents.contains(&pane) {
+            return api::error(&format!(
+                "pane {pane} was not opened by an agent: only the user closes it"
+            ));
+        }
+        // The last pane of its group goes as the group does, so the screen
+        // moves on to the next row rather than going empty.
+        let alone = self.groups.members_of(pane).len() <= 1;
+        let target = Agent {
+            session: self.current_session.clone(),
+            pane,
+            kind: if alone {
+                Kind::Row
+            } else {
+                Kind::Pane { last: false }
+            },
+            ..Agent::default()
+        };
+        self.delete(&target);
+        self.opened_by_agents.remove(&pane);
+        api::ok()
     }
 
     /// This session's groups as `agenttij list` reports them.

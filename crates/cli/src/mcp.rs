@@ -69,7 +69,9 @@ each made of groups (the sidebar's rows), each made of panes; one pane of one gr
 is on screen at a time. Use these tools to open a pane beside your own (a dev \
 server, a log, a second agent) or a new group, instead of running long-lived \
 things in your own shell. What you open is parked behind what the user is \
-looking at unless you pass show, so it never takes the screen by surprise.";
+looking at unless you pass show, so it never takes the screen by surprise. \
+Read a pane to see what it printed, wait on a group to know when the agent in \
+it is done, and close what you opened once it is no longer needed.";
 
 fn tools() -> Value {
     let cwd = json!({ "type": "string", "description": "Directory to start in. Defaults to where you are (or the group's directory, for another group)." });
@@ -116,6 +118,39 @@ fn tools() -> Value {
                 "required": ["pane"],
             },
         },
+        {
+            "name": "read_pane",
+            "description": "What a pane of this session shows, as text: whether a server you started came up, what an error said, what another agent answered. With `lines`, the last that many lines of everything it printed instead of the screen.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "pane": { "type": "integer", "description": "Pane id, as list_groups or add_pane named it." },
+                    "lines": { "type": "integer", "description": "Read the end of the scrollback, this many lines, rather than the screen." },
+                },
+                "required": ["pane"],
+            },
+        },
+        {
+            "name": "close_pane",
+            "description": "Closes a pane that an agent opened with add_pane or new_group - a server you no longer need. Refused for any other pane: the user's panes are theirs to close.",
+            "inputSchema": {
+                "type": "object",
+                "properties": { "pane": { "type": "integer", "description": "Pane id, as add_pane or new_group returned it." } },
+                "required": ["pane"],
+            },
+        },
+        {
+            "name": "wait_group",
+            "description": "Waits until the agent in a group has finished or is waiting on an answer, and says which (done, unread, needs-input). For a task handed to another agent with new_group. Gives up after `timeout` seconds; call it again to keep waiting.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "group": { "type": "integer", "description": "The group, as new_group returned it." },
+                    "timeout": { "type": "integer", "description": "Seconds to wait at most. 300 when omitted." },
+                },
+                "required": ["group"],
+            },
+        },
     ])
 }
 
@@ -151,12 +186,44 @@ fn call(params: &Value) -> Value {
         "show_pane" => number("pane")
             .map(|pane| Request::Show { pane })
             .ok_or("show_pane needs a pane".to_owned()),
+        "close_pane" => number("pane")
+            .map(|pane| Request::Close { pane })
+            .ok_or("close_pane needs a pane".to_owned()),
+        "read_pane" => {
+            let lines = args.get("lines").and_then(Value::as_u64);
+            let read = number("pane")
+                .ok_or("read_pane needs a pane".to_owned())
+                .and_then(|pane| crate::read(pane, lines.map(|lines| lines as usize)));
+            return match read {
+                Ok(text) => {
+                    json!({ "content": [{ "type": "text", "text": text }], "isError": false })
+                }
+                Err(why) => json!({
+                    "content": [{ "type": "text", "text": agenttij_core::api::error(&why) }],
+                    "isError": true,
+                }),
+            };
+        }
+        "wait_group" => {
+            let timeout = args
+                .get("timeout")
+                .and_then(Value::as_u64)
+                .unwrap_or(crate::WAIT);
+            match number("group") {
+                Some(group) => return answered(crate::wait(group, timeout)),
+                None => Err("wait_group needs a group".to_owned()),
+            }
+        }
         other => Err(format!("no tool {other}")),
     };
     let answer = match request {
         Ok(request) => crate::ask(&request),
         Err(why) => agenttij_core::api::error(&why),
     };
+    answered(answer)
+}
+
+fn answered(answer: String) -> Value {
     json!({
         "content": [{ "type": "text", "text": answer }],
         "isError": !crate::answered_ok(&answer),
@@ -191,7 +258,18 @@ mod tests {
             .iter()
             .filter_map(|tool| tool["name"].as_str())
             .collect();
-        assert_eq!(names, ["list_groups", "new_group", "add_pane", "show_pane"]);
+        assert_eq!(
+            names,
+            [
+                "list_groups",
+                "new_group",
+                "add_pane",
+                "show_pane",
+                "read_pane",
+                "close_pane",
+                "wait_group"
+            ]
+        );
         let outside = handle(r#"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#, false);
         assert_eq!(outside.expect("answered")["result"]["tools"], json!([]));
 
