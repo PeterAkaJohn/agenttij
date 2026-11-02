@@ -1,6 +1,7 @@
 #!/bin/sh
 # Installs the agenttij plugin, its Claude Code hook, the sidebar layouts, a
-# keybinding to summon the sidebar, and the plugin's permissions.
+# keybinding to summon the sidebar, the plugin's permissions, and the `agenttij`
+# command agents use to open panes through the sidebar.
 #
 # Safe to re-run: everything it writes is replaced rather than appended to, so
 # an upgrade never leaves duplicates behind. Pass --uninstall to remove it all.
@@ -20,6 +21,7 @@ hook_dir="$HOME/.claude/hooks"
 hook_path="$hook_dir/agenttij-state.sh"
 wasm="$repo/target/wasm32-wasip1/release/agenttij.wasm"
 plugin_url="file:$plugin_dir/agenttij.wasm"
+bin_dir="${AGENTTIJ_BIN_DIR:-$HOME/.local/bin}"
 
 # Overridable so the settings patching can be tested against a copy.
 settings="${AGENTTIJ_SETTINGS:-$HOME/.claude/settings.json}"
@@ -127,7 +129,7 @@ if [ "$uninstall" -eq 1 ]; then
     register_hooks uninstall
     set_permissions revoke
     remove_keybind
-    rm -f "$hook_path" "$plugin_dir/agenttij.wasm" \
+    rm -f "$hook_path" "$plugin_dir/agenttij.wasm" "$bin_dir/agenttij" \
         "$layout_dir"/agenttij-*.kdl
     echo "removed."
     exit 0
@@ -135,10 +137,19 @@ fi
 
 echo "building..."
 cargo build --release --target wasm32-wasip1 --manifest-path "$repo/Cargo.toml" -p agenttij
+cargo build --release --manifest-path "$repo/Cargo.toml" -p agenttij-cli
 
 echo "installing plugin -> $plugin_dir/agenttij.wasm"
 mkdir -p "$plugin_dir"
 cp "$wasm" "$plugin_dir/agenttij.wasm"
+
+echo "installing command -> $bin_dir/agenttij"
+mkdir -p "$bin_dir"
+cp "$repo/target/release/agenttij" "$bin_dir/agenttij"
+case ":$PATH:" in
+*":$bin_dir:"*) ;;
+*) echo "  $bin_dir is not on your PATH: agents will not find \`agenttij\`" ;;
+esac
 
 echo "installing layouts -> $layout_dir"
 [ -n "$group_template" ] && echo "  every row starts as: $group_template"
@@ -202,4 +213,10 @@ and '$add_keybind' adds a pane to the row on screen. Zellij's own swap-layout ke
 
 To give every new session a sidebar, set 'default_layout "agenttij-left"' in
 your Zellij config.
+
+Agents can open panes and groups through the sidebar with 'agenttij' (try
+'agenttij --help' in a pane). For Claude Code, the plugin teaches it how:
+
+    claude plugin marketplace add PeterAkaJohn/agenttij
+    claude plugin install agenttij@agenttij
 EOF

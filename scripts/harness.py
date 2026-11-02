@@ -104,6 +104,11 @@ def env(session):
         XDG_CACHE_HOME=str(d / "cache"),
         TMPDIR=str(d / "tmp"),
         TERM="xterm-256color",
+        # What a pane the API opens runs when it is not told: `sh`, like every
+        # other pane here, and not the zsh a lone Esc turns into a Meta key.
+        SHELL="sh",
+        # The `agenttij` CLI an agent in a pane would run: the one just built.
+        PATH=f"{REPO / 'target/release'}{os.pathsep}{os.environ.get('PATH', '')}",
     )
     clean.setdefault("LANG", "C.UTF-8")
     return clean

@@ -1,0 +1,48 @@
+# What an agent can ask the sidebar for, asked from inside a pane the way an
+# agent asks: `agenttij` on the PATH, answered in one line of JSON.
+start layouts/agenttij-workspace.kdl --group ';;'
+keys '\033l'
+wait focus=terminal_0
+
+# A pane in the caller's own group, parked: the screen and the focus stay put.
+keys 'agenttij pane add --run "sleep 300" > $AGENTTIJ_SESSION_DIR/add.json\r'
+wait terminals=4 where.terminal_3=parked 'title.terminal_3=sleep 300' 'drawn.sidebar=›· * 4 *'
+expect focus=terminal_0 visible=terminal_0
+sleep 0.5
+sh 'grep -qx "{\"ok\":true,\"pane\":3,\"group\":0}" add.json'
+
+# A new group from the layout's template, its first pane running what was
+# asked for - parked too, so the sidebar has a second row and nothing moved.
+keys 'agenttij group new --run "sleep 301" > $AGENTTIJ_SESSION_DIR/new.json\r'
+wait terminals=7 where.terminal_4=parked 'title.terminal_4=sleep 301' 'drawn.sidebar=* 3 *'
+expect focus=terminal_0 visible=terminal_0
+sleep 0.5
+sh 'grep -qx "{\"ok\":true,\"pane\":4,\"group\":4}" new.json'
+
+keys 'agenttij list > $AGENTTIJ_SESSION_DIR/list.json\r'
+sleep 1
+sh 'grep -q "\"group\":0,\"status\":\"pane\",\"cwd\":\"[^\"]*\",\"panes\":\[0,1,2,3\],\"current\":0,\"on_screen\":true" list.json'
+sh 'grep -q "\"group\":4,\"status\":\"pane\",\"cwd\":\"[^\"]*\",\"panes\":\[4,5,6\],\"current\":4,\"on_screen\":false" list.json'
+
+# Showing takes the screen, as Enter would; from there a pane added with
+# --show joins that group and is on screen too.
+keys 'agenttij show 5\r'
+wait visible=terminal_5 focus=terminal_5
+keys 'agenttij pane add --show > $AGENTTIJ_SESSION_DIR/shown.json\r'
+wait terminals=8 visible=terminal_7 focus=terminal_7 'drawn.sidebar=›· * 4 *'
+sleep 0.5
+sh 'grep -qx "{\"ok\":true,\"pane\":7,\"group\":4}" shown.json'
+
+# A group that is not there is said, with a failing exit code.
+keys 'agenttij pane add --group 99 > $AGENTTIJ_SESSION_DIR/no.json; echo $? > $AGENTTIJ_SESSION_DIR/no.code\r'
+sleep 1
+sh 'grep -q "\"ok\":false,\"error\":\"no group 99 in this session\"" no.json && grep -qx 1 no.code'
+expect terminals=8
+
+# A group in a fresh worktree of the repository the caller is in.
+sh 'git init -q work && cd work && printf "a\n" > f && git add f && git -c user.email=e2e@agenttij -c user.name=e2e commit -qm one'
+keys 'cd $AGENTTIJ_SESSION_DIR/work && agenttij group new --worktree > ../tree.json\r'
+wait terminals=11 visible=terminal_7
+sleep 0.5
+sh 'grep -qx "{\"ok\":true,\"pane\":8,\"group\":8}" tree.json'
+sh 'git -C work worktree list | grep -q "work.worktrees/work-1 .*\[work-1\]"'

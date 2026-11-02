@@ -1,0 +1,14 @@
+[package]
+name = "agenttij-cli"
+description = "Lets an agent open groups and panes in the agenttij sidebar, from a shell or as an MCP server"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "agenttij"
+path = "src/main.rs"
+
+[dependencies]
+agenttij-core = { path = "../core" }
+serde_json = "1"

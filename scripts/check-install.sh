@@ -17,7 +17,7 @@ export RUSTUP_HOME="${RUSTUP_HOME:-$HOME/.rustup}"
 export HOME="$work/home"
 export XDG_CONFIG_HOME="$HOME/.config"
 export XDG_CACHE_HOME="$HOME/.cache"
-unset AGENTTIJ_SETTINGS AGENTTIJ_GROUP 2>/dev/null || true
+unset AGENTTIJ_SETTINGS AGENTTIJ_GROUP AGENTTIJ_BIN_DIR 2>/dev/null || true
 
 config="$XDG_CONFIG_HOME/zellij/config.kdl"
 plugin="$XDG_CONFIG_HOME/zellij/plugins/agenttij.wasm"
@@ -43,6 +43,8 @@ sh "$repo/scripts/install.sh" >"$work/install.out" 2>&1 || {
     exit 1
 }
 check "the plugin" '[ -f "$plugin" ]'
+check "the command, executable" '[ -x "$HOME/.local/bin/agenttij" ]'
+check "the command runs" '"$HOME/.local/bin/agenttij" --help 2>&1 | grep -q "group new"'
 check "the hook, executable" '[ -x "$HOME/.claude/hooks/agenttij-state.sh" ]'
 check "every layout" '[ "$(ls "$XDG_CONFIG_HOME/zellij/layouts"/agenttij-*.kdl | wc -l)" = "$(ls "$repo"/layouts/agenttij-*.kdl | wc -l)" ]'
 check "layouts point at the installed plugin" '! grep -q "file:~/" "$XDG_CONFIG_HOME"/zellij/layouts/agenttij-*.kdl'
@@ -65,6 +67,7 @@ check "hooks registered once" '[ "$(grep -c "agenttij-state.sh'"'"' done" "$sett
 echo "uninstall"
 sh "$repo/scripts/install.sh" --uninstall >"$work/uninstall.out" 2>&1
 check "the plugin is gone" '[ ! -e "$plugin" ]'
+check "the command is gone" '[ ! -e "$HOME/.local/bin/agenttij" ]'
 check "the hook is gone" '[ ! -e "$HOME/.claude/hooks/agenttij-state.sh" ]'
 check "the layouts are gone" '! ls "$XDG_CONFIG_HOME"/zellij/layouts/agenttij-*.kdl >/dev/null 2>&1'
 check "the keybinds are gone" '! grep -q "agenttij:begin" "$config"'

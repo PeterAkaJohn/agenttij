@@ -23,6 +23,9 @@ jobs:
       - run: cargo test -p agenttij-core
       - run: cargo clippy -p agenttij-core --all-targets -- -D warnings
 
+      - run: cargo test -p agenttij-cli
+      - run: cargo clippy -p agenttij-cli --all-targets -- -D warnings
+
       - run: cargo clippy -p agenttij --target wasm32-wasip1 -- -D warnings
       - run: cargo build -p agenttij --target wasm32-wasip1 --release
 
@@ -49,6 +52,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       - run: cargo build -p agenttij --target wasm32-wasip1 --release
+      # What agents run in a pane; the harness puts it on the panes' PATH.
+      - run: cargo build -p agenttij-cli --release
 
       # The version zellij-tile is pinned to.
       - name: zellij

@@ -1,6 +1,9 @@
 [workspace]
 resolver = "2"
-members = ["crates/core", "crates/plugin"]
+members = ["crates/core", "crates/plugin", "crates/cli"]
+# The plugin is built for wasm32-wasip1 only, and its binary shares the CLI's
+# name: a plain `cargo build` or `cargo test` is the host's crates.
+default-members = ["crates/core", "crates/cli"]
 
 [workspace.package]
 version = "0.1.0"
