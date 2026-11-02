@@ -27,7 +27,7 @@ sh 'grep -q "\"group\":4,\"status\":\"pane\",\"cwd\":\"[^\"]*\",\"panes\":\[4,5,
 # Showing takes the screen, as Enter would; from there a pane added with
 # --show joins that group and is on screen too.
 keys 'agenttij show 5\r'
-wait visible=terminal_5 focus=terminal_5
+wait visible=terminal_5 focus=terminal_5 'drawn.sidebar=›· * 3 *'
 keys 'agenttij pane add --show > $AGENTTIJ_SESSION_DIR/shown.json\r'
 wait terminals=8 visible=terminal_7 focus=terminal_7 'drawn.sidebar=›· * 4 *'
 sleep 0.5
@@ -46,3 +46,11 @@ wait terminals=11 visible=terminal_7
 sleep 0.5
 sh 'grep -qx "{\"ok\":true,\"pane\":8,\"group\":8}" tree.json'
 sh 'git -C work worktree list | grep -q "work.worktrees/work-1 .*\[work-1\]"'
+
+# The same through MCP, as Claude Code runs it: from the caller's pane, so its
+# group is the caller's.
+keys 'echo \x27{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"add_pane","arguments":{"run":"sleep 302"}}}\x27 | agenttij mcp > $AGENTTIJ_SESSION_DIR/mcp.json\r'
+wait terminals=12 where.terminal_11=parked 'title.terminal_11=sleep 302' 'drawn.sidebar=›· * 5 *'
+expect visible=terminal_7 focus=terminal_7
+sleep 0.5
+sh 'grep -q "\"isError\":false" mcp.json && grep -q "\\\\\"pane\\\\\":11,\\\\\"group\\\\\":4" mcp.json'

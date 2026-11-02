@@ -3077,7 +3077,7 @@ impl Sidebar {
             } => self.add_pane(call.caller, group, cwd, run.as_deref(), show),
             Request::Show { pane } => {
                 if self.groups.group_of(pane).is_some() {
-                    self.show_pane(pane);
+                    self.show_and_follow(pane);
                     api::ok()
                 } else {
                     api::error(&format!("no pane {pane} in this session"))
@@ -3124,13 +3124,20 @@ impl Sidebar {
             }
         }
         if show {
-            self.show_pane(head);
-            self.selected = Some(Selection::Row {
-                session: self.current_session.clone(),
-                pane: head,
-            });
+            self.show_and_follow(head);
         }
         api::opened(head, head)
+    }
+
+    /// Puts a pane on screen for an agent, and the cursor on its row: the next
+    /// key should go where the user is now looking, as after `n`.
+    fn show_and_follow(&mut self, pane: u32) {
+        self.show_pane(pane);
+        let row = self.groups.group_of(pane).map_or(pane, Group::primary);
+        self.selected = Some(Selection::Row {
+            session: self.current_session.clone(),
+            pane: row,
+        });
     }
 
     /// One more pane in a group: the caller's own unless it names another.
@@ -3161,7 +3168,7 @@ impl Sidebar {
         };
         self.groups.add_parked(head, pane);
         if show {
-            self.show_pane(pane);
+            self.show_and_follow(pane);
         }
         api::opened(pane, head)
     }
