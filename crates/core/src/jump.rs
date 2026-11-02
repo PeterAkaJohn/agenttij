@@ -94,8 +94,8 @@ pub fn workspaces(remembered: &[Remembered]) -> Vec<Entry> {
             label: workspace.session.clone(),
             context: {
                 let rows = match workspace.rows {
-                    1 => "1 row".to_owned(),
-                    many => format!("{many} rows"),
+                    1 => "1 group".to_owned(),
+                    many => format!("{many} groups"),
                 };
                 match workspace.age.is_empty() {
                     true => rows,
@@ -107,7 +107,7 @@ pub fn workspaces(remembered: &[Remembered]) -> Vec<Entry> {
             // same match with a shorter string behind it. Typing `restore` is
             // therefore the way to these, and typing the name is the way to the
             // session, which is the right way round.
-            search: format!("restore {} workspace rows", workspace.session),
+            search: format!("restore {} workspace groups", workspace.session),
             target: Target::Workspace {
                 session: workspace.session.clone(),
                 stamp: workspace.stamp,
@@ -440,8 +440,8 @@ mod tests {
 
         assert_eq!(entries.len(), 2, "not the empty one, nor the nameless");
         assert_eq!(entries[0].label, "api");
-        assert_eq!(entries[0].context, "3 rows · 2h");
-        assert_eq!(entries[1].context, "1 row");
+        assert_eq!(entries[0].context, "3 groups · 2h");
+        assert_eq!(entries[1].context, "1 group");
         assert_eq!(
             entries[0].target,
             Target::Workspace {

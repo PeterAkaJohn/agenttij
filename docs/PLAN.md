@@ -101,10 +101,10 @@ A state line is `<status> <session> <pane> <unix-seconds> <cwd> <root> <> <chang
 The seventh field is left empty: it was the host, appended by the plugin to lines read over ssh, and a plugin from before would take anything there for one.
 Hosts are set after parsing now.
 Everything after the first five is optional, since a hook older than the plugin is the normal state of an upgrade: no `root` means the project is the working directory.
-Both are resolved by the hook, once when an agent reports, rather than once per row per tick in a plugin that redraws every second.
+Both are resolved by the hook, once when an agent reports, rather than once per group per tick in a plugin that redraws every second.
 
-Beside each state file the sidebar of that row's session keeps `<session>.<pane>.seen`: when the row was last on screen with someone looking.
-A finished row reported after its last look is unread.
+Beside each state file the sidebar of that group's session keeps `<session>.<pane>.seen`: when the group was last on screen with someone looking.
+A finished group reported after its last look is unread.
 A peek writes the look too, in the same shell as its `dump-screen`, from whichever session it is in: a file holding only the time of a look can have any writer.
 The scan reads both with the same `cat`, so a look in one session reaches every other sidebar on its next tick.
 
@@ -155,9 +155,9 @@ carries a comment about exactly this bug.)
 
 Sort order is attention-first: `needs-input`, `running`, `done`, `idle`,
 `unknown`, then plain panes — with pane id as the tiebreaker rather than
-recency, so rows hold still. Zellij hands panes over in a `HashMap` whose
+recency, so groups hold still. Zellij hands panes over in a `HashMap` whose
 iteration order is not stable between updates, and ordering by recency would
-lift a row the moment its agent reported; either way the row under the cursor
+lift a group the moment its agent reported; either way the group under the cursor
 would move while you were aiming at it.
 
 ### Trust
@@ -177,14 +177,14 @@ An agent asks the sidebar for panes and groups with `agenttij`, which sends a `z
 - **Claimed before it is acted on.**
   A pipe naming no plugin reaches every plugin once per attached client, because each client runs its own instance (`pipe_to_all_plugins`).
   Two clients would open two panes.
-  The instances that keep rows race to `mkdir` the reply directory, and only the one that made it acts.
+  The instances that keep groups race to `mkdir` the reply directory, and only the one that made it acts.
 - **No payload, stdin `/dev/null`.**
   With both, `zellij pipe` sends one message and returns; with a payload it waits for the pipe to be released and then sends a second, empty message on its way out.
 - **Parked unless asked.**
   A pane an agent opens comes from `open_command_pane_background`, suppressed from birth, so nothing flashes and focus does not move.
   `show` puts it on screen the way `Enter` does, with the cursor following.
   Run through `sh -c`, so a command line keeps its quoting, and renamed after what it runs.
-- **Only the sidebar keeping the rows answers**, as with any CLI pipe: the docked one or a controller, never a palette, a peek or a sidebar summoned with `Alt a`.
+- **Only the sidebar keeping the groups answers**, as with any CLI pipe: the docked one or a controller, never a palette, a peek or a sidebar summoned with `Alt a`.
 - **Closing is for what agents opened.**
   The sidebar keeps the ids of panes opened through the API, in memory only, and closes nothing else for an agent; it closes through `d`'s own path, so a parked pane is shown before it is closed.
 - **`read` and `wait` need no new request.**

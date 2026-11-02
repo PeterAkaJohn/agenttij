@@ -34,7 +34,7 @@ add_keybind="${AGENTTIJ_ADD_KEYBIND:-Alt m}"
 # Alt t because Zellij's defaults already claim j, k, l, n, p and the rest of
 # the obvious ones — see docs/KEYBINDS.md.
 jump_keybind="${AGENTTIJ_JUMP_KEYBIND:-Alt t}"
-# The `group` template — the panes every new row starts with — taken from the
+# The `group` template — the panes every new group starts with — taken from the
 # layouts themselves, so it is written in one place and that place is a layout.
 #
 # The keybinds have to repeat it: a plugin's identity is its url *plus* its
@@ -163,14 +163,14 @@ case ":$PATH:" in
 esac
 
 echo "installing layouts -> $layout_dir"
-[ -n "$group_template" ] && echo "  every row starts as: $group_template"
+[ -n "$group_template" ] && echo "  every group starts as: $group_template"
 mkdir -p "$layout_dir"
 # The plugin url, and the group template on both sides of the fence.
 #
 # A plugin's identity is its url *plus* its configuration, so a keybinding that
 # does not say the same `group` as the layout is addressing a sidebar that does
 # not exist — and Zellij obliges by starting one, which is a pane appearing out
-# of nowhere and every existing pane becoming a row of its own. Rewriting the
+# of nowhere and every existing pane becoming a group of its own. Rewriting the
 # layouts from the same variable that writes the binds is what keeps that from
 # happening: with a template both sides carry it, without one neither does.
 layout_edit="s|file:~/.config/zellij/plugins/agenttij.wasm|$plugin_url|
@@ -222,9 +222,9 @@ the sidebar is a normal pane: focus it as usual, then j/k to move,
 Enter to jump to an agent, p to peek at one without leaving this session.
 
 '$keybind' summons a sidebar in any session, '$focus_keybind' focuses the one
-you have, '$cycle_keybind' cycles the panes in the row you are on and
-'$back_keybind' flips back to the previous row. '$new_keybind' starts a new row
-and '$add_keybind' adds a pane to the row on screen. Zellij's own swap-layout key
+you have, '$cycle_keybind' cycles the panes in the group you are on and
+'$back_keybind' flips back to the previous group. '$new_keybind' starts a new group
+and '$add_keybind' adds a pane to the group on screen. Zellij's own swap-layout key
 ('Alt ]' by default) folds the sidebar to a status rail.
 
 To give every new session a sidebar, set 'default_layout "agenttij-left"' in

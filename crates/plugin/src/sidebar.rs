@@ -354,7 +354,7 @@ impl ZellijPlugin for Sidebar {
         }
 
         if self.config.dirs {
-            self.palette.verb("open a row here");
+            self.palette.verb("open a group here");
             self.palette.takes_a_path();
         }
     }

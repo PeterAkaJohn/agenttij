@@ -8,9 +8,9 @@
 // same plugin with `remote "true"`, which draws nothing, takes no keys, and does
 // three things.
 //
-//   - keeps this session to one pane of a row at a time, with real suppressed
+//   - keeps this session to one pane of a group at a time, with real suppressed
 //     panes, the way `solo "true"` does at home
-//   - publishes its rows to /tmp/agenttij/rows, which a sidebar elsewhere reads
+//   - publishes its groups to /tmp/agenttij/rows, which a sidebar elsewhere reads
 //     over ssh along with the state files
 //   - does what that sidebar asks: `zellij -s <session> pipe --name add`, or
 //     cycle, show, close

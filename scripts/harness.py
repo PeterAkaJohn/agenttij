@@ -667,7 +667,7 @@ def build_parser():
         for positional, nargs in positionals:
             p.add_argument(positional, nargs=nargs)
         if starts:
-            p.add_argument("--group", help="the template every row starts with")
+            p.add_argument("--group", help="the template every group starts with")
             p.add_argument("--set", action="append", metavar="KEY=VALUE",
                            help="more of the sidebar's configuration")
             p.add_argument("--option", action="append", metavar="LINE",

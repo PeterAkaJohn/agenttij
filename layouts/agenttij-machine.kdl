@@ -1,9 +1,9 @@
-// Every row the same shape: an agent, an editor behind it, a shell behind that.
+// Every group the same shape: an agent, an editor behind it, a shell behind that.
 //
 //   zellij -n agenttij-template
 //
 // This is `agenttij-workspace` with one line added — `group` — which says what
-// panes a row is made of. `n` in the sidebar (or `Alt g` from anywhere) then
+// panes a group is made of. `n` in the sidebar (or `Alt g` from anywhere) then
 // opens all of them at once instead of one: the first entry on screen, the rest
 // parked behind it, `v` to cycle. `;` separates panes and words are split on
 // whitespace, so an argument with a space in it belongs in a script whose path
@@ -25,12 +25,12 @@
 //     joins them, or swapping to the rail hands you a different sidebar.
 //   - your keybinds. `Alt g` carrying no `group` is addressing a sidebar that is
 //     not this one, and Zellij obliges by starting it — you get a second sidebar
-//     and an untemplated row. `scripts/install.sh` reads the line below and
+//     and an untemplated group. `scripts/install.sh` reads the line below and
 //     writes it into the binds, so editing it here and re-running the installer
 //     is the whole of it. That also makes the template machine-wide: the binds
 //     are, so every layout installed alongside this one is given the same one.
 //
-// The row this layout *opens* with is templated too, which is why its pane runs
+// The group this layout *opens* with is templated too, which is why its pane runs
 // the same command the template leads with: nothing in a layout can park a pane,
 // so the sidebar fills the companions in behind whatever is already there.
 layout {
@@ -45,14 +45,14 @@ layout {
                 // session_name "folder"
             }
         }
-        // The head of the first row. A command pane reads the keyboard like any
+        // The head of the first group. A command pane reads the keyboard like any
         // other, so this is an agent you type at, not a log you watch.
         pane command="claude"
     }
 
     // A new pane makes Zellij re-apply a swap layout, and the base layout above
     // is registered with `ExactPanes` — it stops fitting the moment there is one
-    // more pane than it was written for. Templated rows arrive three panes at a
+    // more pane than it was written for. Templated groups arrive three panes at a
     // time, so without an unconstrained arrangement to land in, the first `n`
     // would fold the sidebar to the rail by itself.
     swap_tiled_layout name="sidebar" {

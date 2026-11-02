@@ -38,8 +38,8 @@ just built and the layout's whole configuration, and installs nothing.
 
 ```
 crates/core    agenttij-core — zero dependencies, all the decisions, unit-tested
-               agent (status, rows), group (a row is a group of panes),
-               project (rows sharing a git root), order (what you rearranged,
+               agent (status, groups), group (the panes of one row),
+               project (groups sharing a git root), order (what you rearranged,
                and its file), panes (reconciliation, discovery),
                scan (state files), color (SGR), config, format (row layout),
                api (what an agent may ask the sidebar, both ends of it)
@@ -52,7 +52,7 @@ plugins/       the Claude Code plugin (MCP server, skills, hooks); the
 plugins/agenttij/hooks/agenttij-state.sh
                the shell hook agents run - tool-agnostic: `$1` is the state.
                Also resolves the project (`.agenttij`, git root, cwd), because
-               the sidebar cannot afford that per row per tick. In the plugin
+               the sidebar cannot afford that per group per tick. In the plugin
                because Claude Code installs a plugin's directory and nothing
                outside it; the installer copies it out for everyone else
 integrations/  per-tool glue that calls that hook (opencode plugin)
@@ -82,7 +82,7 @@ keep `crates/plugin` to wiring, host calls and drawing.
   signals the pane's shell, which ignores it, so there is no other way to stop a
   runaway. `R` answers an agent that is waiting on you, and only where a layout
   set `reply "true"` (off otherwise): the answer is typed into the sidebar and
-  sent with Enter, to a row of this session whose status is needs-input, checked
+  sent with Enter, to a group of this session whose status is needs-input, checked
   again as it is sent. The argument for it: a question you can read in a peek
   and answer in two keys is the commonest reason to leave the sidebar at all.
   Nothing else may write, and adding anything that does means arguing with this
@@ -107,7 +107,7 @@ Anything a key does gets a scenario; `harness.py --help` lists the commands and 
   The scenarios in `scripts/e2e/` were checked that way against `b09de72`.
 - **Check titles and focus, not counts.** The bugs fixed alongside the harness (a palette relabelling the pane on screen, `Alt b` with nowhere to go) left every count right; only a title and the focus were wrong.
 - **Read what the sidebar draws off the client, not off Zellij.** Zellij will not hand out a plugin pane's content (next), so the harness replays the client's raw output through just enough of a terminal and cuts the pane out of it: `drawn.sidebar=›*` checks the line the cursor is on (`›` in column one), and `state` prints every line drawn.
-  That is how a row on this machine turned out never to show how many panes it owns - every count and title was right, and the `3` was simply not on screen.
+  That is how a group on this machine turned out never to show how many panes it owns - every count and title was right, and the `3` was simply not on screen.
 - **Plugin pane content cannot be read.** `dump-screen` and `subscribe` both return nothing for plugin panes, including third-party ones.
   Verify behaviour through side effects instead - `list-panes`, `list-clients`, `dump-layout`, a file the plugin touches - or through what the client draws, as the harness does.
   A pane *frame* is not pane content either - the client draws it, so `dump-screen` never shows it.
@@ -207,70 +207,70 @@ rechecked against 0.45.1's source when the plugin moved to it, and the ones
   `panes::reconcile` drops an agent whose session is not live. That is why a
   rename records the old name as an alias (`a` lines, per session) and `rebuild`
   maps agents reporting under one onto this session: with it, a running agent
-  keeps its status across a rename; without it, the row degrades to a discovered
+  keeps its status across a rename; without it, the group degrades to a discovered
   pane. Anything that renames a session goes through `Sidebar::rename_session`
   for that reason.
 - **Zellij does not serialize a parked pane.** `get_layout_metadata`
   (`screen.rs`) walks tiled and floating panes and only touches the suppressed
   ones to swap a scrollback editor back in, so a pane hidden with
-  `hide_pane_with_id` is absent from `session-layout.kdl`. Measured: a row of
+  `hide_pane_with_id` is absent from `session-layout.kdl`. Measured: a group of
   three came back as its head alone (and the template refilled the rest).
   Resurrected command panes carry `start_suspended true`, so an agent waits for
   Enter rather than relaunching itself.
 - **One file rewritten by every sidebar loses what belongs to a session.** The
   arrangement is saved whole from whichever sidebar saved last, which is right
   for an opinion about project order and wrong for a record *belonging* to a
-  session: measured with three sidebars up, a session's rows never survived to
+  session: measured with three sidebars up, a session's groups never survived to
   the file at all. Shared things (`p`, `f`, `n`) stay in `order`; a session's own
   (`b`, `g`, `w`, `h`) go to `sessions/<name>`, which only it writes. One `cat`
   reads both.
 - **A session restarts inside a boot, and that is the case the boot id misses.**
-  A session killed and resurrected comes back holding one row - Zellij does not
+  A session killed and resurrected comes back holding one group - Zellij does not
   serialize a parked pane - and its new sidebar replaced the snapshot describing
-  every row it was there to bring back, because the snapshot was keyed on the
-  machine boot and the boot had not changed. Measured: two rows of three before
-  the kill, one row and no workspace after it, with nothing left to restore from.
+  every group it was there to bring back, because the snapshot was keyed on the
+  machine boot and the boot had not changed. Measured: two groups of three before
+  the kill, one group and no workspace after it, with nothing left to restore from.
   A sidebar now replaces only the snapshot *it* wrote (`Sidebar::snapshot_at`)
   and a fresh run writes a new one, so the last run's survives; the palette
-  offers it, and restoring it rebuilds the rows (measured: 3 panes after the
-  resurrection, 6 in two rows after the restore).
+  offers it, and restoring it rebuilds the groups (measured: 3 panes after the
+  resurrection, 6 in two groups after the restore).
 - **Keeping a snapshot per run means saying *which* one to restore.** The
-  newest is not the best: a run whose grouping had come apart records rows of one
+  newest is not the best: a run whose grouping had come apart records groups of one
   pane, and restoring that rebuilds a session with nothing tied together - which
-  is what "the rows and the hidden panes are not tied together" turned out to be,
-  from a real arrangement whose newest snapshot was six rows of one pane and
-  whose older one held the same work as six rows of three. The palette entry
+  is what "the groups and the hidden panes are not tied together" turned out to be,
+  from a real arrangement whose newest snapshot was six groups of one pane and
+  whose older one held the same work as six groups of three. The palette entry
   carries the stamp (`Target::Workspace { session, stamp }`, asked for as
-  `<session>@<stamp>`), so each entry restores the snapshot it names and its row
+  `<session>@<stamp>`), so each entry restores the snapshot it names and its group
   counts and ages are how you tell them apart.
 - **Everything a resurrection brings back is a stranger.** The grouping is
   written in pane ids and the ids start again, so a session that comes back
   holding more than one pane comes back with none of them tied together - which
-  is the whole of "the rows and the hidden panes are not tied together" after an
-  attach. Nothing can infer which row a pane belonged to; the workspace snapshot
+  is the whole of "the groups and the hidden panes are not tied together" after an
+  attach. Nothing can infer which group a pane belonged to; the workspace snapshot
   can, though, so a restore treats each such pane as standing in for one
-  remembered row and opens that row's companions behind it
+  remembered group and opens that group's companions behind it
   (`Sidebar::filling`). Only a pane that came back *alone*: one the layout's
-  template has already filled out is a row of three, and filling it again made
-  it a row of five. Measured: two rows of three, killed, resurrected as two
+  template has already filled out is a group of three, and filling it again made
+  it a group of five. Measured: two groups of three, killed, resurrected as two
   loose panes, restored to `0,4,5` and `1,2,3`.
 - **A resurrected pane has no working directory until you start it.** Zellij
   brings command panes back with `start_suspended true`, and a command that has
-  not run has nothing in `/proc` for `get_pane_cwd` to read - so every row is
+  not run has nothing in `/proc` for `get_pane_cwd` to read - so every group is
   unplaceable, and a restore that skips directories already open skipped none of
-  them and rebuilt the row already on screen (nine panes where six were wanted).
-  Rows whose directory cannot be read count against the remembered ones anyway.
-- **A session's own sidebar overwrites the thing it should restore.** The rows a
+  them and rebuilt the group already on screen (nine panes where six were wanted).
+  Groups whose directory cannot be read count against the remembered ones anyway.
+- **A session's own sidebar overwrites the thing it should restore.** The groups a
   session has are written to `~/.cache/agenttij/order` whenever they change — so
-  after a restart the sidebar in `work` replaces `work`'s four remembered rows
-  with the one row Zellij brought back, before anyone can ask for the other
+  after a restart the sidebar in `work` replaces `work`'s four remembered groups
+  with the one group Zellij brought back, before anyone can ask for the other
   three. Snapshots are therefore stamped with `/proc/sys/kernel/random/boot_id`:
   this boot's entry for a session is live and replaceable, an earlier boot's is a
   snapshot, and only earlier ones are offered for restoring. The same stamp is
   what makes it safe to keep pane ids in that file at all.
 - **A reload keeps the panes and loses nothing else either, now.** Grouping used
-  to go with it — a reload built a `Groups` from nothing, every pane became a row
-  of its own, and a row of five came apart into five. The rows are written into
+  to go with it — a reload built a `Groups` from nothing, every pane became a group
+  of its own, and a group of five came apart into five. The groups are written into
   `~/.cache/agenttij/order` (`g` lines, per session) and put back around the panes
   that are still there. Which also means the arrangement file must not be written
   before it has been read: a sidebar that started a second ago has a blank one.
@@ -280,7 +280,7 @@ rechecked against 0.45.1's source when the plugin moved to it, and the ones
   addressing it must match exactly — including a `group` template, which is why
   `scripts/install.sh` takes `AGENTTIJ_GROUP` and writes it into the binds.
   Measured: `Alt g` at a sidebar whose layout carried `group` and whose binding
-  did not put `plugin_3` in the pane list and opened an untemplated row.
+  did not put `plugin_3` in the pane list and opened an untemplated group.
 - **Only the first `keybinds` block in a config is read** (`kdl/mod.rs`, with a
   TODO about it). Bindings must be inserted inside it.
 - **A pane with a fixed `size=` cannot be resized**, by a plugin or by Zellij's
@@ -301,7 +301,7 @@ rechecked against 0.45.1's source when the plugin moved to it, and the ones
   `floating_panes { pane command="claude" name="○ contentchef-serverless" }`.
   `PaneInfo.is_floating` is what tells them apart; `visible_terminal` skips them,
   or the sidebar parks and shows against a pane that is not in the tiled layer at
-  all. They stay rows, because a floating pane is still somewhere to go.
+  all. They stay groups, because a floating pane is still somewhere to go.
 - **A floating pane is only on screen while it holds focus.** Focus a tiled pane
   and Zellij sets the tab's `hide_floating_panes`; `pinned` does not override it.
   So a floating pane that needs to stay visible must be one that can hold focus
@@ -324,7 +324,7 @@ rechecked against 0.45.1's source when the plugin moved to it, and the ones
 - **Never swap panes with `replace_pane_with_existing_pane`.** Zellij files
   suppressed panes in a `HashMap` keyed by *the pane that replaced them*
   (`tab/mod.rs`, `SuppressedPanes`), so a pane that is already someone's value is
-  orphaned the moment it becomes a key — a third pane joining a row destroyed the
+  orphaned the moment it becomes a key — a third pane joining a group destroyed the
   second. `hide_pane_with_id` files a pane under its own id (`suppress_pane`,
   same file, with a comment saying so), so hide-the-old / show-the-new chains
   safely.
@@ -355,9 +355,9 @@ rechecked against 0.45.1's source when the plugin moved to it, and the ones
   tiled, while `stack-panes` then `new-pane` left one stack of four (measured,
   0.45.1) - which is why the remote fallback stacks first.
 - **Focusing a scrolled pane enters Scroll mode** (0.45, #5299, read in source):
-  `focus_pane_with_id` included, so showing a row whose pane was scrolled up
+  `focus_pane_with_id` included, so showing a group whose pane was scrolled up
   leaves the client in Scroll mode. `scroll_mode_sync false` turns it off.
-- **An attach pane is a nested session since 0.45.** `Enter` on a remote row
+- **An attach pane is a nested session since 0.45.** `Enter` on a remote group
   opens `ssh -t host zellij attach`, and that client announces itself; the
   session here then asks what to do (`nested_session_handling`, default `ask`),
   and every answer, `Esc` included, ends with the pane sending its keys to the
@@ -368,7 +368,7 @@ rechecked against 0.45.1's source when the plugin moved to it, and the ones
   `scan.rs` sends are POSIX, so `over_ssh` and `host_command` wrap them in
   `sh -c`. Under zsh an unquoted `$ids` stayed one word, so `stack-panes` got
   every id as one malformed argument, and `cat dir/*.state dir/rows` with no
-  state files aborted on the glob and lost the rows. Measured over ssh into
+  state files aborted on the glob and lost the groups. Measured over ssh into
   `scripts/testbox.sh`, whose login shell is zsh for that reason.
 - **A CLI pipe reaches each plugin once per attached client, and only
   `ReadCliPipes` may answer it.** A pipe naming no plugin goes to every
@@ -392,7 +392,7 @@ rechecked against 0.45.1's source when the plugin moved to it, and the ones
   the screen now.** Trusting `PaneManifest` one keypress later hides a pane that
   is already parked — a no-op — while the show un-suppresses its neighbour beside
   what you are actually looking at, and the workspace ends up split between two
-  rows. Measured: `Enter` then `Alt v` in a single write left two panes at 50%
+  groups. Measured: `Enter` then `Alt v` in a single write left two panes at 50%
   each, and it stayed that way. What the plugin put on screen itself is not a
   guess, so `panes::slot` prefers that (`Sidebar::showing`) until a list confirms
   it, with a countdown so a show that never landed cannot wedge the slot for ever.
@@ -403,15 +403,15 @@ rechecked against 0.45.1's source when the plugin moved to it, and the ones
   `add_to_row` goes further and prefers the *focused* terminal, because a screen
   split by Zellij's own `Alt n` has two of them and the list names whichever
   comes first.
-- **A row of the sidebar can blink out on the same staleness.** The pane list
+- **A group of the sidebar can blink out on the same staleness.** The pane list
   regressing (below) reaches `panes::reconcile` too, which reaps an agent the
   moment its pane is missing - so someone else's keypress in another session can
-  take a row out of the list for one frame and put it back. Reconciling against
+  take a group out of the list for one frame and put it back. Reconciling against
   `panes::still_alive` (this list and the one before) is what stops that.
 - **A grace counted in updates needs updates to arrive.** `SessionUpdate` is
   skipped early when the pane list has not moved, so a quiet session produced no
   reconcile at all - and a member that never appeared (Zellij answered with an id
-  and made no pane) sat in its row for ever, with `v` cycling onto a pane that is
+  and made no pane) sat in its group for ever, with `v` cycling onto a pane that is
   not there: the show does nothing, the hide parks what you were looking at, and
   the workspace is empty. Reconcile therefore runs on every update, moved or not,
   and only the *redraw* is skipped. `walk` also refuses to show a pane no list has
@@ -420,17 +420,17 @@ rechecked against 0.45.1's source when the plugin moved to it, and the ones
   be absent from the next list and back in the one after - it happens as the
   pane is suppressed. Traced through a burst of `Alt m`: `[0,1,2,3,4,5]`, then
   `[0,1,2,3,4]`, then `[0,1,2,3,4,5]` again. One update was enough for
-  `Groups::reconcile` to take pane 5 out of its row and hand it back as a row of
+  `Groups::reconcile` to take pane 5 out of its group and hand it back as a group of
   its own, which is what "panes escape the group" was. So *every* member missing
   from a list gets a grace, not only the ones that have never been seen
   (`GRACE_MISSING`, three updates; a pane still being born gets `GRACE_NEW`,
-  ten). The cost is that a pane you close leaves its row a few updates late.
+  ten). The cost is that a pane you close leaves its group a few updates late.
 - **An action that takes over a second answers with no pane id, and does it
   anyway.** `route_action` waits `ACTION_COMPLETION_TIMEOUT` (one second,
   `route.rs`) for the id and then returns `affected_pane_id: None`, while the
   pane is still opened - so `open_terminal` can hand back `None` for a pane that
-  exists, which under a burst leaves a pane in no row at all with no id to put it
-  in one. `Sidebar::orphan` remembers the row instead, and `Groups::adopt` takes
+  exists, which under a burst leaves a pane in no group at all with no id to put it
+  in one. `Sidebar::orphan` remembers the group instead, and `Groups::adopt` takes
   in whatever stranger the next list names. Read in Zellij's source rather than
   measured firing, so treat it as the belt and not the braces.
 - **Reconcile against fresh pane data only.** `PaneUpdate`/`SessionUpdate` is the
@@ -439,11 +439,11 @@ rechecked against 0.45.1's source when the plugin moved to it, and the ones
 - **Suppressed panes forget their geometry.** Unsuppressing puts the pane
   wherever Zellij likes, so hide/show is not a reversible collapse — that is
   what swap layouts are for.
-- **Host calls are round-trips; do not make them per row per render.** Asking
-  `get_pane_cwd` / `get_pane_running_command` for every row on every rebuild made
+- **Host calls are round-trips; do not make them per group per render.** Asking
+  `get_pane_cwd` / `get_pane_running_command` for every group on every rebuild made
   navigation lag, because rebuilds burst exactly when you are moving around.
   Cache per pane and refresh on a slow tick.
-- **The tick is the whole cost.** Idling beside a row of eight panes the sidebar
+- **The tick is the whole cost.** Idling beside a group of eight panes the sidebar
   burns about 24ms of CPU a second; with the timer off, 1ms. Reconciling,
   sorting and drawing are noise next to forking the scan and carrying its output
   back through the host, so anything that wants to be cheaper has to happen less
@@ -456,14 +456,14 @@ rechecked against 0.45.1's source when the plugin moved to it, and the ones
   in `/tmp/x` lands it in `$ZELLIJ_TMP_DIR/x`. Measured with the directory
   picker: `/tmp` became `/tmp/zellij-1000`. Every other absolute path passes
   through untouched.
-- **`PaneManifest.panes` is a `HashMap`.** Sort anything derived from it, or rows
+- **`PaneManifest.panes` is a `HashMap`.** Sort anything derived from it, or groups
   shuffle between updates.
 - **Resizing from a plugin is coarse and asynchronous.** Stepping towards a
   target width overshoots and drifts; don't try again.
 
 ## Don't
 
-- Don't sort the list by recency: rows must not move under the cursor. Attention
+- Don't sort the list by recency: groups must not move under the cursor. Attention
   first, then pane id.
 - Don't call `stack_panes` on panes that are already stacked; new panes join a
   stack on their own.

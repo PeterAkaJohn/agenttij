@@ -5,7 +5,7 @@ expect focus=slot
 keys '\033?'
 wait floating=keys
 wait 'drawn.floating=in the sidebar*anywhere'
-expect 'drawn.floating=?*this list' 'drawn.floating=*Ctrl o f*' 'drawn.floating=*Alt w*new row in a git worktree*' 'drawn.floating=any key closes'
+expect 'drawn.floating=?*this list' 'drawn.floating=*Ctrl o f*' 'drawn.floating=*Alt w*new group in a git worktree*' 'drawn.floating=any key closes'
 keys q
 wait floating=
 

@@ -12,49 +12,49 @@ jump to it.
 │   ├ nvim        -  │  ○ idle            ? unknown
 │   └ lazygit     -  │  · a pane, no agent
 │ ● docs-fix     5m  │  ▾ ▸ a project, open or folded
-│ ▸ dotfiles      4  │  ├ └ panes of the row above
-│                    │  "3" = the row owns
+│ ▸ dotfiles      4  │  ├ └ panes of the group above
+│                    │  "3" = the group owns
 │ j/k ↵ n a v b d    │  three panes
 └────────────────────┘
 ```
 
-A finished agent stays `●` until its row has been on screen with you looking at
+A finished agent stays `●` until its group has been on screen with you looking at
 it, or you have peeked at it, then turns `✓`: work you have not read yet, told
 apart from work you have.
 One that finishes while you watch it is read as it finishes; one on screen in a
 session or tab nobody has open is not.
 
-A finished row also says what its agent left uncommitted, `+120−30`, new files
-included — on the row while there is room for it next to the name, and on the
+A finished group also says what its agent left uncommitted, `+120−30`, new files
+included — on the group while there is room for it next to the name, and on the
 pane's frame. It is counted once, when the agent finishes, so it costs the
 sidebar nothing.
 
 The sidebar is an ordinary pane: focus it with your usual pane navigation (or
-`Alt s`), then. In the first column, `›` is the cursor and `▪` is the row on
+`Alt s`), then. In the first column, `›` is the cursor and `▪` is the group on
 screen — the same thing until you open a pane somewhere else.
 
 | key | |
 |---|---|
 | `j` / `k`, `↓` / `↑` | move |
-| `Enter` | show that row — switches session if the agent is elsewhere |
-| `Tab` | open a row up: its panes listed underneath — or fold a project |
+| `Enter` | show that group — switches session if the agent is elsewhere |
+| `Tab` | open a group up: its panes listed underneath — or fold a project |
 | `[`, `]` | jump between projects |
-| `J`, `K` | move a project, or a row within its project |
+| `J`, `K` | move a project, or a group within its project |
 | `r` | name a project — two with the same name are one |
-| `b` | flip back to the previous row (`Alt b` anywhere) |
+| `b` | flip back to the previous group (`Alt b` anywhere) |
 | `B` | back to the session you came from |
-| `o` | open a workspace here on that row's project |
-| `w` | a new row in a fresh git worktree of that row's repository (`Alt w`) |
+| `o` | open a workspace here on that group's project |
+| `w` | a new group in a fresh git worktree of that group's repository (`Alt w`) |
 | `s` | share this session on the web - a phone, say - with Zellij's own screen |
 | `R` | answer an agent waiting on you, without going to it (`reply "true"` only) |
-| `v`, `V` | cycle the panes *within* this row, either way (`Alt v`, `Alt V`) |
-| `1`–`9` | straight to that pane of the row (`Alt 1`–`Alt 9`) |
+| `v`, `V` | cycle the panes *within* this group, either way (`Alt v`, `Alt V`) |
+| `1`–`9` | straight to that pane of the group (`Alt 1`–`Alt 9`) |
 | `'` | flip to the pane you were on before this one (`Alt '`) |
-| `a` | add a pane to this row: an editor, a log, whatever (`Alt m`) |
-| `m` | move what the cursor is on into the row on screen |
-| `n` | new agent pane — a new row (`Alt g`) |
-| `G` | a new row in a directory you pick, template and all (`Alt G`) |
-| `d` `d` | close the row, the pane under it, or a whole project — asks first |
+| `a` | add a pane to this group: an editor, a log, whatever (`Alt m`) |
+| `m` | move what the cursor is on into the group on screen |
+| `n` | new agent pane — a new group (`Alt g`) |
+| `G` | a new group in a directory you pick, template and all (`Alt G`) |
+| `d` `d` | close the group, the pane under it, or a whole project — asks first |
 | `c` `c` | interrupt the agent, without going to it — asks first |
 | `!` | only what needs you |
 | `/` | jump: everywhere you could go, filtered by typing (`Alt t` anywhere) |
@@ -63,9 +63,9 @@ screen — the same thing until you open a pane somewhere else.
 | `?` | show every key and what it does (`Alt ?` from any pane) |
 
 Every one of those that makes sense away from the sidebar has a global binding,
-installed for you: `Alt s` focuses the sidebar, `Alt v` cycles a row's panes,
-`Alt b` flips rows, `Alt g` starts a new row, `Alt w` starts one in a fresh git
-worktree, `Alt m` adds a pane to the row on screen, `Alt a` summons a sidebar in any session, and `Alt ]` (`Alt [` back) - Zellij's own
+installed for you: `Alt s` focuses the sidebar, `Alt v` cycles a group's panes,
+`Alt b` flips groups, `Alt g` starts a new group, `Alt w` starts one in a fresh git
+worktree, `Alt m` adds a pane to the group on screen, `Alt a` summons a sidebar in any session, and `Alt ]` (`Alt [` back) - Zellij's own
 swap-layout key — folds the sidebar to a status rail. Full reference:
 [docs/KEYBINDS.md](docs/KEYBINDS.md).
 
@@ -159,14 +159,14 @@ ago it was says that too:
 ```
 ⊙ contentchef-serverless   contentchef · session
 ⊘ quadratic-donkey         agenttij lara-app · 3d
-⊞ contentchef              4 rows · 2h
+⊞ contentchef              4 groups · 2h
 ```
 
 Identifying one is not the same as rebuilding it.
 Zellij records a directory for a pane only sometimes (11 of those 186 layouts had
 one), so a session from before agenttij kept its own snapshots can be resurrected
 into whatever Zellij saved and no further.
-Sessions from now on are written down properly, rows and directories both.
+Sessions from now on are written down properly, groups and directories both.
 
 ## After a restart
 
@@ -179,22 +179,22 @@ screen comes back in its directory, with its command, suspended until you press
 Enter — measured, including the sidebar with its own configuration.
 
 What it cannot bring back is what was parked. Zellij serializes tiled and floating
-panes; a pane suppressed to keep a row to one pane at a time is not in the file at
-all. In solo mode that means one row per tab survives, and its companions are then
+panes; a pane suppressed to keep a group to one pane at a time is not in the file at
+all. In solo mode that means one group per tab survives, and its companions are then
 refilled by the layout's `group`.
 
-So agenttij writes its rows down itself, as something a restart cannot invalidate:
-per row, the directory it worked in and the programs its panes ran. `Alt t`, type
+So agenttij writes its groups down itself, as something a restart cannot invalidate:
+per group, the directory it worked in and the programs its panes ran. `Alt t`, type
 `restore`, and every remembered workspace is in the list with its size:
 
 ```
-⊞ contentchef      4 rows
-⊞ agenttij         2 rows
+⊞ contentchef      4 groups
+⊞ agenttij         2 groups
 ```
 
-Picking one rebuilds those rows — a row per second, in their own directories, with
-their own panes. Rows already open are skipped, *counted* rather than merely
-matched: three rows on one project restore two when one of them is already there,
+Picking one rebuilds those groups — a group per second, in their own directories, with
+their own panes. Groups already open are skipped, *counted* rather than merely
+matched: three groups on one project restore two when one of them is already there,
 which is what a project you work on from several angles looks like. Program *arguments* are not kept, because a pane only
 reports the program it runs: `nvim` comes back, `nvim +42 file` comes back as
 `nvim`.
@@ -224,8 +224,8 @@ plugin location="file:~/.config/zellij/plugins/agenttij.wasm" {
 
 On the machine being watched, `zellij -n agenttij-remote` adds a *controller*: the
 same plugin with no column, no keys and nothing on screen, which keeps that
-session to one pane at a time and does what this sidebar asks of it. Its rows then
-appear here as rows — `⇥ api 3`, openable with `Tab` — and `v`, `a`, `d` and
+session to one pane at a time and does what this sidebar asks of it. Its groups then
+appear here as groups — `⇥ api 3`, openable with `Tab` — and `v`, `a`, `d` and
 `Enter` on them are carried out over there, with real suppressed panes, because
 only a plugin inside a session can suppress one.
 
@@ -240,12 +240,12 @@ over ssh — install agenttij there too (the hook is what writes them), and give
 each host key-based login. No second machine handy? `scripts/testbox.sh up`
 starts a container running sshd and a zellij session with two panes, one state
 file each, and prints the host string to paste into `h` — enough that peeking
-shows real pane contents and `Enter` attaches to a real session. `Enter` on a remote row opens a pane here attached to
+shows real pane contents and `Enter` attaches to a real session. `Enter` on a remote group opens a pane here attached to
 that session, because Zellij cannot show a pane it does not own; `p` peeks at it
 without leaving. Since Zellij 0.45 that pane is a nested session: Zellij asks what
 to do with it, and while it has focus your keys go to the session over there
-(`Ctrl o` then `]` brings them back) - see "Rows somewhere else" in
-[docs/KEYBINDS.md](docs/KEYBINDS.md). And `a` on a remote row, or `Alt m` from a
+(`Ctrl o` then `]` brings them back) - see "Groups somewhere else" in
+[docs/KEYBINDS.md](docs/KEYBINDS.md). And `a` on a remote group, or `Alt m` from a
 pane attached to one with the keys still here, adds a pane *on that machine*, in the directory its agent is working in — Zellij's own
 CLI over ssh, so the pane belongs to that session rather than to a second
 connection pretending to. If agenttij is running in that
@@ -267,7 +267,7 @@ Host dev1 build2
 
 Hosts are asked every five seconds, and a host that fails is left alone for a
 minute — a closed laptop should cost one connection attempt a minute, not one a
-second. Its rows disappear while it is away rather than being marked stale,
+second. Its groups disappear while it is away rather than being marked stale,
 because "what is running over there" is a question only it can answer.
 
 ## Agents that use the sidebar
@@ -315,7 +315,7 @@ args = ["mcp"]
 One that does not can run the command: a line in its `AGENTS.md` saying "start long-running processes with `agenttij pane add --run '<command>'`" is enough.
 Outside Zellij the server lists no tools, so it can be configured everywhere.
 
-A request is a `zellij pipe` that only the sidebar keeping the rows acts on, and the answer comes back in a file under `/tmp/agenttij/api/` - see [docs/PLAN.md](docs/PLAN.md) for why not over the pipe.
+A request is a `zellij pipe` that only the sidebar keeping the groups acts on, and the answer comes back in a file under `/tmp/agenttij/api/` - see [docs/PLAN.md](docs/PLAN.md) for why not over the pipe.
 It needs the layout's sidebar with `solo` on, which every layout here has; `list` works without it.
 
 ## Install
@@ -329,7 +329,7 @@ zellij --new-session-with-layout agenttij-left
 ```
 
 To see everything at once — sidebar, bar, projects, the lot — start with
-`zellij -n agenttij-everything` and press `?`. For rows that come out of the
+`zellij -n agenttij-everything` and press `?`. For groups that come out of the
 layout already built, `zellij -n agenttij-template` (see below).
 
 The installer builds the plugin and drops it in `~/.config/zellij/plugins`,
@@ -372,7 +372,7 @@ zellij --new-session-with-layout agenttij-workspace
 
 This is the layout to use if you want the sidebar to *stay put* while the area
 beside it changes. The sidebar owns a column; the rest of the tab is a single
-slot holding exactly one pane. Picking a row puts that row's current pane in the
+slot holding exactly one pane. Picking a group puts that group's current pane in the
 slot and **parks** whatever was there — Zellij calls it suppressed, and it keeps
 running. The sidebar never moves, never re-renders from scratch, and there is no
 detach: `Enter` is a pane swap.
@@ -380,25 +380,25 @@ detach: `Enter` is a pane swap.
 ```
 ┌ agents ────┬──────────────────────────┐
 │ ⚠ bravo    │                          │
-│ ◐ delta  2 │  delta's editor          │ ← the row on screen is showing
+│ ◐ delta  2 │  delta's editor          │ ← the group on screen is showing
 │    nvim    │                          │   its second pane; Tab opened
-│ ✓ alpha    │                          │   the row to list it
+│ ✓ alpha    │                          │   the group to list it
 │ · scratch  │  (every other pane is    │
 │            │   parked, still running) │
 └────────────┴──────────────────────────┘
      ▲            ▲
-     │            └─ one pane, whichever member of the row you were last on
-     └─ one row per agent; "2" means that row owns two panes
+     │            └─ one pane, whichever member of the group you were last on
+     └─ one group per agent; "2" means that group owns two panes
 ```
 
-Start agents with `n` (or `Alt g`) and add panes to a row with `a` (or `Alt m`).
-Both park what was on screen instead of splitting it. `d` `d` closes a row and
-everything parked behind it — or one pane of a row, if you opened the row with
-`Tab` — and puts the next row on screen rather than leaving it empty. Opening
+Start agents with `n` (or `Alt g`) and add panes to a group with `a` (or `Alt m`).
+Both park what was on screen instead of splitting it. `d` `d` closes a group and
+everything parked behind it — or one pane of a group, if you opened the group with
+`Tab` — and puts the next group on screen rather than leaving it empty. Opening
 panes any other way works too: the first swap parks the extras, and anything
-ungrouped becomes a row of its own.
+ungrouped becomes a group of its own.
 
-Rows gather into **projects**: everything working on one codebase, under the git
+Groups gather into **projects**: everything working on one codebase, under the git
 root the hook records, so an agent started in `crates/core` sits with one started
 at the top of the repo. A front end and a back end in separate repositories are
 one project the moment you say so — `r`, name both `acme`, and they are together
@@ -413,25 +413,25 @@ them — and headers only appear once there is more
 than one project to tell apart. Four repositories become four
 lines you can open, instead of fifteen you have to read.
 
-In solo mode a **row is a group of panes**, not a single pane. `a` adds a pane to
-the row you are on — an editor next to the agent, a log next to that — and
-exactly one member is on screen at a time. Companions never get rows of their
-own: the row *is* the agent session. `Alt v` cycles through the row's panes from
+In solo mode a **group holds several panes**, not a single pane. `a` adds a pane to
+the group you are on — an editor next to the agent, a log next to that — and
+exactly one member is on screen at a time. Companions never get groups of their
+own: the group *is* the agent session. `Alt v` cycles through the group's panes from
 anywhere, including while you are typing at the agent, which is the point of it.
 
-Getting around a row is meant to take one press: `v` and `V` step forward and
+Getting around a group is meant to take one press: `v` and `V` step forward and
 back through it, `1`–`9` go straight to a pane by the number its frame already
 shows (`· api 3/5`), and `'` flips between the two you have been alternating. All
 four have global twins — `Alt v`, `Alt V`, `Alt 1`–`Alt 9`, `Alt '` — since the
 usual moment for them is while the agent has the keyboard.
 
-Each row remembers which member you were last looking at. Every pane belongs to
-exactly one row, and a pane the sidebar does not recognise becomes a row of its
+Each group remembers which member you were last looking at. Every pane belongs to
+exactly one group, and a pane the sidebar does not recognise becomes a group of its
 own — so a reload costs you the grouping, never access to a pane.
 
-### A row from a template
+### A group from a template
 
-If every row you build by hand comes out the same, say so once in the layout and
+If every group you build by hand comes out the same, say so once in the layout and
 stop building it:
 
 ```kdl
@@ -445,7 +445,7 @@ plugin location="file:~/.config/zellij/plugins/agenttij.wasm" {
 Now `n` (and `Alt g`) opens all three at once: `claude` on screen, the editor and
 `lazygit` parked behind it on `v`. `;` separates panes, the first entry is the one
 you see, and an entry with nothing in it is a plain shell — `group "; nvim ."` is
-a shell with an editor behind it. The row the session *starts* with gets the same
+a shell with an editor behind it. The group the session *starts* with gets the same
 treatment, once, since no layout can park a pane itself.
 
 `layouts/agenttij-template.kdl` is that, ready to run: `zellij -n
@@ -456,7 +456,7 @@ it does not survive — put that in a script and name the script here. And the
 template is part of the sidebar's configuration, which is part of its *identity*:
 `Alt g` from your Zellij config has to say the same `group` as the layout does, or
 it addresses a sidebar that does not exist and Zellij starts one — a pane appears
-out of nowhere and every pane you had becomes a row of its own.
+out of nowhere and every pane you had becomes a group of its own.
 
 So write it in the layout and re-run the installer, which reads that line and puts
 it in the keybinds too:
@@ -475,7 +475,7 @@ and `rail` swap layouts included. And a session already running keeps the
 configuration it started with, so a template reaches the sessions you start after
 installing it, not that one.
 
-`a` stays a plain pane on purpose: it means "one more", not "one more row".
+`a` stays a plain pane on purpose: it means "one more", not "one more group".
 The layout ships `scope "session"`, so the sidebar lists only this session's
 agents and `Enter` can never throw you out of the workspace, and `solo "true"`,
 which is what parks the others instead of leaving them on screen.
@@ -517,7 +517,7 @@ it split instead of joining; and agenttij never calls `stack_panes` itself,
 since new panes join a real stack on their own.
 
 Outside workspace mode the sidebar lists agents everywhere, sorting this
-session's agents first and marking the rest with `⇢` — so a row that will cost
+session's agents first and marking the rest with `⇢` — so a group that will cost
 you a detach always says so before you press `Enter`.
 
 ### Landing in a session with no sidebar
@@ -549,7 +549,7 @@ pane size="20%" {
         agents "claude,codex,opencode,aider,gemini,my-agent"
         // "all" (default) or "session" to list only this session's agents
         scope "session"
-        // "true" makes a row a group of panes, one on screen at a time
+        // "true": a group is several panes, one on screen at a time
         solo "true"
         // what the pane frame calls itself (not `title`: Zellij keeps that one)
         pane_title "agents"
@@ -563,11 +563,11 @@ pane size="20%" {
         // sidebar, sent with Enter. Off by default - the sidebar otherwise never
         // types into an agent, bar `c`'s interrupt
         // reply "true"
-        // "false" to stop naming a row's panes "<row> 2/3"
+        // "false" to stop naming a group's panes "<group> 2/3"
         position "true"
-        // the panes every new row starts with: `;` between them, the first
+        // the panes every new group starts with: `;` between them, the first
         // being the one you see and the rest parked behind it. An entry with
-        // nothing in it is a plain shell — see "A row from a template"
+        // nothing in it is a plain shell — see "A group from a template"
         group "claude; nvim .; lazygit"
     }
 }
@@ -628,7 +628,7 @@ For anything else, call `agenttij-state.sh <state>` from whatever event
 mechanism it has. Without one, a tool still appears — by pane title if its name
 is in `agents`, and always in a solo workspace, just without a live status.
 
-A row is named after the folder it is working in — the last component, not the
+A group is named after the folder it is working in — the last component, not the
 whole path. An agent reports its own through the hook; a plain pane is asked for
 its cwd, since its title is a shell prompt and says whatever your prompt says.
 

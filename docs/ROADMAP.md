@@ -12,7 +12,7 @@ Measured, not assumed, and every idea below is bent around them.
 - **Panes belong to the session that owns them.**
   Nothing in the plugin API moves or renders a pane across sessions, so any feature phrased as "share a pane with another session" has to become something else.
 - **The tick is the whole cost.**
-  Idling beside a row of eight the sidebar burns about 24ms of CPU a second; with the timer off, 1ms.
+  Idling beside a group of eight the sidebar burns about 24ms of CPU a second; with the timer off, 1ms.
   Anything that adds a poll adds the same again, which is why what the hook can count once - a project, what an agent changed - is counted there.
 - **Filesystem events cannot help.**
   `watch_filesystem` starts one watcher per session rooted at the session's cwd, so it can never watch `/tmp/agenttij`.
@@ -27,20 +27,20 @@ Measured, not assumed, and every idea below is bent around them.
 
 ## Built
 
-- **Projects**: rows grouped under the repository they work in, folded to one line carrying the worst status inside; worktrees of one repository are one project.
+- **Projects**: groups gathered under the repository they work in, folded to one line carrying the worst status inside; worktrees of one repository are one project.
 - **The blocked queue** (`!`) and **interrupting an agent** (`c` `c`).
 - **Status in the pane frame**, as a glyph in the title: `set_pane_color` would repaint the agent's own output.
 - **Reach**: ssh hosts, a controller on the machines you watch, handoff (`o`), flipping back across sessions (`B`).
-- **The palette** (`/`, `Alt t`): every row, project, session, host and resurrectable session; and the directory picker (`G`), which is the project launcher.
+- **The palette** (`/`, `Alt t`): every group, project, session, host and resurrectable session; and the directory picker (`G`), which is the project launcher.
 - **The bar** and **notify**: a bar with `notify` set is the notifier, so there is no separate plugin for it.
 - **Workspaces that outlive the machine**: a snapshot per run, restored from the palette.
-- **Unread finished work**: `●` until the row has been on screen with someone looking, or peeked at.
+- **Unread finished work**: `●` until the group has been on screen with someone looking, or peeked at.
 - **What an agent left uncommitted**, `+120−30`, counted by the hook when it finishes.
-- **Worktree rows** (`w`, `Alt w`): a new row in a fresh git worktree, let go of when the row closes unless it holds work.
+- **Worktree groups** (`w`, `Alt w`): a new group in a fresh git worktree, let go of when the group closes unless it holds work.
 - **Status for agents without a hook**, read off their screens with `dump-screen` - no new permission - and found by what they run as well as by title.
   Not `ReadPaneContents`, because a new permission is costly: a session still running an older build rewrites the grant without it, and the next sidebar sits on an invisible prompt.
 - **On the web**: `s` opens Zellij's share screen, and the sidebar says on its first line while the session is shared.
-- **Answering a waiting agent** (`R`, with `reply "true"` in the layout): typed in the sidebar, sent with Enter, to a row that is waiting.
+- **Answering a waiting agent** (`R`, with `reply "true"` in the layout): typed in the sidebar, sent with Enter, to a group that is waiting.
 - **Agents asking for panes**: `agenttij` and its MCP server let an agent list the groups, add a pane to its own, open a group (in a worktree, if asked), show a pane, read one, wait on a group's agent, and close what it opened; parked unless asked to show. A Claude Code plugin carries the tools, the status hooks, and skills for using them and for delegating a task to a second agent.
 - **A harness and e2e scenarios**: sealed Zellij sessions driven by real keystrokes, reading what the sidebar draws, run in CI against the Zellij the plugin is built for.
 
@@ -59,12 +59,12 @@ Each piece reads the state files itself until a third and fourth reader appear, 
 ## Not doing
 
 - **A project in a tab of its own.**
-  One sidebar per session runs the rows, the slot and the session's saved file, so a project moved to another tab needs either a second sidebar fighting over all three or a tab with no slot, every parked pane on screen at once.
+  One sidebar per session runs the groups, the slot and the session's saved file, so a project moved to another tab needs either a second sidebar fighting over all three or a tab with no slot, every parked pane on screen at once.
   Nothing it would buy has been missed.
 - **Moving or mirroring a pane across sessions.**
   No API, and faking it with a second process pretending to be the same agent is a lie the sidebar would then have to maintain.
 - **A knob for anything a layout can express.**
 - **Sorting by recency.**
-  Rows must not move under the cursor.
+  Groups must not move under the cursor.
 - **Dependencies in `core`.**
   They are the reason `cargo test` runs without a WASM host.

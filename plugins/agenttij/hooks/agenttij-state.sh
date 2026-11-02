@@ -19,7 +19,7 @@ f="$d/$ZELLIJ_SESSION_NAME.$ZELLIJ_PANE_ID.state"
 w="${CLAUDE_PROJECT_DIR:-$PWD}"
 
 # The project this belongs to, resolved here because the sidebar cannot: it
-# would need a git call per row per tick, and it redraws every second.
+# would need a git call per group per tick, and it redraws every second.
 #
 # A `.agenttij` file above us wins: two repositories that are one project — a
 # front end and a back end — have no shared git root to be found, so this is the
