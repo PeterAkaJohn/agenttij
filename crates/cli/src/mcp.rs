@@ -18,7 +18,8 @@ pub fn serve() -> std::io::Result<()> {
         if line.trim().is_empty() {
             continue;
         }
-        if let Some(reply) = handle(&line) {
+        let in_zellij = std::env::var_os("ZELLIJ_SESSION_NAME").is_some();
+        if let Some(reply) = handle(&line, in_zellij) {
             writeln!(stdout, "{reply}")?;
             stdout.flush()?;
         }
@@ -27,7 +28,11 @@ pub fn serve() -> std::io::Result<()> {
 }
 
 /// One message in, at most one out: notifications get no answer.
-fn handle(line: &str) -> Option<Value> {
+///
+/// Outside Zellij there is no sidebar to ask, so there are no tools either -
+/// rather than four that can only fail, in the context of every session of an
+/// agent that has this server configured everywhere.
+fn handle(line: &str, in_zellij: bool) -> Option<Value> {
     let message: Value = match serde_json::from_str(line) {
         Ok(message) => message,
         Err(why) => return Some(failure(Value::Null, -32700, &format!("parse error: {why}"))),
@@ -42,11 +47,12 @@ fn handle(line: &str) -> Option<Value> {
                 "protocolVersion": asked.unwrap_or(PROTOCOL),
                 "capabilities": { "tools": {} },
                 "serverInfo": { "name": "agenttij", "version": env!("CARGO_PKG_VERSION") },
-                "instructions": INSTRUCTIONS,
+                "instructions": if in_zellij { INSTRUCTIONS } else { "" },
             })
         }
         "ping" => json!({}),
-        "tools/list" => json!({ "tools": tools() }),
+        "tools/list" if in_zellij => json!({ "tools": tools() }),
+        "tools/list" => json!({ "tools": [] }),
         "tools/call" => call(&params),
         _ => return Some(failure(id, -32601, &format!("no method {method}"))),
     };
@@ -162,7 +168,7 @@ mod tests {
     use super::*;
 
     fn answer(line: &str) -> Value {
-        handle(line).expect("answered")
+        handle(line, true).expect("answered")
     }
 
     #[test]
@@ -172,7 +178,11 @@ mod tests {
         );
         assert_eq!(init["result"]["protocolVersion"], "2025-03-26");
         assert_eq!(init["result"]["serverInfo"]["name"], "agenttij");
-        assert!(handle(r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#).is_none());
+        assert!(handle(
+            r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#,
+            true
+        )
+        .is_none());
 
         let listed = answer(r#"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#);
         let names: Vec<&str> = listed["result"]["tools"]
@@ -182,6 +192,8 @@ mod tests {
             .filter_map(|tool| tool["name"].as_str())
             .collect();
         assert_eq!(names, ["list_groups", "new_group", "add_pane", "show_pane"]);
+        let outside = handle(r#"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#, false);
+        assert_eq!(outside.expect("answered")["result"]["tools"], json!([]));
 
         let wrong = answer(
             r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"show_pane","arguments":{}}}"#,
