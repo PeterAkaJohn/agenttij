@@ -41,6 +41,7 @@ Measured, not assumed, and every idea below is bent around them.
   Not `ReadPaneContents`, because a new permission is costly: a session still running an older build rewrites the grant without it, and the next sidebar sits on an invisible prompt.
 - **On the web**: `s` opens Zellij's share screen, and the sidebar says on its first line while the session is shared.
 - **Answering a waiting agent** (`R`, with `reply "true"` in the layout): typed in the sidebar, sent with Enter, to a row that is waiting.
+- **Agents asking for panes**: `agenttij` and its MCP server let an agent list the groups, add a pane to its own, open a group (in a worktree, if asked) and show a pane; parked unless asked to show. A Claude Code plugin carries the tools and a skill.
 - **A harness and e2e scenarios**: sealed Zellij sessions driven by real keystrokes, reading what the sidebar draws, run in CI against the Zellij the plugin is built for.
 
 ## Open

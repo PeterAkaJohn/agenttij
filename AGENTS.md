@@ -10,6 +10,8 @@ a workaround for something measured.
 ```sh
 cargo test -p agenttij-core                        # the logic; runs on the host
 cargo clippy -p agenttij-core --all-targets        # keep at zero warnings
+cargo test -p agenttij-cli                         # the `agenttij` command
+cargo clippy -p agenttij-cli --all-targets
 cargo clippy -p agenttij --target wasm32-wasip1    # same for the plugin
 cargo fmt --all
 cargo build -p agenttij --target wasm32-wasip1 --release
@@ -39,12 +41,17 @@ crates/core    agenttij-core — zero dependencies, all the decisions, unit-test
                agent (status, rows), group (a row is a group of panes),
                project (rows sharing a git root), order (what you rearranged,
                and its file), panes (reconciliation, discovery),
-               scan (state files), color (SGR), config, format (row layout)
+               scan (state files), color (SGR), config, format (row layout),
+               api (what an agent may ask the sidebar, both ends of it)
 crates/plugin  agenttij — wasm: lifecycle, rendering, navigation, peek mode
+crates/cli     agenttij-cli - the `agenttij` command agents run, and
+               `agenttij mcp`; serde_json lives here and nowhere else
 hooks/         the shell hook agents run — tool-agnostic: `$1` is the state.
                Also resolves the project (`.agenttij`, git root, cwd), because
                the sidebar cannot afford that per row per tick
 integrations/  per-tool glue that calls that hook (opencode plugin)
+plugins/       the Claude Code plugin (MCP server + skill); the marketplace
+               that lists it is .claude-plugin/ at the root
 layouts/       left, right, workspace (+ `sidebar` and `rail` swap layouts)
 scripts/       installer, three helpers, testbox.sh, and harness.py with its
                e2e/ scenarios
@@ -359,6 +366,15 @@ rechecked against 0.45.1's source when the plugin moved to it, and the ones
   every id as one malformed argument, and `cat dir/*.state dir/rows` with no
   state files aborted on the glob and lost the rows. Measured over ssh into
   `scripts/testbox.sh`, whose login shell is zsh for that reason.
+- **A CLI pipe reaches each plugin once per attached client, and only
+  `ReadCliPipes` may answer it.** A pipe naming no plugin goes to every
+  (plugin, client) pair (`pipe_to_all_plugins`), so with two clients attached
+  the sidebar hears it twice - which is why the agent API claims a request with
+  a `mkdir` before acting. Writing back (`cli_pipe_output`) and
+  `unblock_cli_pipe_input` need `ReadCliPipes`, which this plugin does not ask
+  for; the unblock sat in `pipe()` refused, logged on every pipe.
+  Zellij releases the pipe on its own once every plugin has returned
+  (`PendingPipes`), so answers go in a file instead.
 - **`zellij pipe` without a payload reads stdin, and can stay blocked.** Feed it
   `</dev/null`. Even then, on 0.45.1 a broadcast pipe stayed blocked twice in one
   session (five minutes, then until killed) and could not be made to again; the

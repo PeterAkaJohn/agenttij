@@ -124,7 +124,10 @@ crates/core    agenttij-core — zero dependencies, 100% unit-testable:
                sorting, config parsing, age formatting
 crates/plugin  agenttij — the wasm binary: lifecycle, event wiring, rendering,
                navigation. Adapts SessionInfo into core's neutral types
+crates/cli     agenttij-cli - the `agenttij` command agents run, and its MCP
+               server; serde_json is allowed here and only here
 hooks/         the shell hook the agent runs
+plugins/       the Claude Code plugin: the MCP server and a skill
 layouts/       left and right sidebar layouts
 scripts/       installer
 ```
@@ -163,6 +166,25 @@ A status board you cannot trust is worse than none, so every tick reconciles
 against `SessionUpdate` and drops agents whose session or pane no longer
 exists. This is what covers `kill -9`, a closed pane, and a dead session —
 cases where no hook ever fires.
+
+### Agents asking for panes
+
+An agent asks the sidebar for panes and groups with `agenttij`, which sends a `zellij pipe` named `agenttij.<verb>` carrying the caller's pane, a request id and the arguments (`api.rs`).
+
+- **Answered in a file, not on the pipe.**
+  Writing to a CLI pipe (`cli_pipe_output`) needs `ReadCliPipes`, and a new permission is the costly kind: a session still running an older build rewrites the grant without it, and the next sidebar sits on a prompt nobody can see.
+  So the sidebar writes `/tmp/agenttij/api/<id>/reply`, whole, through `run_command`, which it already may; the command polls for it and removes the directory.
+- **Claimed before it is acted on.**
+  A pipe naming no plugin reaches every plugin once per attached client, because each client runs its own instance (`pipe_to_all_plugins`).
+  Two clients would open two panes.
+  The instances that keep rows race to `mkdir` the reply directory, and only the one that made it acts.
+- **No payload, stdin `/dev/null`.**
+  With both, `zellij pipe` sends one message and returns; with a payload it waits for the pipe to be released and then sends a second, empty message on its way out.
+- **Parked unless asked.**
+  A pane an agent opens comes from `open_command_pane_background`, suppressed from birth, so nothing flashes and focus does not move.
+  `show` puts it on screen the way `Enter` does, with the cursor following.
+  Run through `sh -c`, so a command line keeps its quoting, and renamed after what it runs.
+- **Only the sidebar keeping the rows answers**, as with any CLI pipe: the docked one or a controller, never a palette, a peek or a sidebar summoned with `Alt a`.
 
 ## Milestones
 
