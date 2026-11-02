@@ -300,6 +300,31 @@ impl Groups {
         self.group_of(pane)?.after(pane)
     }
 
+    /// A group of one for a pane no list has named yet, so the next request can
+    /// add to it straight away instead of waiting a second for the list.
+    pub fn start(&mut self, pane: u32) {
+        if self.group_of(pane).is_none() {
+            self.groups.push(Group::new(pane));
+            self.groups.sort_by_key(Group::primary);
+            self.unseen.push((pane, GRACE_NEW));
+        }
+    }
+
+    /// Adds `pane` to the group holding `beside` without putting it on screen:
+    /// what an agent opens is parked behind what you are looking at, and the
+    /// member on screen - and the one `'` flips back to - stay what they were.
+    /// `false` when no group holds `beside`.
+    pub fn add_parked(&mut self, beside: u32, pane: u32) -> bool {
+        let Some(group) = self.groups.iter_mut().find(|group| group.holds(beside)) else {
+            return false;
+        };
+        if !group.holds(pane) {
+            group.members.push(pane);
+        }
+        self.unseen.push((pane, GRACE_NEW));
+        true
+    }
+
     /// Records which member of a group is on screen.
     pub fn show(&mut self, pane: u32) {
         if let Some(group) = self.groups.iter_mut().find(|group| group.holds(pane)) {
@@ -730,5 +755,38 @@ mod tests {
             first.rows().collect::<Vec<_>>(),
             second.rows().collect::<Vec<_>>()
         );
+    }
+
+    #[test]
+    fn a_parked_pane_joins_without_taking_the_screen() {
+        let mut groups = Groups::default();
+        groups.add(1, 2);
+        groups.show(1);
+        assert!(groups.add_parked(1, 3));
+        assert_eq!(groups.members_of(1), [1, 2, 3]);
+        assert_eq!(groups.current_of(1), Some(1), "still the one on screen");
+        assert_eq!(
+            groups.flip_of(1),
+            Some(2),
+            "and still flips to the one before"
+        );
+        assert!(!groups.add_parked(9, 4), "no group to join");
+    }
+
+    #[test]
+    fn a_group_started_before_any_list_survives_until_one_names_it() {
+        let mut groups = Groups::default();
+        groups.reconcile(&[0]);
+        groups.start(5);
+        assert!(groups.add_parked(5, 6), "joinable at once");
+        groups.reconcile(&[0]);
+        assert_eq!(
+            groups.members_of(5),
+            [5, 6],
+            "not reaped by a list from before"
+        );
+        groups.reconcile(&[0, 5, 6]);
+        assert_eq!(groups.members_of(5), [5, 6]);
+        assert_eq!(groups.members_of(0), [0]);
     }
 }

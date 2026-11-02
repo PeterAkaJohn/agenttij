@@ -3,8 +3,11 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use agenttij_core::{
-    agent, config::Scope, format, order, panes, project, reading, scan, Agent, Config, Group,
-    Groups, Kind, PaneSnapshot, Status,
+    agent,
+    api::{self, Call, Request},
+    config::Scope,
+    format, order, panes, project, reading, scan, Agent, Config, Group, Groups, Kind, PaneSnapshot,
+    Status,
 };
 use zellij_tile::prelude::*;
 
@@ -301,6 +304,12 @@ pub struct Sidebar {
     /// cursor sticks to an agent while the list re-sorts underneath it.
     selected: Option<Selection>,
     permissions: Permissions,
+    /// Requests from the agent API waiting on a claim, or on git for a
+    /// worktree, by id.
+    calls: BTreeMap<String, Call>,
+    /// This session's rows and the project each is in, before folding hides
+    /// some of them: what `agenttij list` reports.
+    rows_here: Vec<(String, Agent)>,
 }
 
 impl ZellijPlugin for Sidebar {
@@ -359,6 +368,7 @@ impl ZellijPlugin for Sidebar {
             }
             Event::RunCommandResult(exit, stdout, stderr, context) => {
                 let asked = context.get(scan::CONTEXT_KEY).map(String::as_str);
+                let call = context.get(api::CONTEXT_ID).cloned();
                 if asked == Some(scan::CONTEXT_WORKTREE)
                     || asked == Some(scan::CONTEXT_WORKTREE_GONE)
                 {
@@ -367,7 +377,19 @@ impl ZellijPlugin for Sidebar {
                         exit,
                         &stdout,
                         &stderr,
+                        call,
                     );
+                }
+                if asked == Some(api::CONTEXT_CLAIM) {
+                    if let Some(call) = call.and_then(|id| self.calls.remove(&id)) {
+                        if exit == Some(0) {
+                            return self.act_on(call);
+                        }
+                    }
+                    return false;
+                }
+                if asked == Some(api::CONTEXT_ANSWER) {
+                    return false;
                 }
                 if context.get(scan::CONTEXT_KEY).map(String::as_str) == Some(scan::CONTEXT_HOST) {
                     let host = context.get(scan::CONTEXT_PANE).cloned().unwrap_or_default();
@@ -524,6 +546,10 @@ impl ZellijPlugin for Sidebar {
     /// an agent and want the editor beside it, without going through the sidebar
     /// first.
     fn pipe(&mut self, message: PipeMessage) -> bool {
+        if let Some(call) = Request::from_pipe(&message.name, &message.args) {
+            self.claim(call);
+            return false;
+        }
         // No `unblock_cli_pipe_input` here: it needs `ReadCliPipes`, which this
         // plugin does not ask for, and Zellij releases a CLI pipe by itself once
         // every plugin that heard it has returned (`PendingPipes`, `pipes.rs`).
@@ -1096,8 +1122,12 @@ impl Sidebar {
         // act on.
         self.projects.clear();
         self.project_roots.clear();
+        self.rows_here.clear();
         for row in agents.iter().filter(|row| row.kind == Kind::Row) {
             let key = project::key(row, &self.arrangement.names).to_owned();
+            if row.session == self.current_session && row.host.is_empty() {
+                self.rows_here.push((key.clone(), row.clone()));
+            }
             self.project_roots
                 .entry(key.clone())
                 .or_default()
@@ -2892,18 +2922,23 @@ impl Sidebar {
     /// two agents on one repository stop writing over each other's files. The
     /// row opens once git has made it (`worktree_answered`).
     fn worktree(&mut self, agent: &Agent) {
-        let Some(dir) = self.workdir(agent) else {
-            return;
-        };
-        let command = scan::worktree_command(&dir);
+        if let Some(dir) = self.workdir(agent) {
+            self.worktree_at(&dir, None);
+        }
+    }
+
+    /// `call` is the agent API's request this is for, answered once git is.
+    fn worktree_at(&mut self, dir: &str, call: Option<&str>) {
+        let command = scan::worktree_command(dir);
         let words: Vec<&str> = command.iter().map(String::as_str).collect();
-        run_command(
-            &words,
-            BTreeMap::from([(
-                scan::CONTEXT_KEY.to_owned(),
-                scan::CONTEXT_WORKTREE.to_owned(),
-            )]),
-        );
+        let mut context = BTreeMap::from([(
+            scan::CONTEXT_KEY.to_owned(),
+            scan::CONTEXT_WORKTREE.to_owned(),
+        )]);
+        if let Some(call) = call {
+            context.insert(api::CONTEXT_ID.to_owned(), call.to_owned());
+        }
+        run_command(&words, context);
     }
 
     /// What git said about a worktree: made, so the row opens in it; or not, or
@@ -2915,6 +2950,7 @@ impl Sidebar {
         exit: Option<i32>,
         stdout: &[u8],
         stderr: &[u8],
+        call: Option<String>,
     ) -> bool {
         let reason = String::from_utf8_lossy(stderr)
             .lines()
@@ -2922,6 +2958,18 @@ impl Sidebar {
             .unwrap_or_default()
             .trim()
             .to_owned();
+        if let Some(call) = call.and_then(|id| self.calls.remove(&id)) {
+            let answer = match (exit == Some(0), &call.request) {
+                (true, Ok(Request::NewGroup { run, show, .. })) => {
+                    let path = String::from_utf8_lossy(stdout).trim().to_owned();
+                    self.new_group(&path, run.as_deref(), *show)
+                }
+                (false, _) if reason.is_empty() => api::error("no worktree made"),
+                _ => api::error(&reason),
+            };
+            self.write_answer(&call.id, &answer);
+            return true;
+        }
         match (made, exit == Some(0)) {
             (true, true) => {
                 let path = String::from_utf8_lossy(stdout).trim().to_owned();
@@ -2967,6 +3015,179 @@ impl Sidebar {
                 )]),
             );
         }
+    }
+
+    /// Takes a request from the agent API, if this instance keeps the rows:
+    /// the same one a CLI pipe of the sidebar's own reaches. It is heard once
+    /// per attached client, so the instances race for it (`api::claim_command`)
+    /// and only the winner acts.
+    fn claim(&mut self, call: Call) {
+        let keeps_rows = self.config.remote || (self.manages_rows() && !self.floating);
+        if !keeps_rows {
+            return;
+        }
+        let command = api::claim_command(&call.id);
+        let words: Vec<&str> = command.iter().map(String::as_str).collect();
+        run_command(
+            &words,
+            BTreeMap::from([
+                (scan::CONTEXT_KEY.to_owned(), api::CONTEXT_CLAIM.to_owned()),
+                (api::CONTEXT_ID.to_owned(), call.id.clone()),
+            ]),
+        );
+        self.calls.insert(call.id.clone(), call);
+    }
+
+    /// Does what a claimed request asks and answers it, unless git has to make
+    /// a worktree first: then `worktree_answered` does.
+    fn act_on(&mut self, call: Call) -> bool {
+        let request = match &call.request {
+            Ok(request) => request.clone(),
+            Err(why) => {
+                self.write_answer(&call.id, &api::error(why));
+                return false;
+            }
+        };
+        if !self.config.solo && request != Request::List {
+            let why = "this sidebar's layout does not group panes (solo is off)";
+            self.write_answer(&call.id, &api::error(why));
+            return false;
+        }
+        let answer = match request {
+            Request::List => api::listing(&self.group_views()),
+            Request::NewGroup {
+                cwd,
+                run,
+                worktree,
+                show,
+            } => {
+                let cwd = cwd.unwrap_or_else(|| actions::cwd_of(call.caller));
+                if worktree {
+                    self.worktree_at(&cwd, Some(&call.id));
+                    self.calls.insert(call.id.clone(), call);
+                    return false;
+                }
+                self.new_group(&cwd, run.as_deref(), show)
+            }
+            Request::AddPane {
+                group,
+                cwd,
+                run,
+                show,
+            } => self.add_pane(call.caller, group, cwd, run.as_deref(), show),
+            Request::Show { pane } => {
+                if self.groups.group_of(pane).is_some() {
+                    self.show_pane(pane);
+                    api::ok()
+                } else {
+                    api::error(&format!("no pane {pane} in this session"))
+                }
+            }
+        };
+        self.write_answer(&call.id, &answer);
+        true
+    }
+
+    fn write_answer(&self, id: &str, answer: &str) {
+        let command = api::answer_command(id, answer);
+        let words: Vec<&str> = command.iter().map(String::as_str).collect();
+        run_command(
+            &words,
+            BTreeMap::from([(scan::CONTEXT_KEY.to_owned(), api::CONTEXT_ANSWER.to_owned())]),
+        );
+    }
+
+    /// A group like the ones `n` opens - the layout's template, its first pane
+    /// running `run` if given - but parked unless `show`: an agent opening a
+    /// group does not get to take the screen from whoever is looking at it.
+    fn new_group(&mut self, cwd: &str, run: Option<&str>, show: bool) -> String {
+        let mut template = self.config.group.clone();
+        if let Some(run) = run {
+            match template.first_mut() {
+                Some(first) => *first = run.to_owned(),
+                None => template.push(run.to_owned()),
+            }
+        }
+        let command = |at: usize| {
+            template
+                .get(at)
+                .map(String::as_str)
+                .filter(|c| !c.is_empty())
+        };
+        let Some(head) = actions::open_background(command(0), cwd) else {
+            return api::error("Zellij opened no pane");
+        };
+        self.groups.start(head);
+        for at in 1..template.len() {
+            if let Some(pane) = actions::open_background(command(at), cwd) {
+                self.groups.add_parked(head, pane);
+            }
+        }
+        if show {
+            self.show_pane(head);
+            self.selected = Some(Selection::Row {
+                session: self.current_session.clone(),
+                pane: head,
+            });
+        }
+        api::opened(head, head)
+    }
+
+    /// One more pane in a group: the caller's own unless it names another.
+    fn add_pane(
+        &mut self,
+        caller: Option<u32>,
+        group: Option<u32>,
+        cwd: Option<String>,
+        run: Option<&str>,
+        show: bool,
+    ) -> String {
+        let head = match group {
+            Some(group) => match self.groups.group_of(group) {
+                Some(found) => found.primary(),
+                None => return api::error(&format!("no group {group} in this session")),
+            },
+            None => match caller.and_then(|caller| self.groups.group_of(caller)) {
+                Some(found) => found.primary(),
+                None => return api::error("not called from a pane in a group: name one"),
+            },
+        };
+        // Where the caller is when it is adding to its own group; where the
+        // group is otherwise.
+        let cwd = cwd
+            .unwrap_or_else(|| actions::cwd_of(if group.is_some() { Some(head) } else { caller }));
+        let Some(pane) = actions::open_background(run, &cwd) else {
+            return api::error("Zellij opened no pane");
+        };
+        self.groups.add_parked(head, pane);
+        if show {
+            self.show_pane(pane);
+        }
+        api::opened(pane, head)
+    }
+
+    /// This session's groups as `agenttij list` reports them.
+    fn group_views(&self) -> Vec<api::GroupView> {
+        let on_screen = self.row_in(self.slot());
+        self.rows_here
+            .iter()
+            .map(|(project, row)| {
+                let members = self.groups.members_of(row.pane);
+                api::GroupView {
+                    project: project.clone(),
+                    group: row.pane,
+                    status: api::status_word(row.status),
+                    cwd: row.cwd.clone(),
+                    panes: if members.is_empty() {
+                        vec![row.pane]
+                    } else {
+                        members.to_vec()
+                    },
+                    current: self.groups.current_of(row.pane).unwrap_or(row.pane),
+                    on_screen: on_screen == Some(row.pane),
+                }
+            })
+            .collect()
     }
 
     fn say(&mut self, text: &str) {

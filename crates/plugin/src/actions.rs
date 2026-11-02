@@ -277,6 +277,36 @@ pub fn show_in_slot(target: u32, slot: Option<u32>) {
     }
 }
 
+/// Opens a pane parked from the start, in `cwd`, running `run` or a shell.
+///
+/// Zellij's background command pane is created suppressed, so nothing flashes
+/// on screen and focus stays where it was - which is what an agent asking for a
+/// pane gets unless it asks to see it. Through `sh -c`, so `run` is a command
+/// line with its arguments, quotes and all. Renamed after what it runs, or its
+/// title would be the `sh -c` wrapper.
+pub fn open_background(run: Option<&str>, cwd: &str) -> Option<u32> {
+    let script = run.map_or_else(|| r#"exec "${SHELL:-sh}""#.to_owned(), str::to_owned);
+    let command = CommandToRun {
+        path: PathBuf::from("sh"),
+        args: vec!["-c".to_owned(), script],
+        cwd: Some(PathBuf::from(cwd)),
+    };
+    let Some(PaneId::Terminal(pane)) = open_command_pane_background(command, BTreeMap::new())
+    else {
+        return None;
+    };
+    rename_pane_with_id(PaneId::Terminal(pane), run.unwrap_or("shell"));
+    Some(pane)
+}
+
+/// The directory a pane is in, or where this plugin started.
+pub fn cwd_of(pane: Option<u32>) -> String {
+    pane.and_then(|pane| get_pane_cwd(PaneId::Terminal(pane)).ok())
+        .unwrap_or_else(own_cwd)
+        .to_string_lossy()
+        .into_owned()
+}
+
 fn own_cwd() -> PathBuf {
     get_plugin_ids().initial_cwd
 }
