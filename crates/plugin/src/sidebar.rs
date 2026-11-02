@@ -524,13 +524,12 @@ impl ZellijPlugin for Sidebar {
     /// an agent and want the editor beside it, without going through the sidebar
     /// first.
     fn pipe(&mut self, message: PipeMessage) -> bool {
-        // A CLI pipe blocks whoever sent it until a plugin says it is finished,
-        // and ours arrive from an ssh on the other end of a keypress: without
-        // this, every remote `Alt m` left a `zellij pipe` waiting on that machine
-        // and an ssh waiting here. There is no non-blocking flag to ask for
-        // instead — the unblocking is the receiver's job.
-        if let PipeSource::Cli(pipe) = &message.source {
-            unblock_cli_pipe_input(pipe);
+        // No `unblock_cli_pipe_input` here: it needs `ReadCliPipes`, which this
+        // plugin does not ask for, and Zellij releases a CLI pipe by itself once
+        // every plugin that heard it has returned (`PendingPipes`, `pipes.rs`).
+        // The call sat here refused, logged on every pipe, while what really
+        // kept a remote `zellij pipe` waiting was its stdin (`</dev/null`).
+        if let PipeSource::Cli(_) = &message.source {
             // A pipe from the command line names no plugin, so every instance
             // of this one in the session hears it - a sidebar summoned with
             // `Alt a`, a palette, a peek - and each used to act on it: a remote
