@@ -1,8 +1,10 @@
-// Every group the same shape: an agent, an editor behind it, a shell behind that.
+// Every group the same shape, and every agent on the machine in the list:
+// `agenttij-template` without `scope "session"`, so other sessions' agents show
+// too, marked `⇢`, and `Enter` on one switches session.
 //
-//   zellij -n agenttij-template
+//   zellij -n agenttij-machine
 //
-// This is `agenttij-workspace` with one line added — `group` — which says what
+// Like the template, this is `agenttij-workspace` with one line added - `group` - which says what
 // panes a group is made of. `n` in the sidebar (or `Alt g` from anywhere) then
 // opens all of them at once instead of one: the first entry on screen, the rest
 // parked behind it, `v` to cycle. `;` separates panes and words are split on
