@@ -443,13 +443,18 @@ rechecked against 0.45.1's source when the plugin moved to it, and the ones
   `get_pane_cwd` / `get_pane_running_command` for every group on every rebuild made
   navigation lag, because rebuilds burst exactly when you are moving around.
   Cache per pane and refresh on a slow tick.
-- **The tick is the whole cost.** Idling beside a group of eight panes the sidebar
-  burns about 24ms of CPU a second; with the timer off, 1ms. Reconciling,
-  sorting and drawing are noise next to forking the scan and carrying its output
-  back through the host, so anything that wants to be cheaper has to happen less
-  often, not faster. `SessionUpdate` arrives every second whether or not a pane
+- **The tick is the whole cost.** Idling beside five groups of three the sidebar
+  cost 12ms of CPU a second, server and scan together; the scan alone is 5ms of
+  what is left. It was five processes a tick (`date` and three `cat`s, 4.7ms
+  against 2.0 now), and is one `exec cat` with the clock read in the plugin.
+  Rebuilding is not noise inside wasmi either, so an unchanged scan skips it -
+  and everything else a rebuild reads must say so when it changes (`last_scan`):
+  skipping it outright left an agent with no hook unnoticed for longer than it
+  worked, because a pane's program was only re-asked on a rebuild. Measure with
+  `/proc/<server>/stat` over a minute, children included; a single run moves by
+  a millisecond. `SessionUpdate` arrives every second whether or not a pane
   moved, and rebuilding and redrawing on all of them doubled the bill for
-  nothing — compare the pane list and return early.
+  nothing - compare the pane list and return early.
 - **A path a plugin hands Zellij is read in the plugin's filesystem, not
   yours.** `translate_plugin_path` (`plugins/zellij_exports.rs`) rewrites
   anything starting with `/tmp`, `/host`, `/data` or `/cache` — so opening a pane

@@ -35,6 +35,21 @@ const SESSION_TICKS: u8 = 5;
 /// see `agenttij_core::scan` for why we shell out at all.
 const TICK_SECONDS: f64 = 1.0;
 
+/// How many scans in a row that read the same bytes skip the rebuild.
+/// Rebuilding and redrawing on every scan was most of what an idle sidebar cost
+/// the server (1.7ms of 6 a second, measured with five groups of three), and the
+/// same files change nothing it shows but the ages. Whatever else changes an
+/// input of the rebuild without rebuilding clears `last_scan`; this is the
+/// backstop for anything that does not.
+const REBUILD_TICKS: u8 = 5;
+
+/// The host's clock, through WASI: no fork, and the clock the hook writes with.
+fn unix_now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |since| since.as_secs())
+}
+
 /// How long a picked directory stays worth acting on. Long enough for the scan
 /// that carries it (a second), short enough that a request nobody answered —
 /// no sidebar in that session, or one that was not running yet — cannot open a
@@ -282,6 +297,11 @@ pub struct Sidebar {
     current_session: String,
     /// Host clock from the last scan.
     now: u64,
+    /// What the last scan read, while nothing else has changed what a rebuild
+    /// would make of it: anything that does without rebuilding clears it.
+    last_scan: Option<Vec<u8>>,
+    /// Scans in a row that matched it and skipped the rebuild.
+    unchanged: u8,
     /// When each row was last on screen with someone looking, by session and
     /// primary pane: what tells finished work you have read from work you have
     /// not. Every sidebar's looks, from the files the scan reads.
@@ -362,8 +382,11 @@ impl ZellijPlugin for Sidebar {
     fn update(&mut self, event: Event) -> bool {
         match event {
             Event::Timer(_) => {
+                // A notice that has run out has to leave the screen even when
+                // no scan changes anything.
+                let said = self.said.is_some();
                 self.tick();
-                false
+                said && self.said.is_none()
             }
             Event::Visible(false) if self.config.peek.is_some() || self.config.help => {
                 close_self();
@@ -408,7 +431,12 @@ impl ZellijPlugin for Sidebar {
                 let panes = snapshot::panes(&sessions);
                 let moved = panes != self.panes;
                 // Before the early return below: attaching moves no pane.
-                self.watched = snapshot::watched(&sessions, self.plugin_id);
+                let watched = snapshot::watched(&sessions, self.plugin_id);
+                // Someone looking marks the group on screen read, on a rebuild.
+                if watched != self.watched {
+                    self.last_scan = None;
+                }
+                self.watched = watched;
                 self.floating = snapshot::floating(&sessions, self.plugin_id);
                 let shared = snapshot::shared(&sessions);
                 let sharing_moved = shared != self.shared;
@@ -734,7 +762,9 @@ impl Sidebar {
 
         // One pane per tick rather than everything at once: the answers go stale
         // slowly (a `cd`, a program starting), and a burst of round-trips is
-        // exactly what makes a keypress wait.
+        // exactly what makes a keypress wait. Asked again in place rather than
+        // dropped for the next rebuild to ask: rebuilds skip unchanged scans, and
+        // an agent with no hook went unnoticed for longer than it worked.
         let known: BTreeSet<u32> = self
             .cwds
             .keys()
@@ -746,9 +776,9 @@ impl Sidebar {
         if !known.is_empty() {
             self.refresh_next = (self.refresh_next + 1) % known.len();
             let pane = known[self.refresh_next];
-            self.cwds.remove(&pane);
-            self.programs.remove(&pane);
-            self.running.remove(&pane);
+            if self.ask_again(pane) {
+                self.last_scan = None;
+            }
         }
 
         // Not while the grant is pending either: a command issued then is
@@ -781,11 +811,15 @@ impl Sidebar {
         if self.sessions_in == 0 {
             self.sessions_in = SESSION_TICKS;
             if let Ok(sessions) = get_session_list() {
-                self.live_sessions = sessions
+                let live: Vec<String> = sessions
                     .live_sessions
                     .iter()
                     .map(|session| session.name.clone())
                     .collect();
+                if live != self.live_sessions {
+                    self.last_scan = None;
+                }
+                self.live_sessions = live;
                 // Only the palette offers these, and only it pays for keeping
                 // them: a dead session is not something to watch.
                 if self.config.jump {
@@ -938,11 +972,19 @@ impl Sidebar {
         if context.get(scan::CONTEXT_KEY).map(String::as_str) != Some(scan::CONTEXT_SCAN) {
             return false;
         }
-        let Some(result) = scan::parse(stdout) else {
+        // The clock goes in front, where `date` used to put it.
+        let mut stamped = format!("{}\n", unix_now()).into_bytes();
+        stamped.extend_from_slice(stdout);
+        let Some(result) = scan::parse(&stamped) else {
             return false;
         };
 
-        self.now = result.now;
+        let was = std::mem::replace(&mut self.now, result.now);
+        let same = self.last_scan.as_deref() == Some(stdout);
+        if !same {
+            self.last_scan = Some(stdout.to_vec());
+        }
+        let answered = self.answered.clone();
         self.previous_session = result.from.filter(|from| *from != self.current_session);
         // The later of the two: a look written a moment ago can be missing from
         // a scan that started before it landed, and must not come back unread.
@@ -994,7 +1036,13 @@ impl Sidebar {
             actions::clear_row_request();
             self.start_row(Some(&opening.path));
         }
-        self.rebuild();
+        let rebuilt = !same || self.answered != answered || self.unchanged >= REBUILD_TICKS;
+        if rebuilt {
+            self.unchanged = 0;
+            self.rebuild();
+        } else {
+            self.unchanged += 1;
+        }
 
         // Only agents that *became* blocked, so a waiting agent is announced
         // once rather than every second.
@@ -1008,7 +1056,10 @@ impl Sidebar {
         for agent in &finished {
             self.notify_finished(agent);
         }
-        true
+        rebuilt
+            || self.agents.iter().any(|agent| {
+                format::age(was, agent.reported_at) != format::age(self.now, agent.reported_at)
+            })
     }
 
     /// Rebuilds the visible list from the last scan and the current panes.
@@ -2098,6 +2149,41 @@ impl Sidebar {
             }
         }
         found
+    }
+
+    /// Asks the host again what a pane runs and where, for whichever of the
+    /// caches hold it, and says whether any answer changed. A pane that is gone
+    /// leaves them.
+    fn ask_again(&mut self, pane: u32) -> bool {
+        let here =
+            |known: &PaneSnapshot| known.session == self.current_session && known.pane == pane;
+        if !self.panes.iter().any(here) {
+            self.cwds.remove(&pane);
+            self.programs.remove(&pane);
+            self.running.remove(&pane);
+            return false;
+        }
+        let mut moved = false;
+        if self.running.contains_key(&pane) || self.programs.contains_key(&pane) {
+            let command = get_pane_running_command(PaneId::Terminal(pane)).unwrap_or_default();
+            if let Some(program) = self.programs.get_mut(&pane) {
+                let name = panes::program_name(&command, "");
+                moved |= *program != name;
+                *program = name;
+            }
+            if let Some(running) = self.running.get_mut(&pane) {
+                moved |= *running != command;
+                *running = command;
+            }
+        }
+        if let Some(cwd) = self.cwds.get_mut(&pane) {
+            let now = get_pane_cwd(PaneId::Terminal(pane))
+                .map(|cwd| cwd.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            moved |= *cwd != now;
+            *cwd = now;
+        }
+        moved
     }
 
     /// Reads one unhooked agent's screen every other tick, each in turn: one

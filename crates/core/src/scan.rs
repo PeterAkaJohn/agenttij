@@ -16,7 +16,7 @@ use std::collections::BTreeMap;
 /// `plugins/agenttij/hooks/agenttij-state.sh` (see `scan_script_uses_the_state_dir`).
 pub const STATE_DIR: &str = "/tmp/agenttij";
 
-/// Prints the current unix time, then one state line per tracked pane.
+/// Prints one state line per tracked pane, and the requests beside them.
 ///
 /// It no longer lists sessions. That used to fork a `zellij` client which dialled
 /// every session's socket — 12ms against 4ms for the rest of the script — and
@@ -26,13 +26,14 @@ pub const STATE_DIR: &str = "/tmp/agenttij";
 /// `session_serialization false`, while `get_session_list` scans the socket
 /// directory (`scan_session_list_default_dirs`) exactly as the CLI does.
 ///
-/// Trailing `true` keeps the exit code clean when the glob matches nothing,
-/// which is the normal case with no agents running — and is also why the
-/// directory is not created here: the hook makes it when it has something to
-/// write, and a `mkdir` per tick is a fork per tick for nothing.
-const SCAN_SCRIPT: &str = "date +%s; cat /tmp/agenttij/from 2>/dev/null; \
-     cat /tmp/agenttij/open-at 2>/dev/null; \
-     cat /tmp/agenttij/*.state /tmp/agenttij/*.seen 2>/dev/null; true";
+/// One `cat` for everything, `exec`ed in place of the shell: every line says
+/// what it is, so nothing needs the files apart, and the clock is the plugin's
+/// own. It was a `date` and three `cat`s, five processes a second: 4.7ms of CPU
+/// a tick against 2.0 now, with bash as `sh` (measured, 300 runs each).
+/// The directory is not created here: the hook makes it when it has something
+/// to write, and a `mkdir` per tick is a fork per tick for nothing.
+const SCAN_SCRIPT: &str = "exec cat /tmp/agenttij/from /tmp/agenttij/open-at \
+     /tmp/agenttij/*.state /tmp/agenttij/*.seen 2>/dev/null";
 
 /// Marks the session you jumped away from, in the scan output.
 const FROM_PREFIX: &str = "from=";
@@ -793,8 +794,7 @@ pub fn write_order_command(text: &str) -> [String; 4] {
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct Scan {
-    /// Host clock, read in the same breath as the state files so ages are
-    /// measured against the same clock that wrote them.
+    /// Host clock: the plugin's own, which is the clock the hook writes with.
     pub now: u64,
     pub agents: Vec<Agent>,
     /// The session someone jumped away from, if anyone has.
@@ -961,6 +961,8 @@ mod tests {
         // The session list is a host call now; forking a client for it cost
         // three times the rest of the script.
         assert!(!command()[2].contains("list-sessions"));
+        // One process a tick: the shell becomes the `cat`, and there is no `date`.
+        assert!(SCAN_SCRIPT.starts_with("exec cat ") && !SCAN_SCRIPT.contains(';'));
     }
 
     #[test]
