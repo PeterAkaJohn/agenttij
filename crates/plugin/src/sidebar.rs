@@ -27,9 +27,13 @@ const INTERRUPT: u8 = 0x03;
 const HOST_TICKS: u8 = 5;
 const HOST_BACKOFF: u8 = 60;
 
-/// How many ticks between session lists. Sessions come and go far more slowly
-/// than agent state, and asking is a round-trip that walks the socket directory.
-const SESSION_TICKS: u8 = 5;
+/// How many ticks between session lists when nothing says the sessions changed.
+/// Asking dials every live session's socket (`assert_socket`, zellij-utils), and
+/// cost 0.9ms of CPU a second at one every five ticks with a single session up.
+/// So it is asked when the sessions `SessionUpdate` names change, or when a scan
+/// that changed names a session not known to be alive - and this rarely for the
+/// rest: with `session_serialization false` Zellij reports no other session.
+const SESSION_TICKS: u8 = 30;
 
 /// How often the state files are re-read. A `sh` fork at this rate is noise;
 /// see `agenttij_core::scan` for why we shell out at all.
@@ -202,6 +206,8 @@ pub struct Sidebar {
     refresh_next: usize,
     /// Ticks until the session list is re-read.
     sessions_in: u8,
+    /// The sessions the last `SessionUpdate` named, to ask again when they move.
+    session_names: Vec<String>,
     /// The tab we live in, from the manifest rather than a host call.
     tab: Option<usize>,
     /// The pane we last put on screen, and how many pane lists may still
@@ -428,6 +434,14 @@ impl ZellijPlugin for Sidebar {
                 // An identical pane list means there is nothing new to draw, and
                 // redrawing anyway cost a second full render every second,
                 // forever. The scan tick keeps ages fresh.
+                let names: Vec<String> = sessions
+                    .iter()
+                    .map(|session| session.name.clone())
+                    .collect();
+                if names != self.session_names {
+                    self.session_names = names;
+                    self.sessions_in = 0;
+                }
                 let panes = snapshot::panes(&sessions);
                 let moved = panes != self.panes;
                 // Before the early return below: attaching moves no pane.
@@ -983,6 +997,13 @@ impl Sidebar {
         let same = self.last_scan.as_deref() == Some(stdout);
         if !same {
             self.last_scan = Some(stdout.to_vec());
+            let stranger = result
+                .agents
+                .iter()
+                .any(|agent| agent.host.is_empty() && !self.live_sessions.contains(&agent.session));
+            if stranger {
+                self.sessions_in = 0;
+            }
         }
         let answered = self.answered.clone();
         self.previous_session = result.from.filter(|from| *from != self.current_session);

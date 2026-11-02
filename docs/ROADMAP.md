@@ -12,7 +12,7 @@ Measured, not assumed, and every idea below is bent around them.
 - **Panes belong to the session that owns them.**
   Nothing in the plugin API moves or renders a pane across sessions, so any feature phrased as "share a pane with another session" has to become something else.
 - **The tick is the whole cost.**
-  Idling beside five groups of three the sidebar costs about 9ms of CPU a second, and the scan is 5ms of it.
+  Idling beside five groups of three the sidebar costs about 8ms of CPU a second, and the scan is 5ms of it.
   Anything that adds a poll adds the same again, which is why what the hook can count once - a project, what an agent changed - is counted there.
 - **Filesystem events cannot help.**
   `watch_filesystem` starts one watcher per session rooted at the session's cwd, so it can never watch `/tmp/agenttij`.

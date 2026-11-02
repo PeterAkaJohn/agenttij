@@ -445,14 +445,16 @@ rechecked against 0.45.1's source when the plugin moved to it, and the ones
   Cache per pane and refresh on a slow tick.
 - **The tick is the whole cost.** Idling beside five groups of three the sidebar
   cost 12ms of CPU a second, server and scan together; the scan alone is 5ms of
-  what is left. It was five processes a tick (`date` and three `cat`s, 4.7ms
+  the 8 left. It was five processes a tick (`date` and three `cat`s, 4.7ms
   against 2.0 now), and is one `exec cat` with the clock read in the plugin.
   Rebuilding is not noise inside wasmi either, so an unchanged scan skips it -
   and everything else a rebuild reads must say so when it changes (`last_scan`):
   skipping it outright left an agent with no hook unnoticed for longer than it
   worked, because a pane's program was only re-asked on a rebuild. Measure with
   `/proc/<server>/stat` over a minute, children included; a single run moves by
-  a millisecond. `SessionUpdate` arrives every second whether or not a pane
+  a millisecond. `get_session_list` is not cheap either: it dials every live
+  session's socket, so it is asked when the sessions change rather than on a
+  clock. `SessionUpdate` arrives every second whether or not a pane
   moved, and rebuilding and redrawing on all of them doubled the bill for
   nothing - compare the pane list and return early.
 - **A path a plugin hands Zellij is read in the plugin's filesystem, not
