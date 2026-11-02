@@ -83,6 +83,17 @@ register_hooks() {
     python3 "$repo/scripts/register-hooks.py" "$1" "$settings" "$hook_path"
 }
 
+# Whether Claude Code's agenttij plugin is installed for this user. It carries
+# the same hooks, and registering them in settings.json too runs each twice.
+plugin_reports() {
+    command -v claude >/dev/null 2>&1 || return 1
+    claude plugin list --json 2>/dev/null | python3 -c '
+import json, sys
+plugins = json.load(sys.stdin)
+sys.exit(not any(p.get("id", "").startswith("agenttij@") and p.get("scope") == "user"
+                 and p.get("enabled") for p in plugins))' 2>/dev/null
+}
+
 set_permissions() {
     need_python "permissions" || return 0
     mkdir -p "$(dirname "$permissions")"
@@ -178,11 +189,16 @@ done
 
 echo "installing hook -> $hook_path"
 mkdir -p "$hook_dir"
-cp "$repo/hooks/agenttij-state.sh" "$hook_path"
+cp "$repo/plugins/agenttij/hooks/agenttij-state.sh" "$hook_path"
 chmod +x "$hook_path"
 
-echo "registering hooks in $settings"
-register_hooks install
+if plugin_reports; then
+    echo "Claude Code's agenttij plugin reports status: no hooks in $settings"
+    register_hooks uninstall
+else
+    echo "registering hooks in $settings"
+    register_hooks install
+fi
 
 if [ "$want_grant" -eq 1 ]; then
     echo "granting plugin permissions in $permissions"

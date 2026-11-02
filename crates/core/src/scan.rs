@@ -1,4 +1,4 @@
-//! Reading the state files that `hooks/agenttij-state.sh` writes.
+//! Reading the state files that `plugins/agenttij/hooks/agenttij-state.sh` writes.
 //!
 //! State lives in files on the host rather than in plugin memory for two
 //! reasons: a sidebar in a session that started *later* still sees every
@@ -13,7 +13,7 @@ use crate::agent::{Agent, Status};
 use std::collections::BTreeMap;
 
 /// Host directory the hook writes to. Kept in sync with [`SCAN_SCRIPT`] and
-/// `hooks/agenttij-state.sh` (see `scan_script_uses_the_state_dir`).
+/// `plugins/agenttij/hooks/agenttij-state.sh` (see `scan_script_uses_the_state_dir`).
 pub const STATE_DIR: &str = "/tmp/agenttij";
 
 /// Prints the current unix time, then one state line per tracked pane.
@@ -641,7 +641,7 @@ pub const CONTEXT_HOST: &str = "host";
 /// Which pane a project answer is about.
 pub const CONTEXT_PANE: &str = "pane";
 /// Names the project a directory belongs to. Kept in step with
-/// `hooks/agenttij-state.sh` by `the_hook_and_the_plugin_look_for_the_same_file`.
+/// `plugins/agenttij/hooks/agenttij-state.sh` by `the_hook_and_the_plugin_look_for_the_same_file`.
 pub const MARKER: &str = ".agenttij";
 pub const CONTEXT_SCAN: &str = "scan";
 pub const CONTEXT_PEEK: &str = "peek";
@@ -945,7 +945,7 @@ mod tests {
 
     #[test]
     fn the_hook_and_the_plugin_look_for_the_same_file() {
-        let hook = include_str!("../../../hooks/agenttij-state.sh");
+        let hook = include_str!("../../../plugins/agenttij/hooks/agenttij-state.sh");
         assert!(hook.contains(MARKER), "the hook stopped reading {MARKER}");
         assert!(PROJECT_SCRIPT.contains(MARKER));
         assert!(

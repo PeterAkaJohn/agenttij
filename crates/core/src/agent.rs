@@ -29,7 +29,7 @@ pub enum Status {
 }
 
 impl Status {
-    /// Parses the state word written by `hooks/agenttij-state.sh`.
+    /// Parses the state word written by `plugins/agenttij/hooks/agenttij-state.sh`.
     pub fn parse(raw: &str) -> Option<Self> {
         match raw {
             "needs-input" => Some(Self::NeedsInput),

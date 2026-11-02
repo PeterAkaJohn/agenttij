@@ -1,6 +1,6 @@
 {
   "name": "agenttij",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Lets Claude open panes beside its own, and new groups, in the agenttij Zellij sidebar - parked behind what you are looking at unless asked to show them",
   "author": { "name": "PeterAkaJohn" },
   "homepage": "https://github.com/PeterAkaJohn/agenttij",

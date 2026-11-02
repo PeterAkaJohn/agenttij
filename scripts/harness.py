@@ -225,7 +225,7 @@ def report(a):
     """Runs the real hook as an agent in that pane would."""
     hook_env = {k: v for k, v in os.environ.items() if k not in ("PWD", "CLAUDE_PROJECT_DIR")}
     hook_env.update(ZELLIJ_SESSION_NAME=a.session, ZELLIJ_PANE_ID=a.pane.rpartition("_")[2])
-    subprocess.run(["sh", str(REPO / "hooks/agenttij-state.sh"), a.status], env=hook_env,
+    subprocess.run(["sh", str(REPO / "plugins/agenttij/hooks/agenttij-state.sh"), a.status], env=hook_env,
                    cwd=home(a.session) / a.cwd, stdin=subprocess.DEVNULL, check=True)
 
 

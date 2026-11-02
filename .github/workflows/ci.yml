@@ -31,7 +31,8 @@ jobs:
 
       - name: script syntax
         run: |
-          sh -n hooks/agenttij-state.sh
+          sh -n plugins/agenttij/hooks/agenttij-state.sh
+          python3 scripts/register-hooks.py plugin | diff - plugins/agenttij/hooks/hooks.json
           sh -n scripts/install.sh
           sh -n scripts/testbox.sh
           sh -n scripts/check-install.sh

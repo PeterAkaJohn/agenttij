@@ -288,7 +288,7 @@ What an agent opens is **parked**: it runs, it joins the group, and the screen a
 Answers are one line of JSON, `{"ok":false,"error":"..."}` when the sidebar says no, with exit code 1.
 
 The installer puts `agenttij` in `~/.local/bin` (`AGENTTIJ_BIN_DIR` to change it).
-For **Claude Code**, the plugin in this repository adds the MCP tools and a skill saying when to use them:
+For **Claude Code**, the plugin in this repository adds the MCP tools, the skills saying when to use them, and the status hooks, so `install.sh` leaves `~/.claude/settings.json` alone once it is installed (re-run the installer after installing the plugin, or each hook runs twice):
 
 ```
 /plugin install agenttij --marketplace PeterAkaJohn/agenttij
@@ -327,7 +327,8 @@ layout already built, `zellij -n agenttij-template` (see below).
 The installer builds the plugin and drops it in `~/.config/zellij/plugins`,
 puts the `agenttij` command in `~/.local/bin`,
 installs the sidebar layouts, registers the Claude Code hook in
-`~/.claude/settings.json`, binds `Alt a` in your Zellij config, and pre-grants
+`~/.claude/settings.json` (unless Claude Code's agenttij plugin is installed,
+which carries it), binds `Alt a` in your Zellij config, and pre-grants
 the plugin's permissions. Re-run it after updating: a version that asks for a
 permission the old one did not will otherwise wait on a prompt too wide to fit in
 a sidebar. Everything is backed up first, other tools' entries
@@ -649,7 +650,9 @@ runtime. Anything slow is handed over and comes back as an event:
 ```
 crates/core    agenttij-core — zero dependencies, all the decisions, unit-tested
 crates/plugin  agenttij — the wasm plugin: lifecycle, rendering, navigation
-hooks/         the shell hook agents run — tool-agnostic
+crates/cli     agenttij - the command agents run, and its MCP server
+plugins/       the Claude Code plugin: MCP tools, skills, and the shell hook
+               agents run (plugins/agenttij/hooks/, tool-agnostic)
 integrations/  per-tool glue that calls it (an opencode plugin)
 layouts/       left, right, workspace, everything (sidebar + bar), each with
                `sidebar` and `rail` swap layouts

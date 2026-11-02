@@ -126,8 +126,8 @@ crates/plugin  agenttij — the wasm binary: lifecycle, event wiring, rendering,
                navigation. Adapts SessionInfo into core's neutral types
 crates/cli     agenttij-cli - the `agenttij` command agents run, and its MCP
                server; serde_json is allowed here and only here
-hooks/         the shell hook the agent runs
-plugins/       the Claude Code plugin: the MCP server and a skill
+plugins/       the Claude Code plugin: the MCP server, skills, and the
+               shell hook the agent runs (it has to live inside the plugin)
 layouts/       left and right sidebar layouts
 scripts/       installer
 ```

@@ -46,12 +46,16 @@ crates/core    agenttij-core — zero dependencies, all the decisions, unit-test
 crates/plugin  agenttij — wasm: lifecycle, rendering, navigation, peek mode
 crates/cli     agenttij-cli - the `agenttij` command agents run, and
                `agenttij mcp`; serde_json lives here and nowhere else
-hooks/         the shell hook agents run — tool-agnostic: `$1` is the state.
+plugins/       the Claude Code plugin (MCP server, skills, hooks); the
+               marketplace that lists it is .claude-plugin/ at the root.
+               hooks/hooks.json is generated: `register-hooks.py plugin`
+plugins/agenttij/hooks/agenttij-state.sh
+               the shell hook agents run - tool-agnostic: `$1` is the state.
                Also resolves the project (`.agenttij`, git root, cwd), because
-               the sidebar cannot afford that per row per tick
+               the sidebar cannot afford that per row per tick. In the plugin
+               because Claude Code installs a plugin's directory and nothing
+               outside it; the installer copies it out for everyone else
 integrations/  per-tool glue that calls that hook (opencode plugin)
-plugins/       the Claude Code plugin (MCP server + skill); the marketplace
-               that lists it is .claude-plugin/ at the root
 layouts/       left, right, workspace (+ `sidebar` and `rail` swap layouts)
 scripts/       installer, three helpers, testbox.sh, and harness.py with its
                e2e/ scenarios

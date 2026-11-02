@@ -64,6 +64,17 @@ sh "$repo/scripts/install.sh" >"$work/again.out" 2>&1
 check "keybinds written once" '[ "$(grep -c "agenttij:begin" "$config")" = 1 ]'
 check "hooks registered once" '[ "$(grep -c "agenttij-state.sh'"'"' done" "$settings")" = 1 ]'
 
+echo "install with Claude Code's plugin installed"
+mkdir -p "$work/bin"
+cat >"$work/bin/claude" <<'EOF'
+#!/bin/sh
+echo '[{"id":"agenttij@agenttij","scope":"user","enabled":true}]'
+EOF
+chmod +x "$work/bin/claude"
+PATH="$work/bin:$PATH" sh "$repo/scripts/install.sh" >"$work/plugin.out" 2>&1
+check "no hooks of its own: the plugin's run instead" '! grep -q agenttij-state.sh "$settings"'
+check "the hook script, for other tools" '[ -x "$HOME/.claude/hooks/agenttij-state.sh" ]'
+
 echo "uninstall"
 sh "$repo/scripts/install.sh" --uninstall >"$work/uninstall.out" 2>&1
 check "the plugin is gone" '[ ! -e "$plugin" ]'
