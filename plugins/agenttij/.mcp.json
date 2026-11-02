@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "agenttij": {
+      "command": "agenttij",
+      "args": ["mcp"]
+    }
+  }
+}

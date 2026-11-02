@@ -1,0 +1,16 @@
+{
+  "name": "agenttij",
+  "owner": {
+    "name": "PeterAkaJohn"
+  },
+  "metadata": {
+    "description": "agenttij: a Zellij sidebar for coding agents, and the tools for agents to use it"
+  },
+  "plugins": [
+    {
+      "name": "agenttij",
+      "source": "./plugins/agenttij",
+      "description": "Open panes and groups in the agenttij Zellij sidebar from Claude Code"
+    }
+  ]
+}

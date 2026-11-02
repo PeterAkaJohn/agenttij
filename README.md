@@ -270,6 +270,46 @@ minute — a closed laptop should cost one connection attempt a minute, not one 
 second. Its rows disappear while it is away rather than being marked stale,
 because "what is running over there" is a question only it can answer.
 
+## Agents that use the sidebar
+
+An agent can ask the sidebar for panes the way you do with `a` and `n`: a dev server beside it, a log to tail, a second agent in a fresh worktree.
+The sidebar thinks in **projects**, made of **groups** (its rows), made of **panes**, and so does the API.
+
+| Command | MCP tool | |
+|---|---|---|
+| `agenttij list` | `list_groups` | projects, their groups and panes, what is on screen, each group's status |
+| `agenttij pane add [--run CMD] [--cwd DIR] [--group N] [--show]` | `add_pane` | a pane in the caller's group, or group `N` |
+| `agenttij group new [--run CMD] [--cwd DIR] [--worktree] [--show]` | `new_group` | a group from the layout's template, its first pane running `CMD` |
+| `agenttij show PANE` | `show_pane` | puts a pane on screen, as `Enter` would |
+
+What an agent opens is **parked**: it runs, it joins the group, and the screen and the focus stay where they were.
+`--show` puts it on screen, for when you asked to look at it.
+"The caller's group" is the group holding the pane the command runs in (`$ZELLIJ_PANE_ID`), so an agent's server lands next to that agent.
+Answers are one line of JSON, `{"ok":false,"error":"..."}` when the sidebar says no, with exit code 1.
+
+The installer puts `agenttij` in `~/.local/bin` (`AGENTTIJ_BIN_DIR` to change it).
+For **Claude Code**, the plugin in this repository adds the MCP tools and a skill saying when to use them:
+
+```
+/plugin install agenttij --marketplace PeterAkaJohn/agenttij
+```
+
+or from a shell, `claude plugin marketplace add PeterAkaJohn/agenttij` and then `claude plugin install agenttij@agenttij`.
+
+Any other agent that speaks MCP runs the same server, `agenttij mcp` - in Codex's `~/.codex/config.toml`, for one:
+
+```toml
+[mcp_servers.agenttij]
+command = "agenttij"
+args = ["mcp"]
+```
+
+One that does not can run the command: a line in its `AGENTS.md` saying "start long-running processes with `agenttij pane add --run '<command>'`" is enough.
+Outside Zellij the server lists no tools, so it can be configured everywhere.
+
+A request is a `zellij pipe` that only the sidebar keeping the rows acts on, and the answer comes back in a file under `/tmp/agenttij/api/` - see [docs/PLAN.md](docs/PLAN.md) for why not over the pipe.
+It needs the layout's sidebar with `solo` on, which every layout here has; `list` works without it.
+
 ## Install
 
 Needs the `wasm32-wasip1` target and Zellij 0.45+.
@@ -285,6 +325,7 @@ To see everything at once — sidebar, bar, projects, the lot — start with
 layout already built, `zellij -n agenttij-template` (see below).
 
 The installer builds the plugin and drops it in `~/.config/zellij/plugins`,
+puts the `agenttij` command in `~/.local/bin`,
 installs the sidebar layouts, registers the Claude Code hook in
 `~/.claude/settings.json`, binds `Alt a` in your Zellij config, and pre-grants
 the plugin's permissions. Re-run it after updating: a version that asks for a
