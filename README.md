@@ -281,11 +281,19 @@ The sidebar thinks in **projects**, made of **groups** (its rows), made of **pan
 | `agenttij pane add [--run CMD] [--cwd DIR] [--group N] [--show]` | `add_pane` | a pane in the caller's group, or group `N` |
 | `agenttij group new [--run CMD] [--cwd DIR] [--worktree] [--show]` | `new_group` | a group from the layout's template, its first pane running `CMD` |
 | `agenttij show PANE` | `show_pane` | puts a pane on screen, as `Enter` would |
+| `agenttij read PANE [--lines N]` | `read_pane` | what a pane shows, or the last `N` lines of its scrollback |
+| `agenttij pane close PANE` | `close_pane` | closes a pane an agent opened - never one of yours |
+| `agenttij wait GROUP [--timeout S]` | `wait_group` | until the agent in that group is done or waiting on you |
 
 What an agent opens is **parked**: it runs, it joins the group, and the screen and the focus stay where they were.
 `--show` puts it on screen, for when you asked to look at it.
 "The caller's group" is the group holding the pane the command runs in (`$ZELLIJ_PANE_ID`), so an agent's server lands next to that agent.
-Answers are one line of JSON, `{"ok":false,"error":"..."}` when the sidebar says no, with exit code 1.
+Answers are one line of JSON, `{"ok":false,"error":"..."}` when the sidebar says no, with exit code 1; `read` prints the pane's text.
+So an agent can start a dev server beside itself, read whether it came up, and close it when it is done with it.
+The sidebar remembers which panes agents opened, and refuses to close any other; a reload forgets, and they become yours.
+
+Handing a task to a second agent is the same pieces: a group in a fresh worktree running `claude '<task>'`, `wait` until it is done, `read` what it said.
+The Claude Code plugin's `delegate` skill does that (`/agenttij:delegate <task>`), and leaves the worktree for you to review.
 
 The installer puts `agenttij` in `~/.local/bin` (`AGENTTIJ_BIN_DIR` to change it).
 For **Claude Code**, the plugin in this repository adds the MCP tools, the skills saying when to use them, and the status hooks, so `install.sh` leaves `~/.claude/settings.json` alone once it is installed (re-run the installer after installing the plugin, or each hook runs twice):

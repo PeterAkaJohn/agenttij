@@ -17,11 +17,18 @@ Use the `agenttij` MCP tools, or the `agenttij` command in a shell - they are th
 | `add_pane` | `agenttij pane add [--run CMD] [--cwd DIR] [--group N] [--show]` | A pane in your group (or group N) |
 | `new_group` | `agenttij group new [--run CMD] [--cwd DIR] [--worktree] [--show]` | A new group from the layout's template |
 | `show_pane` | `agenttij show PANE` | Puts a pane on screen |
+| `read_pane` | `agenttij read PANE [--lines N]` | What a pane shows, or the end of its scrollback |
+| `close_pane` | `agenttij pane close PANE` | Closes a pane an agent opened, and no other |
+| `wait_group` | `agenttij wait GROUP [--timeout S]` | Until the agent in a group is done or needs input |
 
 ## How to use it well
 
 - Start servers, watchers and log tails with `add_pane` and `run`, not with `&` or `nohup` in your own shell.
   The user can look at them by cycling the group, and they survive your shell.
+- After starting something, `read_pane` it to see whether it came up and what it printed; `lines` reads past the screen into the scrollback.
+- Close what you started with `close_pane` when you are done with it.
+  Only panes an agent opened can be closed this way; everything else belongs to the user.
+- To hand a whole task to another agent, use the `delegate` skill.
 - What you open is **parked**: it runs, but the screen and the focus stay where they are.
   Pass `show` only when the user asked to see it - taking the screen from someone mid-sentence is rude.
 - `run` is a command line run through `sh`, so quoting and arguments work as in a shell.

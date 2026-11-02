@@ -185,6 +185,11 @@ An agent asks the sidebar for panes and groups with `agenttij`, which sends a `z
   `show` puts it on screen the way `Enter` does, with the cursor following.
   Run through `sh -c`, so a command line keeps its quoting, and renamed after what it runs.
 - **Only the sidebar keeping the rows answers**, as with any CLI pipe: the docked one or a controller, never a palette, a peek or a sidebar summoned with `Alt a`.
+- **Closing is for what agents opened.**
+  The sidebar keeps the ids of panes opened through the API, in memory only, and closes nothing else for an agent; it closes through `d`'s own path, so a parked pane is shown before it is closed.
+- **`read` and `wait` need no new request.**
+  `read` is `zellij action dump-screen` run by the CLI, after `list-panes` says the pane exists: `dump-screen` prints nothing and succeeds for a pane that is not there.
+  `wait` asks for the list every two seconds until the group's status is done, unread or needs-input.
 
 ## Milestones
 
