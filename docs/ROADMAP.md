@@ -38,17 +38,14 @@ Measured, not assumed, and every idea below is bent around them.
 - **What an agent left uncommitted**, `+120−30`, counted by the hook when it finishes.
 - **Worktree rows** (`w`, `Alt w`): a new row in a fresh git worktree, let go of when the row closes unless it holds work.
 - **Status for agents without a hook**, read off their screens with `dump-screen` - no new permission - and found by what they run as well as by title.
+  Not `ReadPaneContents`, because a new permission is costly: a session still running an older build rewrites the grant without it, and the next sidebar sits on an invisible prompt.
 - **On the web**: `s` opens Zellij's share screen, and the sidebar says on its first line while the session is shared.
 - **Answering a waiting agent** (`R`, with `reply "true"` in the layout): typed in the sidebar, sent with Enter, to a row that is waiting.
 - **A harness and e2e scenarios**: sealed Zellij sessions driven by real keystrokes, reading what the sidebar draws, run in CI against the Zellij the plugin is built for.
 
-## Open, ranked
+## Open
 
-| | what | why it earns its place | cost |
-|---|---|---|---|
-| 1 | promote a project to its own tab (`P`) | real isolation and a tab bar that shows projects; `break_panes_to_new_tab` meets swap layouts and suppressed panes, where things have broken before | medium to large |
-
-Reading screens went through `dump-screen` rather than `ReadPaneContents` for the reason a new permission is costly: a session still running an older build rewrites the grant without it, and the next sidebar sits on an invisible prompt.
+Nothing ranked right now.
 
 ## A suite, if the pieces stay honest
 
@@ -60,6 +57,9 @@ Each piece reads the state files itself until a third and fourth reader appear, 
 
 ## Not doing
 
+- **A project in a tab of its own.**
+  One sidebar per session runs the rows, the slot and the session's saved file, so a project moved to another tab needs either a second sidebar fighting over all three or a tab with no slot, every parked pane on screen at once.
+  Nothing it would buy has been missed.
 - **Moving or mirroring a pane across sessions.**
   No API, and faking it with a second process pretending to be the same agent is a lie the sidebar would then have to maintain.
 - **A knob for anything a layout can express.**
